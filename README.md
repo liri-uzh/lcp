@@ -69,7 +69,7 @@ This makes various helper commands available on the system:
 lcp-setup
 ```
 
-will create a `~/lcp/.env` with some default and some missing settings, which you can then edit/fill in as required
+This will create a `~/lcp/.env` with some default and some missing settings, which you can then edit/fill in as required.
 
 You can also run:
 
@@ -77,7 +77,7 @@ You can also run:
 lcp-frontend-setup
 ```
 
-to install the frontend (assuming you have node.js and NPM installed)
+to install the frontend (assuming you have node.js and NPM installed).
 
 ### Configuring `.env`
 
@@ -91,9 +91,9 @@ When LCP is started, it will look in `~/lcp` for a `.env` file. If you didn't in
 
 #### `.env` settings
 
-* You will need to provide `.env` with the location of your Redis/PostgeSQL instances, as well as the PostgreSQL database name (the defaults assume a default local installation of both PostgreSQL and Redis)
-* Make sure the `IMPORT` related settings don't exceed your system's resources
-* Comment out the `SSH_` variables if not using, or you'll get an SSH gateway error.
+* You will need to provide `.env` with the location of your Redis/PostgeSQL instances, as well as the PostgreSQL database name (the defaults assume a default local installation of both PostgreSQL and Redis).
+* Make sure the `IMPORT` related settings don't exceed your system's resources.
+* Comment out the `SSH_` variables if you're not using them, or you'll get an SSH gateway error.
 * If you don't want to use any authentication, make sure `AUTHENTICATION_CLASS` is empty. Otherwise, if you have a custom authentication class you wish to use, point to it: 
 
 ```bash
@@ -235,7 +235,7 @@ In seconds, how long can a query be running until it gets stopped?
 
 > `UPLOAD_TIMEOUT`
 
-In seconds, how long can an upload job be running until it gets stopped (should be considerably longer!)
+In seconds, how long can an upload job be running until it gets stopped (should be considerably longer!).
 
 > `QUERY_TTL`
 
@@ -243,7 +243,7 @@ In seconds, how long should query data stay in Redis? If a user tries to change 
 
 > `USE_CACHE`
 
-Queries are stored by a key in Redis, and this key is a hash of the data needed to generate the query. Therefore, when a new query is created, we hash it to check that it hasn't already been performed. If it has, and if `USE_CACHE` is truthy, we retrieve the earlier data from Redis and send that to the user (whio may be different from the one who generated the original query). You can disable this for debugging if the cache doesn't seem to be working correctly, but ideally it is switched on in production, as it provides a lot of performance benefit for common queries!
+Queries are stored by a key in Redis, and this key is a hash of the data needed to generate the query. Therefore, when a new query is created, we hash it to check that it hasn't already been performed. If it has, and if `USE_CACHE` is truthy, we retrieve the earlier data from Redis and send that to the user (who may be different from the one who generated the original query). You can disable this for debugging if the cache doesn't seem to be working correctly, but ideally it is switched on in production, as it provides a lot of performance benefit for common queries!
 
 > `SQL_(QUERY|UPLOAD)_(USERNAME|PASSWORD)`
 
@@ -287,7 +287,7 @@ Currently not used; in theory if there are free resources we could allow a user 
 
 ## Command line 'interface'
 
-Once `lcpvian` is installed you can run a variety of commands via `python -m lcpvian`
+Once `lcpvian` is installed you can run a variety of commands via `python -m lcpvian`.
 
 Start backend:
 
