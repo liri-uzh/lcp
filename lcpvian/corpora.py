@@ -10,7 +10,7 @@ import logging
 
 from json.decoder import JSONDecodeError
 
-from .utils import _filter_corpora, _lama_user_details, ensure_authorised
+from .utils import _filter_corpora, ensure_authorised
 from .typed import JSONObject
 
 from aiohttp import web
@@ -29,11 +29,16 @@ async def corpora(request: web.Request) -> web.Response:
     except JSONDecodeError:  # no data was sent ... eventually this should not happpen
         pass
     app_type = str(request_data.get("appType", "lcp"))
-    app_type = "lcp" if app_type not in {"lcp", "videoscope", "soundscript", "catchphrase"} else app_type
+    app_type = (
+        "lcp"
+        if app_type not in {"lcp", "videoscope", "soundscript", "catchphrase"}
+        else app_type
+    )
 
+    authenticator = request.app["auth_class"](request.app)
     if not request_data.get("all", False):
         try:
-            user_data = await _lama_user_details(request.headers)
+            user_data = await authenticator.user_details(request)
         except ClientOSError as err:
             jso = {
                 "details": str(err),
@@ -42,7 +47,9 @@ async def corpora(request: web.Request) -> web.Response:
             }
             logging.warning(f"Failed to login: {err}", extra=jso)
             return web.json_response({"error": "no login possible", "status": 401})
-        corpora = _filter_corpora(request.app["config"], app_type, user_data)
+        corpora = _filter_corpora(
+            authenticator, request.app["config"], app_type, user_data
+        )
     else:
         corpora = request.app["config"]
     return web.json_response({"config": corpora})

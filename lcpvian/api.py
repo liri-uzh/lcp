@@ -13,6 +13,9 @@ except ImportError:
 from .typed import JSONObject
 
 
+AIO_PORT = os.getenv("AIO_PORT", 9090)
+
+
 async def corpora(app_type: str = "all") -> JSONObject:
     """
     Helper to quickly show corpora in app
@@ -24,7 +27,7 @@ async def corpora(app_type: str = "all") -> JSONObject:
     headers: JSONObject = {}
     jso = {"appType": app_type, "all": True}
 
-    url = f"http://localhost:{os.environ['AIO_PORT']}/corpora"
+    url = f"http://localhost:{AIO_PORT}/corpora"
     async with ClientSession() as session:
         async with session.post(url, headers=headers, json=jso) as resp:
             result: JSONObject = await resp.json()
@@ -35,8 +38,8 @@ async def query(corpus: int, query: str) -> None:
     """
     Run a query and get results from websocket
     """
-    sock_url = f"http://localhost:{os.getenv('AIO_PORT', 9090)}/ws"
-    query_url = f"http://localhost:{os.getenv('AIO_PORT', 9090)}/query"
+    sock_url = f"http://localhost:{AIO_PORT}/ws"
+    query_url = f"http://localhost:{AIO_PORT}/query"
     async with ClientSession() as session:
         async with session.ws_connect(sock_url) as ws:
             msg = {"user": "api", "room": "api", "action": "joined"}
@@ -73,7 +76,7 @@ async def refresh_config() -> JSONObject:
     """
     Helper to force a refresh of the configuration
     """
-    url = f"http://localhost:{os.getenv('AIO_PORT', 9090)}/config"
+    url = f"http://localhost:{AIO_PORT}/config"
     headers: JSONObject = {}
     async with ClientSession() as session:
         async with session.post(url, headers=headers) as resp:

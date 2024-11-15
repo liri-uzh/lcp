@@ -1,0 +1,151 @@
+{
+  "query": [
+    {
+      "unit": {
+        "layer": "Session",
+        "label": "e",
+        "constraints": [
+          {
+            "comparison": {
+              "left": {
+                "reference": "date"
+              },
+              "comparator": "=",
+              "right": {
+                "regex": {
+                  "pattern": "^2000"
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "unit": {
+        "layer": "Segment",
+        "partOf": "e",
+        "label": "s"
+      }
+    },
+    {
+      "sequence": {
+        "label": "np",
+        "members": [
+          {
+            "unit": {
+              "layer": "Token",
+              "partOf": "s",
+              "label": "t1",
+              "constraints": [
+                {
+                  "comparison": {
+                    "left": {
+                      "reference": "upos"
+                    },
+                    "comparator": "=",
+                    "right": {
+                      "string": "VERB"
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "unit": {
+              "layer": "Token",
+              "partOf": "s",
+              "label": "t2",
+              "constraints": [
+                {
+                  "comparison": {
+                    "left": {
+                      "reference": "upos"
+                    },
+                    "comparator": "=",
+                    "right": {
+                      "string": "DET"
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "unit": {
+              "layer": "Token",
+              "partOf": "s",
+              "label": "t3",
+              "constraints": [
+                {
+                  "comparison": {
+                    "left": {
+                      "reference": "upos"
+                    },
+                    "comparator": "=",
+                    "right": {
+                      "string": "NOUN"
+                    }
+                  }
+                },
+                {
+                  "comparison": {
+                    "left": {
+                      "reference": "xpos"
+                    },
+                    "comparator": "=",
+                    "right": {
+                      "string": "NP"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "results": [
+    {
+      "label": "myKWIC1",
+      "resultsPlain": {
+        "context": [
+          "s"
+        ],
+        "entities": [
+          "t1",
+          "t2",
+          "t3"
+        ]
+      }
+    },
+    {
+      "label": "stat1",
+      "resultsAnalysis": {
+        "attributes": [
+          {
+            "attribute": "t1.lemma"
+          }
+        ],
+        "functions": [
+          "frequency"
+        ],
+        "filter": [
+          {
+            "comparison": {
+              "left": {
+                "reference": "frequency"
+              },
+              "comparator": ">",
+              "right": {
+                "math": "1"
+              }
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -23,13 +23,14 @@ from .utils import (
     _get_table,
     _get_underlang,
     _is_anchored,
+    _parse_comparison,
     _parse_repetition,
 )
 
 COUNTER = f"""
     res0 AS (SELECT 0::int2 AS rstype,
       jsonb_build_array(count(*))
-       FROM match_list) 
+       FROM match_list)
 
 """
 
@@ -46,8 +47,6 @@ class ResultsMaker:
         self.schema: str = conf.schema
         self.lang: str = conf.lang or ""
         self.batch: str = conf.batch
-        # self.vian: bool = conf.vian
-        self.vian: bool = False
         self.segment = cast(str, self.config["segment"])
         self.token = cast(str, self.config["token"])
         self.document = cast(str, self.config["document"])
@@ -68,16 +67,9 @@ class ResultsMaker:
         labels_so_far: set[str] = {e for e in self.r.entities}
         for obj in query:
             if "sequence" in obj:
-                dict_entities: dict[str, list] = {e: [] for e in labels_so_far}
-                set_entities: set[str] = set(e for e in labels_so_far)
-                seq: Sequence = Sequence(obj, sequence_references=dict_entities)
-                sqlseq: SQLSequence = SQLSequence(
-                    seq,
-                    self.conf,
-                    entities=set_entities,
-                    label_layer=self.r.label_layer,
-                )
-                sqlseq.categorize_members(entities=dict_entities)
+                seq: Sequence = Sequence(self.r, self.conf, obj)
+                sqlseq: SQLSequence = SQLSequence(seq)
+                sqlseq.categorize_members()
                 for t, _, _, _ in sqlseq.fixed_tokens:
                     original_label: str = cast(str, t.obj["unit"].get("label", ""))
                     if original_label:
@@ -98,8 +90,8 @@ class ResultsMaker:
                     {x for x in sqlseq._internal_references.values()}
                 )
 
-            elif "logicalOpNAry" in obj:
-                coord = obj["logicalOpNAry"]
+            elif "logicalExpression" in obj:
+                coord = obj["logicalExpression"]
                 for arg in coord["args"]:
                     self.add_query_entities(arg)
             elif "unit" in obj:
@@ -201,9 +193,11 @@ class ResultsMaker:
                 #    self.r.entities.add(s)
             elif "resultsAnalysis" in cast(JSONObject, result):
                 stat = cast(JSONObject, result["resultsAnalysis"])
-                attr = cast(list[str], stat.get("attributes", []))
+                attr = cast(list[str | dict], stat.get("attributes", []))
                 for a in attr:
-                    lab: str = a.split(".", 1)[0].lower()
+                    if not isinstance(a, dict) or not "attribute" in a:
+                        continue
+                    lab: str = cast(dict, a)["attribute"].split(".", 1)[0].lower()
                     assert lab in legal_refs, ReferenceError(
                         f"Label {lab} cannot be referenced (is not declared or scope-bound)"
                     )
@@ -249,7 +243,9 @@ class ResultsMaker:
         not in entities. This might change ... if space is a set, maybe the
         criteria go into the collocation CTE instead of match_list CTE
         """
-        space = result.get("space", [])
+        # TODO: support a list of references as "space"
+        # space = result.get("space", [])
+        space = result.get("space", "")
         feat = cast(str, result.get("attribute", "lemma"))
         attribs = cast(JSONObject, self.conf_layer[self.token])["attributes"]
         assert isinstance(attribs, dict)
@@ -271,15 +267,15 @@ class ResultsMaker:
 
         feat_maybe_id = f"{feat}_id" if need_id and not feat.endswith("_id") else feat
         # in_entities = False if not space else space[0].lower() in self.r.entities
-        layer, _ = self.r.label_layer[space[0]]
+        layer, _ = self.r.label_layer[space]
         attr = f"{self.token.lower()}_id"
         self._n += 1
-        formed = f"{space[0]}.{attr} AS {space[0]}"
+        formed = f"{space}.{attr} AS {space}"
 
-        if space[0] not in self.r.set_objects:
+        if space not in self.r.set_objects:
             self.r.selects.add(formed.lower())
-            self.r.entities.add(space[0])
-            formed = f"{space[0]}.{feat_maybe_id} AS {space[0]}_{feat_maybe_id}"
+            self.r.entities.add(space)
+            formed = f"{space}.{feat_maybe_id} AS {space}_{feat_maybe_id}"
         # thead.lemma_id AS thead_lemma_id
         else:
             formed = process_set(
@@ -289,14 +285,14 @@ class ResultsMaker:
                 self.token,
                 self.segment,
                 self._underlang,
-                self.find_set(space[0]) or {},
+                self.find_set(space) or {},
                 seg_label="___seglabel___",
                 attribute=feat,
             )
 
         self.r.selects.add(formed.lower())
         # add entity: thead_lemma_id
-        self.r.entities.add(f"{space[0]}_{feat_maybe_id}".lower())
+        self.r.entities.add(f"{space}_{feat_maybe_id}".lower())
 
     def _update_context(self, context: str) -> None:
         """
@@ -385,16 +381,29 @@ class ResultsMaker:
         """
         Process a stats request
         """
-        attributes = cast(list[str], result["attributes"])
+        attributes = cast(list[str | dict], result["attributes"])
         for att in attributes:
-            lab = att.replace(".", "_").lower().strip()
-            shortest = att.split(".", 1)[0]
+            if not isinstance(att, dict) or "attribute" not in att:
+                continue
+            att_str = cast(dict, att)["attribute"]
+            lab = att_str.replace(".", "_").lower().strip()
+            split_att = att_str.split(".")
+            shortest = split_att[0]
             shortest = self._label_mapping.get(shortest, shortest)
-            field = att.split(".")[-1]
+            field = split_att[1]
             layer, _ = self.r.label_layer[shortest]
             layer_attrs = self.conf.config["layer"][layer].get("attributes", {})
             table = _get_table(layer, self.config, self.batch, self.lang)
+            # Join shortest table
+            all_layer_names = cast(dict[str, Any], self.config.get("layer", {})).keys()
+            shortest_layer = self.r.label_layer.get(shortest, ("", {}))[0]
+            shortest_table = f"{self.schema}.{table} {shortest}".lower()
+            self.r.joins[shortest_table] = (
+                None if shortest_layer in all_layer_names else True
+            )
+            # Proceed
             is_meta = field not in layer_attrs and field in layer_attrs.get("meta", {})
+            is_chained = len(split_att) > 2
             conf_layer_info: dict[str, Any] = cast(
                 dict[str, Any], self.conf_layer[layer]
             )
@@ -405,7 +414,43 @@ class ResultsMaker:
             attrib_table = (
                 mapping.get("attributes", {}).get(field, {}).get("name", field)
             )
-            if is_meta:
+            if is_chained:
+                pre_att = f"{shortest}_{field}"
+                sub_field = split_att[2]
+                if is_meta:
+                    line = f"{pre_att}.meta -> '{field}' ->> '{sub_field}' AS {lab}"
+                else:
+                    line = f"{pre_att}.{field} ->> '{sub_field}' AS {lab}"
+                self.r.selects.add(line)
+                field_info = (
+                    cast(dict[str, Any], self.config["layer"])
+                    .get(shortest_layer, {})
+                    .get("attributes", {})
+                    .get(field, {})
+                )
+                field_mapping = (
+                    _get_mapping(
+                        shortest_layer, self.config, self.batch, self.lang or ""
+                    )
+                    .get("attributes", {})
+                    .get(field, {})
+                )
+                field_is_global = "ref" in field_info
+                if field_is_global:
+                    field_key = field_mapping.get("key", field)
+                    field_table = field_mapping.get(
+                        "name", f"global_attributes_{field}"
+                    )
+                    field_formed_table = (
+                        f"{self.schema}.{field_table.lower()} {pre_att}"
+                    )
+                    field_formed_condition = (
+                        f"{shortest}.{field_key}_id = {pre_att}.{field_key}_id"
+                    )
+                    if field_formed_table not in self.r.joins:
+                        self.r.joins[field_formed_table] = True
+                        self.r.conditions.add(field_formed_condition)
+            elif is_meta:
                 line = f"{shortest}.meta ->> '{field}' AS {lab}"
                 self.r.selects.add(line)
             elif attrs[field].get("type", "") == "text" or "ref" in attrs[field]:
@@ -418,13 +463,16 @@ class ResultsMaker:
             else:
                 line = f"{shortest}.{attrib_table} AS {lab}"
                 self.r.selects.add(line)
-            self.r.joins[f"{self.schema}.{table} {shortest}".lower()] = True
             self.r.entities.add(lab)
 
         functions = cast(list[str], result["functions"])
         filt = cast(JSONObject, result.get("filter", {}))
         made, meta, filter_meta = self._stat_analysis(
-            i, varname, attributes, functions, filt
+            i,
+            varname,
+            [a.get("attribute", "") for a in attributes if isinstance(a, dict)],
+            functions,
+            filt,
         )
         return made, meta, filter_meta
 
@@ -441,7 +489,6 @@ class ResultsMaker:
         entout: list[str] = []
         select_extra = ""
 
-        gest = "Gesture" in self.conf_layer or "gesture" in self.conf_layer
         doc_join = ""
         gesture_type = "null"
 
@@ -475,7 +522,12 @@ class ResultsMaker:
                 continue
 
             if lay == self.token:
-                if e not in self.r.set_objects:
+                is_fixed_token_in_sequence: bool = any(
+                    m.label == e
+                    for seq in self.r.sqlsequences
+                    for m in seq.get_members()
+                )
+                if not is_fixed_token_in_sequence and e not in self.r.set_objects:
                     select = f"{e}.{self.token}_id as {e}"
                     self.r.selects.add(select.lower())
                     self.r.entities.add(e.lower())
@@ -516,25 +568,10 @@ WHERE {entity}.char_range && contained_token.char_range
         extras: list[str] = []
         extra_meta: list[str] = []
         frame_ranges: list[dict[str, Any]] = []
-        any_frame_range: str = ""
 
-        # if self.vian:
         if _is_anchored(self.config, context_layer, "time"):
-            lab = context  # TODO: accommodate corpora using FTS
-            out_name = f"{lab}_frame_range"
-            if not any_frame_range:
-                any_frame_range = out_name
-            if self.conf.config["mapping"].get("hasFTS", False):
-                frame_lab = "has_frame_range"
-                cond_formed = f"{lab}.{self.segment.lower()}_id = {frame_lab}.{self.segment.lower()}_id"
-                self.r.conditions.add(cond_formed.lower())
-                seg_tab = _get_table(
-                    self.segment, self.conf.config, self.batch, self.lang
-                )
-                join_formed = f"{self.schema}.{seg_tab} {frame_lab}"
-                self.r.joins[join_formed] = True
-                lab = frame_lab
-            formed = f"{lab}.frame_range AS {out_name}"
+            out_name = f"{context}_frame_range"
+            formed = f"{context}.frame_range AS {out_name}"
             self.r.selects.add(formed.lower())
             self.r.entities.add(out_name.lower())
             fr = frame_range_base.format(fr=out_name)
@@ -621,7 +658,7 @@ WHERE {entity}.char_range && contained_token.char_range
         frame_ranges: list[dict],
     ) -> list[dict]:
         """
-        Format kwic metadata for vian/non vian queries
+        Format kwic metadata for queries
         """
 
         out: list[dict]
@@ -679,19 +716,17 @@ WHERE {entity}.char_range && contained_token.char_range
             return "", []
         out: list[dict[str, Any]] = []
         wheres: set[str] = set()
-
-        comp: dict[str, dict] = cast(dict[str, dict], filt)
-        for k, v in comp.items():
-            if k != "comparison":
-                raise NotImplementedError("todo")
-            if v.get("entity", "").lower() == "frequency":
-                out.append({k: v})
-            else:
-                # This needs to be revised (use Constraint from .constraints instead?)
-                # out.append({})
-                # entity, operator, type, text = _parse_comparison(v)
-                # wheres.add(f"{entity} {operator.replace('=','~') if type == 'regexComparison' else operator} '{text}'")
+        comps: list[dict] = cast(
+            list[dict], [f.get("comparison") for f in cast(dict, filt)]
+        )
+        for comp in comps:
+            left, comparator, _, right = _parse_comparison(comp)
+            left_str = left.get("label")
+            right_str = next(x for x in cast(dict, right).values())
+            if not left_str or not right_str:
                 continue
+            wheres.add(" ".join([left_str, comparator, right_str]))
+            # wheres.add(f"{entity} {operator.replace('=','~') if type == 'regexComparison' else operator} '{text}'")
 
         if wheres:
             strung = " WHERE " + " AND ".join(wheres)
@@ -861,32 +896,33 @@ WHERE {entity}.char_range && contained_token.char_range
         return " WHERE " + " AND ".join(formed)
 
     @staticmethod
-    def _parse_window(window: str, center: str | None) -> str:
+    def _parse_window(window: dict[str, str], center: str | None) -> str:
         """
         Parse the x..y format window into an SQL string
         """
         if not window:
             return ""
-        a, b = window.split("..", 1)
-        a = a.replace("+", "+ ", 1).replace("-", "- ", 1)
-        b = b.replace("+", "+ ", 1).replace("-", "- ", 1)
+        # a, b = window.split("..", 1)
+        a, b = (
+            cast(str, window.get("leftSpan", "1")).strip(),
+            cast(str, window.get("rightSpan", "1")).strip(),
+        )
         if "*" in a and "*" in b:
             return ""
         elif "*" not in a and "*" in b:  # *..5
-            return f">= {center} {a}"
+            return f">= {center} + ({a})"
         elif "*" in a and "*" not in b:  # 3..*
-            return f"<= {center} {b}"
+            return f"<= {center} + ({b})"
         else:  # 3..4
-            return f"BETWEEN {center} {a} AND {center} {b}"
+            return f"BETWEEN {center} + ({a}) AND {center} + ({b})"
 
     @staticmethod
-    def _within_sent(segment_id, **kwargs) -> str:
+    def _within_sent(segment_id, seg_name: str = "__seglabel__", **kwargs) -> str:
         """
         If we are limiting the collocation to the sentence, make that condition here
 
         Right now it is not controllable. Could fail if query doesn't involve segment data maybe?
         """
-        seg_name = "__seglabel__"
         return f"AND tx.{segment_id} = match_list.{seg_name}"
 
     def collocation(
@@ -901,26 +937,58 @@ WHERE {entity}.char_range && contained_token.char_range
         self is the ResultsMaker object -- all this code could be methods on it,
         but danny put them here because that file is getting large...
         """
-        space = cast(list[str], result.get("space", []))
+        # TODO: support list of references as "space"
+        # space = cast(list[str], result.get("space", []))
+        space = cast(str, result.get("space", ""))
         center = cast(str | None, result.get("center"))
         assert not (space and center), "Only one of space/center allowed!"
         freq_n = self._freq_n_table()
         freq_table = self._freq_table()
-        windowed = self._parse_window(cast(str, result.get("window", "")), center)
+        windowed = self._parse_window(
+            cast(
+                dict[str, str],
+                result.get("window", {"leftSpan": "*", "rightSpan": "*"}),
+            ),
+            center,
+        )
         feat = cast(str, result.get("attribute", "lemma"))
         attribs = cast(JSONObject, self.conf_layer[self.token])["attributes"]
         assert isinstance(attribs, dict)
         att_feat = cast(JSONObject, cast(JSONObject, attribs)[feat])
         is_text = cast(str, att_feat.get("type", "")) == "text"
 
+        seg_lab: str = ""  # the segment label of center's parent
+
         need_id = feat in attribs and is_text
         feat_maybe_id = f"{feat}_id" if need_id and not feat.endswith("_id") else feat
         space_feat, lany, rbrack = "", "", ""
         if space:
-            space_feat = f"{space[0]}_{feat_maybe_id}"
-            if space[0] in self.r.set_objects:
+            space_feat = f"{space}_{feat_maybe_id}"
+            if space in self.r.set_objects:
                 lany = " ANY ( "
                 rbrack = " ) "
+        elif center and (token_meta := self.r.label_layer.get(center)):
+            seg_depth = 999  # start with a ridiculously deep value
+            # Use the label of the first segment layer found in label_layer as a fallback
+            seg_lab = next(
+                (
+                    l
+                    for l, p in self.r.label_layer.items()
+                    if p[0].lower() == self.segment.lower()
+                ),
+                "",
+            )
+            # Now go through the chain of center's "partOf"s and choose the highest parent segment
+            part_of: str = cast(str, token_meta[1].get("partOf", ""))
+            while part_of and part_of in self.r.label_layer:
+                parent_meta = self.r.label_layer[part_of]
+                if parent_meta[0].lower() == self.segment.lower():
+                    depth = cast(int, parent_meta[1].get("_depth", 999))
+                    if depth < seg_depth:
+                        seg_lab = part_of
+                        seg_depth = depth
+                part_of = cast(str, parent_meta[1].get("partOf", ""))
+
         token_id = f"{self.token}_id"
         segment_id = f"{self.segment}_id"
 
@@ -934,7 +1002,7 @@ WHERE {entity}.char_range && contained_token.char_range
                 attributes = partitions.get(self.lang, {}).get("attributes", {})
             feat_tab = attributes.get(feat, {}).get("name", feat)
         # feat_tab = f"{feat}{self._underlang}"
-        within_sent = self._within_sent(segment_id)
+        within_sent = self._within_sent(segment_id, seg_lab)
 
         if is_text:
             join_for_text_field = f"JOIN {self.schema}.{feat_tab} ON {feat_tab}.{feat_maybe_id} = x.{feat_maybe_id}"
@@ -952,7 +1020,7 @@ WHERE {entity}.char_range && contained_token.char_range
                 """
             else:
                 select_feat = space_feat
-                if space[0] in self.r.set_objects:
+                if space in self.r.set_objects:
                     select_feat = f"unnest({space_feat})"
                 cte = f"""
                     collocates{i} AS (

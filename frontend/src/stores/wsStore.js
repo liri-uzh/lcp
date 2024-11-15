@@ -7,6 +7,7 @@ export const useWsStore = defineStore("wsData", {
     socket: null,
     userId: null,
     roomId: null,
+    messagesPlayer: [],
   }),
   getters: {},
   actions: {
@@ -24,6 +25,12 @@ export const useWsStore = defineStore("wsData", {
     },
     clear() {
       this.messages = []
+    },
+    addMessageForPlayer(message) {
+      this.messagesPlayer.push(message)
+    },
+    clearPlayer() {
+      this.messagesPlayer = []
     },
     connectToRoom(socket, userId, roomId) {
       if (userId == null) {

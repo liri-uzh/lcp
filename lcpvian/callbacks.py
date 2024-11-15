@@ -55,6 +55,7 @@ from .utils import (
     _decide_can_send,
     _time_remaining,
     _publish_msg,
+    _sharepublish_msg,
     format_meta_lines,
     TRUES,
 )
@@ -84,30 +85,31 @@ def _query(
     the aggregated results that are calculated during this callback. Then we
     apply post_processes filters and send the result as a WS message.
     """
-    table = f"{job.kwargs['current_batch'][1]}.{job.kwargs['current_batch'][2]}"
+    job_kwargs = cast(dict, job.kwargs)
+    table = f"{job_kwargs['current_batch'][1]}.{job_kwargs['current_batch'][2]}"
     allowed_time = float(os.getenv("QUERY_ALLOWED_JOB_TIME", 0.0))
     ended_at = cast(datetime, job.ended_at)
     started_at = cast(datetime, job.started_at)
     duration: float = round((ended_at - started_at).total_seconds(), 3)
-    total_duration = round(job.kwargs.get("total_duration", 0.0) + duration, 3)
+    total_duration = round(job_kwargs.get("total_duration", 0.0) + duration, 3)
     duration_string = f"Duration ({table}): {duration} :: {total_duration}"
 
     from_memory = kwargs.get("from_memory", False)
-    meta_json: QueryMeta = job.kwargs.get("meta_json")
+    meta_json: QueryMeta = cast(QueryMeta, job_kwargs.get("meta_json"))
     existing_results: Results = {0: meta_json}
-    post_processes = kwargs.get("post_processes", job.kwargs.get("post_processes", {}))
-    is_base = not bool(job.kwargs.get("first_job"))
-    total_before_now = job.kwargs["total_results_so_far"]
-    done_part = job.kwargs["done_batches"]
-    is_full = kwargs.get("full", job.kwargs["full"])
+    post_processes = kwargs.get("post_processes", job_kwargs.get("post_processes", {}))
+    is_base = not bool(job_kwargs.get("first_job"))
+    total_before_now = job_kwargs["total_results_so_far"]
+    done_part = job_kwargs["done_batches"]
+    is_full = kwargs.get("full", job_kwargs["full"])
     first_job = _get_first_job(job, connection)
     stored = first_job.meta.get("progress_info", {})
     existing_results = first_job.meta.get("all_non_kwic_results", existing_results)
     total_requested = cast(
         int,
-        kwargs.get("total_results_requested", job.kwargs["total_results_requested"]),
+        kwargs.get("total_results_requested", job_kwargs["total_results_requested"]),
     )
-    just_finished = tuple(job.kwargs["current_batch"])
+    just_finished = tuple(job_kwargs["current_batch"])
 
     # if from memory, we had this result cached, we just need to apply filters
     if from_memory:
@@ -146,10 +148,10 @@ def _query(
     status = _get_status(
         total_found,
         done_batches=done_part,
-        all_batches=job.kwargs["all_batches"],
+        all_batches=job_kwargs["all_batches"],
         total_results_requested=total_requested,
         search_all=search_all,
-        full=job.kwargs.get("full", False),
+        full=job_kwargs.get("full", False),
         time_so_far=total_duration,
     )
     job.meta["_status"] = status
@@ -159,7 +161,7 @@ def _query(
     job.meta["_total_duration"] = total_duration
     job.meta["total_results_so_far"] = total_found
 
-    batches_done_string = f"{len(done_part)}/{len(job.kwargs['all_batches'])}"
+    batches_done_string = f"{len(done_part)}/{len(job_kwargs['all_batches'])}"
 
     # in these next conditions we basically build the progress information
     # for a query, based on its status and batch metadata.
@@ -171,13 +173,13 @@ def _query(
             perc_matches = time_perc
         job.meta["percentage_done"] = 100.0
     elif status in {"partial", "satisfied", "overtime"}:
-        done_batches = job.kwargs["done_batches"]
-        total_words_processed_so_far = sum([x[-1] for x in done_batches])
+        done_batches = job_kwargs["done_batches"]
+        total_words_processed_so_far = sum([x[-1] for x in done_batches]) or 1
         proportion_that_matches = total_found / total_words_processed_so_far
-        projected_results = int(job.kwargs["word_count"] * proportion_that_matches)
+        projected_results = int(job_kwargs["word_count"] * proportion_that_matches)
         if not show_total:
             projected_results = -1
-        perc_words = total_words_processed_so_far * 100.0 / job.kwargs["word_count"]
+        perc_words = total_words_processed_so_far * 100.0 / job_kwargs["word_count"]
         perc_matches = min(total_found, total_requested) * 100.0 / total_requested
         if search_all:
             perc_matches = time_perc
@@ -239,15 +241,15 @@ def _query(
     use = perc_words if search_all or is_full else perc_matches
     time_remaining = _time_remaining(status, total_duration, use)
 
-    user = cast(str, kwargs.get("user", job.kwargs["user"]))
-    room = cast(str | None, kwargs.get("room", job.kwargs["room"]))
+    user = cast(str, kwargs.get("user", job_kwargs["user"]))
+    room = cast(str | None, kwargs.get("room", job_kwargs["room"]))
 
     max_kwic = int(os.getenv("DEFAULT_MAX_KWIC_LINES", 9999))
     current_kwic_lines = min(max_kwic, total_found)
 
     action = "query_result"
 
-    jso = dict(**job.kwargs)
+    jso = dict(**job_kwargs)
     jso.update(
         {
             "result": to_send,
@@ -283,10 +285,10 @@ def _query(
         }
     )
 
-    if job.kwargs["debug"] and job.kwargs["sql"]:
-        jso["sql"] = job.kwargs["sql"]
-    if job.kwargs["sql"]:
-        jso["consoleSQL"] = job.kwargs["sql"]
+    if job_kwargs["debug"] and job_kwargs["sql"]:
+        jso["sql"] = job_kwargs["sql"]
+    if job_kwargs["sql"]:
+        jso["consoleSQL"] = job_kwargs["sql"]
 
     if is_full and status != "finished":
         jso["progress"] = {
@@ -388,30 +390,35 @@ def _sentences(
     """
     Create KWIC data and send via websocket
     """
+    job_kwargs: dict = cast(dict, job.kwargs)
     total_requested = _get_total_requested(kwargs, job)
-    base = Job.fetch(job.kwargs["first_job"], connection=connection)
-    depended = _get_associated_query_job(job.kwargs["depends_on"], connection)
-    full = cast(bool, kwargs.get("full", job.kwargs.get("full", False)))
-    meta_json = depended.kwargs["meta_json"]
-    is_vian = depended.kwargs.get("is_vian", False)
-    resume = cast(bool, job.kwargs.get("resume", False))
-    offset = cast(int, job.kwargs.get("offset", 0) if resume else -1)
+    base = Job.fetch(job_kwargs["first_job"], connection=connection)
+    depended = _get_associated_query_job(job_kwargs["depends_on"], connection)
+    depended_kwargs: dict = cast(dict, depended.kwargs)
+    full = cast(bool, kwargs.get("full", job_kwargs.get("full", False)))
+    meta_json = depended_kwargs["meta_json"]
+    resume = cast(bool, job_kwargs.get("resume", False))
+    offset = cast(int, job_kwargs.get("offset", 0) if resume else -1)
     prev_offset = cast(int, depended.meta.get("latest_offset", -1))
     max_kwic = int(os.getenv("DEFAULT_MAX_KWIC_LINES", 9999))
     current_lines = cast(
-        int, kwargs.get("current_kwic_lines", job.kwargs["current_kwic_lines"])
+        int, kwargs.get("current_kwic_lines", job_kwargs["current_kwic_lines"])
     )
 
-    if prev_offset > offset and not kwargs.get("from_memory"):
+    if prev_offset > offset:  # and not kwargs.get("from_memory"):
         offset = prev_offset if resume else -1
-    total_to_get = job.kwargs.get("needed", total_requested)
+    total_to_get = job_kwargs.get("needed", total_requested)
 
-    cb: Batch = depended.kwargs["current_batch"]
+    cb: Batch = depended_kwargs["current_batch"]
     table = f"{cb[1]}.{cb[2]}"
 
     status = depended.meta["_status"]
     latest_offset = max(offset, 0) + total_to_get
     depended.meta["latest_offset"] = latest_offset
+    # base.save_meta, which is called later, overwrites depended.save_meta when pointing to the same job
+    if base.id == depended.id:
+        base.meta["latest_offset"] = latest_offset
+
     depended.save_meta()  # type: ignore
 
     # in full mode, we need to combine all the sentences into one message when finished
@@ -423,7 +430,7 @@ def _sentences(
 
     if get_all_sents:
         to_send = _get_all_sents(
-            job, base, is_vian, meta_json, max_kwic, current_lines, full, connection
+            job, base, meta_json, max_kwic, current_lines, full, connection
         )
     else:
         to_send = _format_kwics(
@@ -431,7 +438,6 @@ def _sentences(
             meta_json,
             result,
             total_to_get,
-            is_vian,
             True,
             offset,
             max_kwic,
@@ -439,18 +445,8 @@ def _sentences(
             full,
         )
 
-    for sent in result or []:
-        if len(sent) < 4:
-            continue
-        if not sent[3]:
-            continue
-        sent_id = str(sent[0])
-        if sent_id not in to_send.get(-1, {}):
-            continue
-        to_send[-1][sent_id].append(sent[3])
-
-    more_data = not job.kwargs["no_more_data"]
-    submit_query = job.kwargs["start_query_from_sents"]
+    more_data = not job_kwargs["no_more_data"]
+    submit_query = job_kwargs["start_query_from_sents"]
     if submit_query and more_data:
         status = "partial"
 
@@ -479,7 +475,7 @@ def _sentences(
     submit_payload = depended.meta["payload"]
     submit_payload["full"] = full
     submit_payload["total_results_requested"] = total_requested
-    submit_payload["to_export"] = depended.meta.get("to_export", "")
+    submit_payload["to_export"] = depended.meta.get("to_export", {})
 
     # Do not send if this is an "export" query
     can_send = not base.meta.get("to_export", False) and (
@@ -502,8 +498,8 @@ def _sentences(
         "full": full,
         "more_data_available": more_data,
         "submit_query": submit_payload if submit_query else False,
-        "user": kwargs.get("user", job.kwargs["user"]),
-        "room": kwargs.get("room", job.kwargs["room"]),
+        "user": kwargs.get("user", cast(dict, job.kwargs)["user"]),
+        "room": kwargs.get("room", cast(dict, job.kwargs)["room"]),
         "query": depended.id,
         "table": table,
         "first_job": base.id,
@@ -537,35 +533,37 @@ def _document(
     """
     When a user requests a document, we give it to them via websocket
     """
+    job_kwargs: dict = cast(dict, job.kwargs)
     action = "document"
-    user = cast(str, kwargs.get("user", job.kwargs["user"]))
-    room = cast(str | None, kwargs.get("room", job.kwargs["room"]))
+    user = cast(str, kwargs.get("user", job_kwargs["user"]))
+    room = cast(str | None, kwargs.get("room", job_kwargs["room"]))
     if not room:
         return
     if isinstance(result, list) and len(result) == 1:
         result = result[0]
 
-    if job.kwargs["corpus"] in (59, 127):
-        tmp_result: dict[str, dict] = {
-            "structure": {},
-            "layers": {},
-            "global_attributes": {},
-        }
-        for row in result:
-            typ, key, props = cast(list, row)
-            if typ == "layer":
-                if key not in tmp_result["structure"]:
-                    tmp_result["structure"][key] = [*props.keys()]
-                if key not in tmp_result["layers"]:
-                    tmp_result["layers"][key] = []
-                keys = tmp_result["structure"][key]
-                line = [props[k] for k in keys]
-                tmp_result["layers"][key].append(line)
-            elif typ == "glob":
-                if key not in tmp_result["global_attributes"]:
-                    tmp_result["global_attributes"][key] = []
-                tmp_result["global_attributes"][key].append(props)
-        result = cast(JSONObject, tmp_result)
+    tmp_result: dict[str, dict] = {
+        "structure": {},
+        "layers": {},
+        "global_attributes": {},
+    }
+    for row in result:
+        typ, key, props = cast(list, row)
+        if typ == "layer":
+            if key not in tmp_result["structure"]:
+                tmp_result["structure"][key] = [*props.keys()]
+            if key not in tmp_result["layers"]:
+                tmp_result["layers"][key] = []
+            keys = tmp_result["structure"][key]
+            line = [props[k] for k in keys]
+            tmp_result["layers"][key].append(line)
+        elif typ == "glob":
+            if key not in tmp_result["global_attributes"]:
+                tmp_result["global_attributes"][key] = []
+            tmp_result["global_attributes"][key].append(props)
+        elif typ == "doc":
+            tmp_result["doc"] = props
+    result = cast(JSONObject, tmp_result)
 
     msg_id = str(uuid4())
     jso = {
@@ -574,8 +572,8 @@ def _document(
         "user": user,
         "room": room,
         "msg_id": msg_id,
-        "corpus": job.kwargs["corpus"],
-        "doc_id": job.kwargs["doc"],
+        "corpus": job_kwargs["corpus"],
+        "doc_id": job_kwargs["doc"],
     }
     return _publish_msg(connection, jso, msg_id)
 
@@ -589,8 +587,9 @@ def _document_ids(
     """
     When a user requests a document, we give it to them via websocket
     """
-    user = cast(str, kwargs.get("user", job.kwargs["user"]))
-    room = cast(str | None, kwargs.get("room", job.kwargs["room"]))
+    job_kwargs: dict = cast(dict, job.kwargs)
+    user = cast(str, kwargs.get("user", job_kwargs["user"]))
+    room = cast(str | None, kwargs.get("room", job_kwargs["room"]))
     if not room:
         return None
     msg_id = str(uuid4())
@@ -614,7 +613,7 @@ def _document_ids(
         "msg_id": msg_id,
         "room": room,
         "job": job.id,
-        "corpus_id": job.kwargs["corpus_id"],
+        "corpus_id": job_kwargs["corpus_id"],
     }
     return _publish_msg(connection, jso, msg_id)
 
@@ -628,8 +627,9 @@ def _schema(
     This callback is executed after successful creation of schema.
     We might want to notify some WS user?
     """
-    user = job.kwargs.get("user")
-    room = job.kwargs.get("room")
+    job_kwargs: dict = cast(dict, job.kwargs)
+    user = job_kwargs.get("user")
+    room = job_kwargs.get("room")
     if not room:
         return None
     msg_id = str(uuid4())
@@ -637,10 +637,11 @@ def _schema(
     jso = {
         "user": user,
         "status": "success" if not result else "error",
-        "project": job.kwargs["project"],
-        "project_name": job.kwargs["project_name"],
+        "project": job_kwargs["project"],
+        "project_name": job_kwargs["project_name"],
+        "corpus_name": job_kwargs["corpus_name"],
         "action": action,
-        "gui": job.kwargs.get("gui", False),
+        "gui": job_kwargs.get("gui", False),
         "room": room,
         "msg_id": msg_id,
     }
@@ -664,9 +665,9 @@ def _upload(
     project: str = job.args[0]
     user: str = job.args[1]
     room: str | None = job.args[2]
-    user_data: JSONObject = job.kwargs["user_data"]
-    is_vian: bool = job.kwargs["is_vian"]
-    gui: bool = job.kwargs["gui"]
+    job_kwargs: dict = cast(dict, job.kwargs)
+    user_data: JSONObject = job_kwargs["user_data"]
+    gui: bool = job_kwargs["gui"]
     msg_id = str(uuid4())
     action = "uploaded"
 
@@ -677,7 +678,6 @@ def _upload(
         "room": room,
         "id": result[0],
         "user_data": user_data,
-        "is_vian": is_vian,
         "entry": _row_to_value(result, project=project),
         "status": "success" if not result else "error",
         "project": project,
@@ -685,10 +685,10 @@ def _upload(
         "gui": gui,
         "msg_id": msg_id,
     }
-    if result:
-        jso["error"] = result
 
-    return _publish_msg(connection, cast(JSONObject, jso), msg_id)
+    # We want to notify *all* the instances of the new corpus
+    return _sharepublish_msg(cast(JSONObject, jso), msg_id)
+    # return _publish_msg(connection, cast(JSONObject, jso), msg_id)
 
 
 def _upload_failure(
@@ -708,16 +708,19 @@ def _upload_failure(
     user: str
     room: str | None
 
-    if "project_name" in job.kwargs:  # it came from create schema job
-        project = job.kwargs["project"]
-        user = job.kwargs["user"]
-        room = job.kwargs["room"]
+    job_kwargs: dict = cast(dict, job.kwargs)
+
+    if "project_name" in job_kwargs:  # it came from create schema job
+        project = job_kwargs["project"]
+        user = job_kwargs["user"]
+        room = job_kwargs["room"]
     else:  # it came from upload job
         project = job.args[0]
         user = job.args[1]
         room = job.args[2]
 
-    path = os.path.join("uploads", project)
+    uploads_path = os.getenv("TEMP_UPLOADS_PATH", "uploads")
+    path = os.path.join(uploads_path, project)
     if os.path.isdir(path):
         shutil.rmtree(path)
         print(f"Deleted: {path}")
@@ -779,7 +782,7 @@ def _general_failure(
             "msg_id": msg_id,
             "traceback": form_error,
             "job": job.id,
-            **job.kwargs,
+            **cast(dict, job.kwargs),
         }
     # this is just for consistency with the other timeout messages
     if "No such job" in jso["value"]:
@@ -797,12 +800,13 @@ def _queries(
     """
     Fetch or store queries
     """
-    is_store: bool = job.kwargs.get("store", False)
+    job_kwargs: dict = cast(dict, job.kwargs)
+    is_store: bool = job_kwargs.get("store", False)
     action = "store_query" if is_store else "fetch_queries"
-    room: str | None = job.kwargs.get("room")
+    room: str | None = job_kwargs.get("room")
     msg_id = str(uuid4())
     jso: dict[str, Any] = {
-        "user": str(job.kwargs["user"]),
+        "user": str(job_kwargs["user"]),
         "room": room,
         "status": "success",
         "action": action,
@@ -810,7 +814,7 @@ def _queries(
         "msg_id": msg_id,
     }
     if is_store:
-        jso["query_id"] = str(job.kwargs["query_id"])
+        jso["query_id"] = str(job_kwargs["query_id"])
         jso.pop("queries")
     elif result:
         cols = ["idx", "query", "username", "room", "created_at"]
@@ -828,15 +832,12 @@ def _export_complete(
     result: list[UserQuery] | None,
 ) -> None:
     print("export complete!")
-    if (
-        job.dependency
-        and job.args
-        and isinstance(job.args[0], str)
-        and os.path.exists(job.args[0])
-    ):
-        user = job.dependency.kwargs.get("user")
-        room = job.dependency.kwargs.get("room")
-        if user and room and job.kwargs.get("download", False):
+    if job.args and isinstance(job.args[0], str) and os.path.exists(job.args[0]):
+        j_kwargs: dict = cast(dict, job.kwargs)
+        dep_kwargs: dict = cast(dict, job.dependency.kwargs) if job.dependency else {}
+        user = j_kwargs.get("user", dep_kwargs.get("user", ""))
+        room = j_kwargs.get("room", dep_kwargs.get("room", ""))
+        if user and room and cast(dict, job.kwargs).get("download", False):
             msg_id = str(uuid4())
             jso: dict[str, Any] = {
                 "user": user,
@@ -863,11 +864,11 @@ def _config(
     msg_id = str(uuid4())
     for tup in result:
         made = _row_to_value(tup)
-        if not made["enabled"]:
+        if not made.get("enabled"):
             continue
         fixed[str(made["corpus_id"])] = made
 
-    for name, conf in fixed.items():
+    for conf in fixed.values():
         if "_batches" not in conf:
             conf["_batches"] = _get_batches(conf)
 

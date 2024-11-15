@@ -14,6 +14,7 @@ class Meta(TypedDict, total=False):
     version: int | str | float
     website: NotRequired[str]
     corpusDescription: NotRequired[str | None]
+    sample_query: NotRequired[str]
 
 
 class Attribute(TypedDict, total=False):

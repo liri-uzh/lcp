@@ -3,16 +3,16 @@ Document d
 
 Segment@d s
 
-sequence seq
-    Token@s t1
+sequence@s seq
+    Token t1
         xpos2 = "ART"
-    Token@s t2
+    Token t2
         lemma = "true"
         xpos2 = "ADJ"
-    Token@s t3
+    Token t3
         xpos2 = "SUBST"
 
-KWIC => plain
+kwic => plain
     context
         s
     entities
@@ -20,7 +20,7 @@ KWIC => plain
         t2
         t3
 
-NounDist => analysis
+nounDist => analysis
     attributes
         t3.lemma
     functions

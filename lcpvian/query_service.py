@@ -49,16 +49,20 @@ from .jobfuncs import _db_query, _upload_data, _create_schema
 from .typed import (
     BaseArgs,
     Config,
+    CorpusConfig,
     DocIDArgs,
     JSONObject,
     QueryArgs,
+    RawSent,
     Results,
     ResultsValue,
     SentJob,
 )
 from .utils import (
+    _default_tracks,
     _format_config_query,
     _set_config,
+    hasher,
     PUBSUB_CHANNEL,
     CustomEncoder,
     range_to_array,
@@ -95,8 +99,8 @@ class QueryService:
         if jso is None:
             return False
         payload: JSONObject = json.loads(jso)
-        payload["user"] = kwargs["user"]
-        payload["room"] = kwargs["room"]
+        payload["user"] = kwargs.get("user", "")
+        payload["room"] = kwargs.get("room", "")
         # we may have to apply the latest post-processes...
         pps = cast(
             dict[int, Any], kwargs["post_processes"] or payload["post_processes"]
@@ -121,6 +125,7 @@ class QueryService:
             **job.meta.get("sent_job_ws_messages", {}),
             **job.meta.get("meta_job_ws_messages", {}),
         }
+
         for msg in sent_and_meta_msgs:
             # print(f"Retrieving sentences message: {msg}")
             print(f"Retrieving sentences or metadata message: {msg}")
@@ -129,8 +134,8 @@ class QueryService:
                 failed = True
                 continue
             payload = json.loads(jso)
-            payload["user"] = kwargs["user"]
-            payload["room"] = kwargs["room"]
+            payload["user"] = kwargs.get("user", "")
+            payload["room"] = kwargs.get("room", "")
             payload["no_update_progress"] = True
             payload["no_restart"] = True
             self.app["redis"].expire(msg, self.query_ttl)
@@ -138,6 +143,7 @@ class QueryService:
                 PUBSUB_CHANNEL, json.dumps(payload, cls=CustomEncoder)
             )
             tasks.append(task)
+
         if not failed:
             for task in tasks:
                 await task
@@ -153,7 +159,7 @@ class QueryService:
         """
         Here we send the query to RQ and therefore to redis
         """
-        hashed = str(hash(query))
+        hashed = str(hasher(query))
         job: Job | None
 
         if self.use_cache:
@@ -185,7 +191,10 @@ class QueryService:
         job: Job | None
         try:
             job = Job.fetch(hashed, connection=self.app["redis"])
-            first_job_id = cast(str, kwargs.get("first_job", str(job.id)))
+            first_job_id: str = cast(str, kwargs.get("first_job", ""))
+            # Use an if here because .get() can return an empty string
+            if not first_job_id:
+                first_job_id = str(job.id)
             first_job = Job.fetch(first_job_id, connection=self.app["redis"])
             is_first = first_job.id == job.id
             self.app["redis"].expire(job.id, self.query_ttl)
@@ -195,12 +204,14 @@ class QueryService:
                     if success:
                         return job, None
                 if not kwargs["full"]:
+                    success = await self.send_all_data(first_job, **kwargs)
+                if not kwargs["full"]:
                     _query(
                         job,
                         self.app["redis"],
                         job.result,
-                        user=kwargs["user"],
-                        room=kwargs["room"],
+                        user=kwargs.get("user", ""),
+                        room=kwargs.get("room", ""),
                         full=kwargs["full"],
                         post_processes=kwargs["post_processes"],
                         current_kwic_lines=kwargs["current_kwic_lines"],
@@ -233,7 +244,7 @@ class QueryService:
             "room": room,
             "corpus_id": corpus_id,
         }
-        hashed = str(hash((query, corpus_id)))
+        hashed = str(hasher((query, corpus_id)))
         job: Job
         if self.use_cache:
             try:
@@ -259,78 +270,100 @@ class QueryService:
         doc_id: int,
         user: str,
         room: str | None,
-        config: dict,
+        config: CorpusConfig,
         queue: str = "internal",
     ) -> Job:
         """
         Fetch info about a document from DB/cache
         """
-        query = f"SELECT {schema}.doc_export(:doc_id);"
-        # Start work on new logic with Tangram4 and Tagesschau (corpus_id 59 & 38)
-        if corpus in (59, 38, 127):
-            assert "tracks" in config, KeyError(
-                "Couldn't find 'tracks' in the corpus configuration"
-            )
-            global_tables: dict = {}
-            doc_layer = config.get("document")
-            query = f"WITH doc AS (SELECT frame_range FROM {schema}.{doc_layer} WHERE {doc_layer}_id = :doc_id)"
-            for layer, props in config["tracks"].get("layers", {}).items():
-                layer_table = _get_table(
-                    layer, config, "", ""
-                )  # no batch and no lang for now
-                mapping = _get_mapping(layer, config, "", "")
-                crossjoin = ""
-                whereand = ""
-                lab = layer_table[0]
-                selects = ["'frame_range'", range_to_array(f"{lab}.frame_range")]
-                if layer.lower() == config.get("segment", "").lower():
-                    prepared_table = mapping.get("prepared", {}).get(
-                        "relation", f"prepared_{layer}"
-                    )
-                    crossjoin = f"\n    CROSS JOIN {schema}.{prepared_table} ps"
-                    whereand = f"\n    AND {lab}.{layer}_id = ps.{layer}_id"
-                    selects += ["'prepared'", "ps.content"]
-                for split in props.get("split", []):
-                    split_name = split
-                    split_mapping = mapping.get("attributes", {}).get(split, {})
-                    if split_mapping.get("type") == "relation":
-                        split_name = f"{split_mapping.get('name',split)}_id"
-                    selects += [f"'{split_name}'", f"{lab}.{split_name}"]
-                for attr_name, attr_props in mapping.get("attributes", {}).items():
-                    if attr_name not in config.get("globalAttributes", {}):
-                        continue
-                    global_tables[attr_name] = attr_props.get("name", attr_name)
-                query += f""",
+        tracks: dict = cast(dict, config.get("tracks", _default_tracks(config)))
+        # assert "tracks" in config, KeyError(
+        #     "Couldn't find 'tracks' in the corpus configuration"
+        # )
+        global_tables: dict = {}
+        doc_layer = config.get("document")
+        query = f"WITH doc AS (SELECT frame_range FROM {schema}.{doc_layer} WHERE {doc_layer}_id = :doc_id)"
+        glob_attrs: dict = cast(dict, config.get("globalAttributes", {}))
+        for layer in tracks.get("layers", {}):
+            layer_table = _get_table(
+                layer, config, "", ""
+            )  # no batch and no lang for now
+            attributes = config["layer"].get(layer, {}).get("attributes", {})
+            attributes_names: dict[str, None] = {k: None for k in attributes}
+            mapping = _get_mapping(layer, config, "", "")
+            mapping_attrs: dict[str, Any] = mapping.get("attributes", {})
+            for k in mapping_attrs:
+                attributes_names[k] = None
+            crossjoin = ""
+            whereand = ""
+            lab = layer_table[0]
+            selects = ["'frame_range'", range_to_array(f"{lab}.frame_range")]
+            if layer.lower() == config.get("segment", "").lower():
+                prepared_table = mapping.get("prepared", {}).get(
+                    "relation", f"prepared_{layer}"
+                )
+                crossjoin = f"\n    CROSS JOIN {schema}.{prepared_table} ps"
+                whereand = f"\n    AND {lab}.{layer}_id = ps.{layer}_id"
+                selects += ["'prepared'", "ps.content"]
+            for attr_name in attributes_names:
+                attr_type = attributes.get(attr_name, {}).get("type")
+                if attr_type in ("labels", "vector"):
+                    continue
+                mappings = mapping_attrs.get(attr_name, {})
+                mapping_type = mappings.get("type")
+                name = attr_name
+                ref = f"{lab}.{name}"
+                if mapping_type == "relation":
+                    if attributes.get(attr_name, {}).get("ref") in glob_attrs:
+                        name = f"{mappings.get('key', name)}_id"
+                        ref = f"{lab}.{name}"
+                    else:
+                        table = mappings.get("name", name)
+                        crossjoin += f"\n    CROSS JOIN {schema}.{table} {name}"
+                        key = mappings.get("key", name)
+                        whereand += f"\n    AND {lab}.{key}_id = {name}.{key}_id"
+                        ref = f"{name}.{name}"
+                selects += [f"'{name}'", ref]
+            for attr_name, attr_props in mapping_attrs.items():
+                if attr_name not in glob_attrs:
+                    continue
+                global_tables[attr_name] = attr_props.get("name", attr_name)
+            query += f""",
 {layer} AS (
     SELECT 'layer', '{layer}', jsonb_build_object({','.join(selects)}) AS props
     FROM {schema}.{layer_table} {lab}, doc {crossjoin}
-    WHERE {lab}.frame_range && doc.frame_range {whereand}
+    WHERE {lab}.frame_range <@ doc.frame_range {whereand}
 )"""
-            layers_ctes = [x for x in config["tracks"].get("layers", {})]
-            for gar in config["tracks"].get("group_by", []):
-                assert "globalAttributes" in config, KeyError(
-                    "Could not find globalAttributes in corpus config"
-                )
-                gar_table = global_tables.get(gar, gar)
-                lab = gar_table[0]
-                gar_props = [f"({x}.props->'{gar}_id')::int" for x in layers_ctes]
-                selects = [f"'{gar}'", f"{lab}.{gar}", f"'{gar}_id'", f"{lab}.{gar}_id"]
-                query += f""",
+        layers_ctes = [x for x in tracks.get("layers", {})]
+        for gar in tracks.get("group_by", []):
+            assert "globalAttributes" in config, KeyError(
+                "Could not find globalAttributes in corpus config"
+            )
+            gar_table = global_tables.get(gar, gar)
+            lab = gar_table[0]
+            gar_props = [f"({x}.props->'{gar}_id')::text" for x in layers_ctes]
+            selects = [f"'{gar}'", f"{lab}.{gar}", f"'{gar}_id'", f"{lab}.{gar}_id"]
+            query += f""",
 {gar} AS (
     SELECT DISTINCT 'glob', '{gar}', jsonb_build_object({','.join(selects)}) AS props
-    FROM {schema}.{gar_table} {lab}, {', '.join(layers_ctes)}
-    WHERE {lab}.{gar}_id IN ({','.join(gar_props)})
+    FROM {schema}.{gar_table} {lab}
 )"""
-            query += f"\nSELECT * FROM {next(x for x in config['tracks']['layers'])}"
-            for n, layer in enumerate(config["tracks"]["layers"]):
-                if n == 0:
-                    continue
-                query += f"\nUNION ALL SELECT * FROM {layer}"
-            for gar in config["tracks"].get("group_by", {}):
-                query += f"\nUNION ALL SELECT * FROM {gar}"
-            query += ";"
+        # , {', '.join(layers_ctes)}
+        # WHERE {lab}.{gar}_id IN ({','.join(gar_props)})
+        # Trying to remove WHEREs under the assumption that global attributes will always be small
+        query += f"\nSELECT * FROM {next(x for x in tracks['layers'])}"
+        for n, layer in enumerate(tracks["layers"]):
+            if n == 0:
+                continue
+            query += f"\nUNION ALL SELECT * FROM {layer}"
+        for gar in tracks.get("group_by", {}):
+            query += f"\nUNION ALL SELECT * FROM {gar}"
+        doc_range = range_to_array("doc.frame_range")
+        query += f"\nUNION ALL SELECT 'doc', '{doc_layer}', jsonb_build_object('frame_range',{doc_range}) AS props FROM doc"
+        query += ";"
+        print("document query", query)
         params = {"doc_id": doc_id}
-        hashed = str(hash((query, doc_id)))
+        hashed = str(hasher((query, doc_id)))
         job: Job
         if self.use_cache:
             try:
@@ -367,15 +400,14 @@ class QueryService:
         queue: str = "query",
         **kwargs: Unpack[SentJob],
     ) -> list[str]:
-        depends_on = kwargs["depends_on"]
+        depends_on = kwargs.get("depends_on", "")
         hash_dep = tuple(depends_on) if isinstance(depends_on, list) else depends_on
-        hashed = str(
-            hash((query, hash_dep, kwargs["offset"], kwargs["needed"], kwargs["full"]))
-        )
+        offset = kwargs.get("offset", 0)
+        needed = kwargs.get("needed", 0)
+        full = kwargs.get("full", False)
+        hashed = str(hasher((query, hash_dep, offset, needed, full)))
         kwargs["sentences_query"] = query
-        hashed_meta = str(
-            hash((meta, hash_dep, kwargs["offset"], kwargs["needed"], kwargs["full"]))
-        )
+        hashed_meta = str(hasher((meta, hash_dep, offset, needed, full)))
         job_sent: Job
 
         if self.use_cache:
@@ -433,11 +465,11 @@ class QueryService:
             if job.get_status() == "finished":
                 print("Meta found in redis memory. Retrieving...")
                 kwa = {
-                    "full": kwargs["full"],
-                    "user": kwargs["user"],
-                    "room": kwargs["room"],
+                    "full": kwargs.get("full", False),
+                    "user": kwargs.get("user", ""),
+                    "room": kwargs.get("room", ""),
                     "from_memory": True,
-                    "total_results_requested": kwargs["total_results_requested"],
+                    "total_results_requested": kwargs.get("total_results_requested", 0),
                 }
                 _meta(job, self.app["redis"], job.result, **kwa)
                 return [job.id]
@@ -459,14 +491,24 @@ class QueryService:
             self.app["redis"].expire(job.id, self.query_ttl)
             if job.get_status() == "finished":
                 print("Sentences found in redis memory. Retrieving...")
+                trr = kwargs.get("total_results_requested", 0)
                 kwa = {
-                    "full": kwargs["full"],
-                    "user": kwargs["user"],
-                    "room": kwargs["room"],
+                    "full": kwargs.get("full", False),
+                    "user": kwargs.get("user", ""),
+                    "room": kwargs.get("room", ""),
                     "from_memory": True,
-                    "total_results_requested": kwargs["total_results_requested"],
+                    "total_results_requested": trr,
                 }
-                _sentences(job, self.app["redis"], job.result, **kwa)
+                first_job_id = cast(dict, job.kwargs)["first_job"]
+                first_job = Job.fetch(first_job_id, connection=self.app["redis"])
+                all_sent_ids = first_job.meta.get("_sent_jobs", [])
+                results: list[RawSent] = []
+                for sj in all_sent_ids:
+                    sent_job = Job.fetch(sj, connection=self.app["redis"])
+                    results += sent_job.result
+                    if len(results) >= trr:
+                        break
+                _sentences(job, self.app["redis"], results, **kwa)
                 return [job.id]
         except NoSuchJobError:
             pass
@@ -621,7 +663,6 @@ class QueryService:
         queue: str = "background",
         gui: bool = False,
         user_data: JSONObject | None = None,
-        is_vian: bool = False,
     ) -> Job:
         """
         Upload a new corpus to the system
@@ -629,7 +670,6 @@ class QueryService:
         kwargs = {
             "gui": gui,
             "user_data": user_data,
-            "is_vian": is_vian,
         }
         job: Job = self.app[queue].enqueue(
             _upload_data,
@@ -651,8 +691,9 @@ class QueryService:
         user: str | None,
         room: str | None,
         project_name: str,
+        corpus_name: str,
         queue: str = "background",
-        drops: list[str] | None = None,
+        # drops: list[str] | None = None,
         gui: bool = False,
     ) -> Job:
         kwargs = {
@@ -661,6 +702,7 @@ class QueryService:
             "room": room,
             "path": path,
             "project_name": project_name,
+            "corpus_name": corpus_name,
             "gui": gui,
         }
         job: Job = self.app[queue].enqueue(
@@ -670,7 +712,8 @@ class QueryService:
             job_timeout=self.timeout,
             on_success=Callback(_schema, self.callback_timeout),
             on_failure=Callback(_upload_failure, self.callback_timeout),
-            args=(create, schema_name, drops),
+            # args=(create, schema_name, drops),
+            args=(create, schema_name),
             kwargs=kwargs,
         )
         return job
@@ -713,15 +756,16 @@ class QueryService:
 
         for job in jobs:
             maybe = Job.fetch(job, connection=self.app["redis"])
-            if base and maybe.kwargs.get("simultaneous") != base:
+            mk = cast(dict, maybe.kwargs)
+            if base and mk.get("simultaneous", "") != base:
                 continue
-            if base and maybe.kwargs.get("is_sentences"):
+            if base and mk.get("is_sentences", False):
                 continue
             if job in self.app["canceled"]:
                 continue
-            if room and maybe.kwargs.get("room") != room:
+            if room and mk.get("room") != room:
                 continue
-            if user and maybe.kwargs.get("user") != user:
+            if user and mk.get("user") != user:
                 continue
             try:
                 self.cancel(maybe)

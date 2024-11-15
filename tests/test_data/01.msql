@@ -8,7 +8,7 @@ SELECT -2::int2 AS rstype,
 FROM bnc1.segmentrest s
 LEFT JOIN bnc1.document Document ON Document.char_range @> s.char_range
 WHERE s.Segment_id = ANY(:ids)
-GROUP BY Document_id,
-         Document_char_range,
-         Segment_id,
-         Segment_char_range;
+GROUP BY Document.document_id,
+         Document."char_range",
+         s.segment_id,
+         s."char_range";

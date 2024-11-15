@@ -57,7 +57,7 @@ source ./lcp-venv/bin/activate
 
 ### Install the codebase
 
-From the repo root dir you can do: 
+From the repo root dir you can do:
 
 ```python
 pip install -e .
@@ -91,10 +91,10 @@ When LCP is started, it will look in `~/lcp` for a `.env` file. If you didn't in
 
 #### `.env` settings
 
-* You will need to provide `.env` with the location of your Redis/PostgeSQL instances, as well as the PostgreSQL database name (the defaults assume a default local installation of both PostgreSQL and Redis).
-* Make sure the `IMPORT` related settings don't exceed your system's resources.
-* Comment out the `SSH_` variables if you're not using them, or you'll get an SSH gateway error.
-* If you don't want to use any authentication, make sure `AUTHENTICATION_CLASS` is empty. Otherwise, if you have a custom authentication class you wish to use, point to it: 
+* You will need to provide `.env` with the location of your Redis/PostgeSQL instances, as well as the PostgreSQL database name (the defaults assume a default local installation of both PostgreSQL and Redis)
+* Make sure the `IMPORT` related settings don't exceed your system's resources
+* Comment out the `SSH_` variables if not using, or you'll get an SSH gateway error.
+* If you don't want to use any authentication, make sure `AUTHENTICATION_CLASS` is empty. Otherwise, if you have a custom authentication class you wish to use, point to it:
 
 ```bash
 AUTHENTICATION_CLASS=somecodedir.auth.Authentication
@@ -352,3 +352,43 @@ coverage html
 gunicorn --workers 3 --bind 127.0.0.1:9090 lcpvian.deploy:create_app --worker-class aiohttp.GunicornUVLoopWebWorker
 ```
 
+
+# Running with Docker
+
+You can run the LiRI Corpus Platform using Docker to simplify the setup and deployment process. The docker-compose.yml file included in the repository defines all the necessary services and configurations.
+
+## Prerequisites
+Ensure you have Docker and Docker Compose installed on your system.
+
+## Running the application
+To run the application using Docker, navigate to the root directory of the repository where the docker-compose.yml file is located and run one of these commands:
+
+**For production:**
+```bash
+docker compose up --build
+```
+
+**For development:**
+In development mode the folders are mounted into the containers. Changes made locally will reflect in the running application.
+```bash
+docker compose -f docker-compose.dev.yml up --build
+```
+
+## Accessing the application
+Once the application is running, it will be available at:
+
+- Application URL: http://localhost:8080
+- Database: The PostgreSQL database will be available on port 15432. Only available with `docker-compose.dev.yml`.
+
+## Docker Compose Services
+The docker-compose.yml file defines several services:
+
+- redis: Runs a Redis container
+- db: Builds and runs a PostgreSQL container from the `./database` directory
+- worker: Builds and runs a worker container from the `Dockerfile.worker` file
+- backend: Builds and runs the backend container from the `Dockerfile.web` file.
+- frontend_prod: Builds and runs the production frontend container from the `./frontend` directory
+- frontend_dev: Builds and runs the development frontend container from the `Dockerfile.dev` file in the `./frontend` directory.
+
+## Configuration
+The configuration for each service is specified in the `docker-compose.yml` file. Make sure to update the `.env.docker` file with your specific environment variables as needed.

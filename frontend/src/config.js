@@ -16,7 +16,7 @@ if (process.env.APP_TYPE == "videoscope") {
       wsUrl: "wss://videoscope.linguistik.uzh.ch/ws",
       apiHeaders: {},
       sentryDSN: null,
-      baseMediaUrl: "https://videoscope.linguistik.uzh.ch/video",
+      baseMediaUrl: "https://videoscope.linguistik.uzh.ch/media",
     };
   } else if (process.env.NODE_ENV == "staging") {
     config = {
@@ -125,12 +125,12 @@ else if (process.env.APP_TYPE == "lcphome") {
       wsUrl: "ws://localhost:9090/ws",
       apiHeaders: testUserHeaders,
       sentryDSN: null,
-      baseMediaUrl: "http://localhost:8000",
+      baseMediaUrl: "http://localhost:9090/media/",
     };
   }
 }
 else {
-  // LCP HOME
+  // LCP
   if (process.env.NODE_ENV === "production") {
     config = {
       appName: "LCP",
@@ -155,7 +155,7 @@ else {
       wsUrl: "ws://localhost:9090/ws",
       apiHeaders: testUserHeaders,
       sentryDSN: null,
-      baseMediaUrl: "http://localhost:8000",
+      baseMediaUrl: "http://localhost:8090/",
     };
   }
 }
@@ -163,6 +163,7 @@ config.appType = process.env.APP_TYPE;
 
 if (process.env.NODE_ENV == "production") {
   config['appLinks'] = {
+    "lcphome": "https://lcp.linguistik.uzh.ch",
     "catchphrase": "https://catchphrase.linguistik.uzh.ch",
     "soundscript": "https://soundscript.linguistik.uzh.ch",
     "videoscope": "https://videoscope.linguistik.uzh.ch",
@@ -170,6 +171,7 @@ if (process.env.NODE_ENV == "production") {
 }
 else if (process.env.NODE_ENV == "staging") {
   config['appLinks'] = {
+    "lcphome": "https://lcp.test.linguistik.uzh.ch",
     "catchphrase": "https://catchphrase.test.linguistik.uzh.ch",
     "soundscript": "https://soundscript.test.linguistik.uzh.ch",
     "videoscope": "https://videoscope.test.linguistik.uzh.ch"
@@ -177,10 +179,10 @@ else if (process.env.NODE_ENV == "staging") {
 }
 else {
   config['appLinks'] = {
+    "lcphome": "http://localhost:8080",
     "catchphrase": "http://localhost:8081",
     "soundscript": "http://localhost:8082",
-    "videoscope": "http://localhost:8083",
-
+    "videoscope": "http://localhost:8083"
   }
 }
 

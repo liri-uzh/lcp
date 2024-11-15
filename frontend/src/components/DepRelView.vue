@@ -158,6 +158,8 @@ export default {
       let pos_id = this.columnHeaders.findIndex(v=>v.endsWith("pos"));
       let head_id = this.columnHeaders.indexOf("head");
       let label_id = this.columnHeaders.indexOf("label");
+      if (label_id < 0)
+        label_id = this.columnHeaders.indexOf("udep"); // replace this with looking up the first categorical attribute
       let large_index_counter = 5000;
 
       // Compile tokens and link matrix
@@ -316,6 +318,8 @@ export default {
     })
 
     let label_id = this.columnHeaders.indexOf("label");
+    if (label_id < 0)
+      label_id = this.columnHeaders.indexOf("udep"); // replace this with looking up first categorical column
     svg.append("g")
     .attr("class", "text-form")
       .selectAll("text")
@@ -378,10 +382,10 @@ export default {
     let links = svg.append("g")
       .attr("class", "links")
       .selectAll(".deprel-link")
-      .data(this.links.filter( l => l.label != "root" ))
+      .data(this.links.filter( l => (l.label||l.udep) != "root" ))
       .enter()
       .append("g")
-      .attr("class", d => `link-type-${d.label}`)
+      .attr("class", d => `link-type-${d.label||d.udep}`)
 
     links.append("line")
           .attr("x1", d => this.calcLine(d)[0] + 4)
@@ -409,7 +413,7 @@ export default {
           .attr("class", "link-text")
           .attr("text-anchor", "middle")
           .attr("dominant-baseline", "middle")
-          .text(d => d.label);
+          .text(d => d.label || d.udep);
 
     // adapt CSS highlighting to SVG
     [...svg.node().querySelectorAll("text[class^=color-group-]")].forEach( (node) => {

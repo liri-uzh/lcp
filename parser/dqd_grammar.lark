@@ -1,135 +1,144 @@
-?start: _NL* [(query|results)+]
+part_of : "@"label
 
-query           : statement__
+operator : OPERATOR
+operand_left : (math | function)
+operand_right : (math | function)
+operation : operand_left operator operand_right // rename: operand_left>left operand_right>right
+math : POS_INT
+     | NEG_INT
+     | FLOAT
+     | operation
+min : POS_INT
+max : POS_INT | WILDCARD
+repetition : min".."max
 
-statement__     : SEQUENCE("@"part_of)? label? repetition? _NL _INDENT members+ _DEDENT       -> sequence
-                | SET label? _NL _INDENT members+ _DEDENT                                     -> set
-                | GROUP label? _NL _INDENT members+ _DEDENT                                   -> group
-                | quantor__universal _NL _INDENT args__q_two _DEDENT                          -> universal_quantification
-                | quantor__existential _NL _INDENT args__q_one _DEDENT                        -> existential_quantification
-                | operator__unary _NL _INDENT args__one _DEDENT                               -> logical_op_unary
-                | operator__binary _NL _INDENT args__two _DEDENT                              -> logical_op_binary
-                | operator__n_ary _NL _INDENT args__any _DEDENT                               -> logical_op_n_ary
-                | layer(":"partition)?("@"part_of)? label? _NL [_INDENT constraints+ _DEDENT] -> unit
-                | "```cqp" label? ("@"part_of)? _NL _INDENT cqp__ _DEDENT "```" _NL           -> cqp
-                | LABEL _NL*                                                                  -> reference
+left_span : NEG_INT | WILDCARD
+right_span : POS_INT | WILDCARD
+window : left_span ("..+"|"..") right_span
 
-cqp__           : (ANYTHING _NL|_INDENT cqp__ _DEDENT)+
+quantifier : NEGATION? EXISTENTIAL
+           | NEGATION? UNIVERSAL
 
-members         : statement__                                       -> members
+quantification : quantifier _NL _INDENT (unit | sequence | set) _DEDENT
 
-comparison      : left operator comparison_type__ _NL               -> comparison
+arguments : ((entity | function | attribute | string | regex | math) ","?)+
+function_name : FUNCTION_NAME
+function : function_name arguments ")"
 
-left            : entity
-                | function
+case_insensitive : IFLAG
+pattern : REGEX
+regex : pattern case_insensitive?
+string : DOUBLE_QUOTED_STRING
+attribute : ATTRIBUTE
+label : LABEL | IFLAG | ANALYSIS_FUNCTIONS // e.g. it's OK to use "frequency" as a label
+entity : LABEL | IFLAG | ANALYSIS_FUNCTIONS // e.g. it's OK to use "frequency" as an entity reference
+center : LABEL | IFLAG | ANALYSIS_FUNCTIONS // e.g. it's OK to use "frequency" as center
+space : LABEL | IFLAG | ANALYSIS_FUNCTIONS // e.g. it's OK to use "frequency" as space
+reference : LABEL | IFLAG | ANALYSIS_FUNCTIONS | ATTRIBUTE
+layer : LAYER
 
-constraints     : comparison
-                | statement__
+left : (function | reference | attribute | string | regex | math)
+right : (function | reference | attribute | string | regex | math)
+comparator : NEGATION? (EQUAL|COMPARATIVE|CONTAIN)
 
-quantor__universal   : QUANTOR_UNIVERSAL
-quantor__existential : QUANTOR_EXISTENTIAL
+comparison : left comparator right
 
-operator__unary  : OPERATOR_UNARY
-operator__binary : OPERATOR_BINARY
-operator__n_ary  : OPERATOR_N_ARY
+unary_operator : NEGATION
+nary_operator : CONJUNCTION | DISJUNCTION
 
-args__q_one      : statement__ ~ 1
-args__q_two      : statement__ ~ 2
-args__one        : constraints ~ 1
-args__two        : constraints ~ 2
-args__any        : constraints constraints+
+logical_expression : unary_operator _NL _INDENT arg _NL* _DEDENT
+                   | nary_operator _NL _INDENT args _DEDENT
 
-results         : label__results RESULTS_ARROW results_type__                        -> results
-results_type__  : "plain" _NL _INDENT context entities _DEDENT                       -> results_plain
-                | "analysis" _NL _INDENT attributes functions filter? _DEDENT        -> results_analysis
-                | "collocation" _NL _INDENT (center window|space) attribute _DEDENT  -> results_collocation
+unit : layer(part_of)? label? _NL (_INDENT constraints? _DEDENT)?
+constraint : quantification
+           | unit
+           | logical_expression
+           | comparison
+arg: quantification
+           | unit
+           | logical_expression
+           | comparison
+constraints : (constraint _NL*)+                     // skip: constraint
+args : (constraint _NL*)+                            // skip: constraint
 
-context         : "context" _NL _INDENT context__+ _NL* _DEDENT _NL*                 -> context
-entities        : "entities" _NL _INDENT entity_ref__+ _NL* _DEDENT _NL*             -> entities
+members : ((unit|sequence) _NL*)+
+set : "set"(part_of)? label? _NL _INDENT members _DEDENT
+sequence : "sequence"(part_of)? label? repetition? _NL _INDENT members _DEDENT
 
-attributes      : "attributes" _NL _INDENT (attribute__ _NL)+ _DEDENT                -> attributes
-filter          : "filter" _NL _INDENT comparison _DEDENT                              -> filter
-functions       : "functions" _NL _INDENT functions__+ _DEDENT                       -> functions
+result : label "=>" (results_plain | results_analysis | results_collocation)
+results : result+                                           // skip: result
 
-center          : "center" _NL _INDENT entity_ref__ _DEDENT                          -> center
-window          : "window" _NL _INDENT range__ _NL _DEDENT                           -> window
-space           : "space" _NL _INDENT entity_ref__+ _DEDENT                          -> space
-attribute       : "attribute" _NL _INDENT attribute__ _NL _DEDENT                    -> attribute
+results_plain        : "plain" _NL _INDENT results_plain_context results_plain_entities _DEDENT // rename: results_plain_context>context results_plain_entities>entities
+results_plain_context : "context" _NL _INDENT (entity _NL*)+ _DEDENT // skip: entity
+results_plain_entities : "entities" _NL _INDENT (entity _NL*)+ _DEDENT // skip: entity
 
-entity          : (LABEL|LAYER|DOTENTITY)
-operator        : OPERATOR
-
-comparison_type__ : NUMBER_EXPRESSION                                                -> math_comparison
-                  | STRING_LITERAL                                                   -> string_comparison
-                  | REGEX                                                            -> regex_comparison
-                  | (LABEL|LAYER|DOTENTITY)                                          -> entity_comparison
-                  | function                                                         -> function_comparison
+results_analysis     : "analysis" _NL _INDENT results_analysis_attributes results_analysis_functions results_analysis_filter? _DEDENT // rename: results_analysis_attributes>attributes results_analysis_functions>functions results_analysis_filter>filter
+results_analysis_attributes : "attributes" _NL _INDENT ((attribute|function) _NL*)+ _DEDENT
+results_analysis_functions : "functions" _NL _INDENT (ANALYSIS_FUNCTIONS _NL*)+ _DEDENT
+results_analysis_filter : "filter" _NL _INDENT ((comparison | comparison) _NL*)+ _DEDENT // dirty trick to force 'comparison' key after lark_to_cobquec
 
 
-label           : LABEL                                                                -> label
-layer           : LAYER                                                                -> layer
-part_of         : LABEL                                                                -> part_of
-partition       : LABEL                                                                -> partition
-repetition      : min(".."max)?                                                        -> repetition
+results_collocation : "collocation" _NL _INDENT "space" _NL _INDENT space _NL* _DEDENT results_collocation_attribute _DEDENT  // rename: results_collocation_attribute>attribute
+                    | "collocation" _NL _INDENT "center" _NL _INDENT center _NL* _DEDENT "window" _NL _INDENT window _NL* _DEDENT results_collocation_attribute _DEDENT
+results_collocation_attribute : "attribute" _NL _INDENT reference _NL* _DEDENT // skip: reference
 
-min : NUMBER_MIN
-max : NUMBER_MAX
+query : ((quantification | sequence | set | unit | constraint) _NL*)+
 
-label__results  : (LABEL|LAYER)
+top : _NL* query results
 
-entity_ref__    : LABEL _NL*
-context__       : LABEL _NL*
 
-functions__     : ENUM_FUNCTIONS _NL*
-attribute__     : STRING
-filter__        : STRING
-range__         : RANGE
+FUNCTION_NAME.3 : "length("
+                | "size("
+                | "range("
+                | "position("
+                | "start("
+                | "end("
+                | "century("
+                | "date("
+                | "year("
+                | "day("
 
-function        : function_name "(" arguments+ ")"                         -> function
-function_name   : FUNCTION
-arguments       : entity ","?
-                | function ","?
-                | NUMBER_EXPRESSION                                        -> argument_number
-                | STRING_LITERAL                                           -> argument_string
+ANALYSIS_FUNCTIONS.3 : "frequency"
+                   | "minimum"
+                   | "maximum"
+                   | "average"
+                   | "stddev"
 
-GROUP.4               : /group/
-SET.4                 : /set/
-SEQUENCE.4            : /sequence/
+EXISTENTIAL.2 : "EXISTS"
+UNIVERSAL.2 : "ALL"
+CONJUNCTION.2 : "AND"
+DISJUNCTION.2 : "OR"
 
-QUANTOR_UNIVERSAL.4   : /(ALL|!ALL|¬ALL)/
-QUANTOR_EXISTENTIAL.4 : /(EXISTS?|[!¬~]EXISTS?|NOT EXISTS?)/
-OPERATOR_UNARY.4      : /NOT/
-OPERATOR_BINARY.4     : /(NAND|!AND|¬AND|NOR|!OR|¬OR|XOR|IMPLY|NIMPLY|!IMPLY|¬IMPLY)/
-OPERATOR_N_ARY.4      : /(AND|OR)/
-RESULTS_ARROW.4       : /=>/
-ENUM_FUNCTIONS.4      : /frequency|minimum|maximum|average|stddev/
-FUNCTION.4            : /length|size|min|max|century|year|month|day/
+POS_INT : /[1-9]*[0-9]/                   // type: number
+NEG_INT : /-[1-9]*[0-9]/                  // type: number
+FLOAT : /-?[1-9]*[0-9]\.[0-9]+/           // type: number
 
-DOTENTITY.3      : /[a-zA-Z_][a-zA-Z0-9_]*\.[a-zA-Z0-9_]+/
-NUMBER_EXPRESSION.3 : /-?([0-9]+[.])?[0-9]+[smy]?|[(]*([a-zA-Z][a-zA-Z0-9.]*|-?([0-9]+[.])?[0-9]+[smy]?)(\s*[*\/+-]\s*[(]*([a-zA-Z][a-zA-Z0-9.]*|-?([0-9]+[.])?[0-9]+[smy]?))+[)]*/
+WILDCARD : "*"
+IFLAG : "i"
 
-NUMBER_MIN : /\d+/
-NUMBER_MAX : /(\d+|\*)/
+NEGATION.2 : /(~|¬|!|not )/i
+COMPARATIVE : /[><]=?/
+EQUAL : "="
+CONTAIN : "contain"
 
-OPERATOR.2       : /((not |!)?contain|<(-|\d+(\.\.\d+)?)?>|>=|<=|<|>|!=|¬=|¬~|~|¬|=|!)/
-LAYER.2          : /[A-Z_][a-zA-Z0-9_]*/
-LABEL.2          : /[a-z][a-zA-Z0-9_]*/
+LAYER : /[A-Z][a-zA-Z0-9_]+/
+LABEL : /[a-z][a-zA-Z0-9_]*/
+ATTRIBUTE : /[a-z][a-zA-Z0-9_]*(\.([a-zA-Z0-9_]+))+/
 
-REPETITION.1    : /(\d+\.\.(\d+|\*)|[1-9]+\d*)/
+DOUBLE_QUOTED_STRING : /"[^\n]*?"/
+REGEX           : /\/.+\//
 
-STRING_LITERAL.1  : /('.+'|".+")/
-REGEX.1           : /\/.+\//
-RANGE.1           : /([-+][0-9]+|0)[.]{2}([-+][0-9]+|0)/
-STRING.1          : /[^\n\r ].*/
+OPERATOR : /(\+|-|\/|\*)/
 
 DL_COMMENT      : /<#(>|#*[^#>]+)*#+>/ _NL
 
-ANYTHING        : /.+/
+_NL: /((#[^\r\n]*)?\r?\n[\t ]*)+/
 
-%import common.CNAME                                                                -> NAME
+%import common.WS
+%import common.SH_COMMENT
 %import common.WS_INLINE
 %declare _INDENT _DEDENT
 %ignore WS_INLINE
 %ignore DL_COMMENT
-
-_NL: /((#[^\r\n]*)?\r?\n[\t ]*)+/
+%ignore WS
+%ignore SH_COMMENT

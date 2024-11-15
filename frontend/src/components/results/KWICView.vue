@@ -475,14 +475,22 @@ export default {
         });
     },
     columnHeaders() {
-      let partitions = this.corpora.corpus.partitions
-        ? this.corpora.corpus.partitions.values
+      const corpus = this.corpora.corpus;
+      let partitions = corpus.partitions
+        ? corpus.partitions.values
         : [];
-      let columns = this.corpora.corpus["mapping"]["layer"][this.corpora.corpus["segment"]];
+      let columns = corpus["mapping"]["layer"][corpus["segment"]];
       if (partitions.length) {
         columns = columns["partitions"][partitions[0]];
       }
-      return columns["prepared"]["columnHeaders"];
+      const headers = columns["prepared"]["columnHeaders"];
+      // for (let [layer, props] of Object.entries(corpus["layer"])) {
+      //   if (layer.toLowerCase() == corpus["segment"].toLowerCase()
+      //       || (props["contains"]||"").toLowerCase() != corpus["token"].toLowerCase())
+      //     continue;
+      //   headers.push(layer);
+      // }
+      return headers;
     },
   },
   mounted() {

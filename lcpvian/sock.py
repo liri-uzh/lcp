@@ -69,6 +69,10 @@ async def _process_message(
         return
     data = json.loads(cast(bytes, message["data"]))
     raw: bytes = app["redis"].get(data["msg_id"])
+    if not raw and "shared_redis" in app:
+        raw = app["shared_redis"].get(data["msg_id"])
+    if not raw:
+        return None
     payload: JSONObject = json.loads(raw)
     payload["user"] = data.get("user", payload.get("user", ""))
     payload["room"] = data.get("room", payload.get("room", ""))
@@ -128,14 +132,19 @@ async def handle_redis_response(
         logging.error(str(err), extra=extra)
 
 
-async def listen_to_redis(app: web.Application, test: bool = False) -> None:
+async def listen_to_redis(
+    app: web.Application, instance: str, test: bool = False
+) -> None:
     """
     Using our async redis connection instance, listen for events coming from redis
     and delegate to the sender, All the try/except logic is shutdown logic only
     """
+    ainstance = f"a{instance}"
+    if instance not in app or ainstance not in app:
+        return
     while True:
         try:
-            async with app["aredis"].pubsub() as channel:
+            async with app[ainstance].pubsub() as channel:
                 await channel.subscribe(PUBSUB_CHANNEL)
                 await handle_redis_response(channel, app, test=test)
         except ConnectionError as err:
@@ -286,7 +295,7 @@ async def _handle_message(
     #   to all users with the latest config so the FE can show it
     if action == "uploaded":
         # TODO: Should be chnaged to accept all app types (catchphrase, soundscript, videoscope)
-        app_type = "videoscope" if cast(bool, payload["is_vian"]) else "lcp"
+        app_type = "lcp"
         user_data = cast(JSONObject | None, payload["user_data"])
         conf: CorpusConfig = cast(CorpusConfig, payload["entry"])
         conf["_batches"] = _get_batches(conf)
@@ -300,7 +309,8 @@ async def _handle_message(
             app["config"].pop(sid, {})
         app["config"][id_str] = conf
         if payload.get("gui"):
-            filt = _filter_corpora(app["config"], app_type, user_data)
+            authenticator = app["auth_class"](app)
+            filt = _filter_corpora(authenticator, app["config"], app_type, user_data)
             payload["config"] = cast(JSONObject, filt)
             await push_msg(app["websockets"], "", payload)
 
@@ -398,7 +408,6 @@ async def _handle_query(
             "word_count",
             "full",
             "first_job",
-            "is_vian",
             "table",
             "total_duration",
             "jso",
@@ -429,12 +438,12 @@ async def _handle_query(
     if to_submit is not None:
         await to_submit
 
-    if to_export := the_job.meta.get("to_export"):
-        done_batches, all_batches = the_job.kwargs.get(
-            "done_batches"
-        ), the_job.kwargs.get("all_batches")
+    if to_export := the_job.meta.get("to_export", {}):
+        tjk = cast(dict, the_job.kwargs)
+        done_batches = cast(list, tjk.get("done_batches", []))
+        all_batches = cast(list, tjk.get("all_batches", []))
         if len(done_batches) + 1 == len(all_batches):
-            await export(app, to_export, the_job.kwargs.get("first_job", ""))
+            await export(app, to_export, tjk.get("first_job", ""))
 
 
 async def _ait(self: WSMessage) -> WSMessage:
@@ -506,7 +515,7 @@ async def _handle_sock(
         print("No room: something wrong")
         return None
     session_id: str = possible_session
-    possible_user: str | None = payload["user"]
+    possible_user: str | None = payload.get("user", None)
     if possible_user is None:
         print("User not logged in! Nothing to do")
         return None

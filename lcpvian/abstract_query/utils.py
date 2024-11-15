@@ -5,7 +5,7 @@ from typing import Any, cast
 
 from .typed import Joins, LabelLayer, QueryType
 
-SUFFIXES = {".*", ".+", ".*?", ".?", ".+?"}
+SUFFIXES = {".*", ".+", ".*?", ".?", ".+?", "."}
 
 
 @dataclass
@@ -36,6 +36,23 @@ class QueryData:
     # the main sequences in the query; note that these aren't hashable, so QueryData cannot be shared across threads
     sqlsequences: list[Any] = field(default_factory=list)
 
+    def unique_label(
+        self,
+        label: str = "anonymous",
+        layer="__internal",
+        references: LabelLayer | None = None,
+    ) -> str:
+        if references is None:
+            references = self.label_layer
+        label = label or "anonymous"
+        new_label: str = label
+        n: int = 1
+        while new_label in references:
+            n += 1
+            new_label = f"{label}{str(n)}"
+        references[new_label] = (layer, dict({}))
+        return new_label
+
 
 @dataclass
 class Config:
@@ -47,7 +64,6 @@ class Config:
     batch: str
     config: dict[str, Any]
     lang: str | None
-    vian: bool
 
 
 def _strip_batch(batch: str) -> str:
@@ -105,6 +121,9 @@ def _get_table(layer: str, config: Any, batch: str, lang: str) -> str:
 
 
 def _layer_contains(config: dict[str, Any], parent: str, child: str) -> bool:
+    """
+    Return whether a parent layer contains a child layer
+    """
     child_layer = config["layer"].get(child)
     parent_layer = config["layer"].get(parent)
     if not child_layer or not parent_layer:
@@ -117,7 +136,7 @@ def _layer_contains(config: dict[str, Any], parent: str, child: str) -> bool:
 
 
 def _is_anchored(config: dict[str, Any], layer: str, anchor: str) -> bool:
-    layer_config = config["layer"].get(layer)
+    layer_config = config["layer"].get(layer, {})
     if layer_config.get("anchoring", {}).get(anchor):
         return True
     child: str = layer_config.get("contains", "")
@@ -133,28 +152,75 @@ def _has_frame_range(config: dict[str, Any]) -> bool:
     return False
 
 
+def _bound_label(
+    label: str = "",
+    query_json: dict[str, Any] = dict(),
+    in_scope: bool = False,
+) -> bool:
+    """
+    Look through the query part of the JSON and return False if the label is found in an unbound context
+    """
+    if not label:
+        return False
+
+    query = query_json.get("query", [query_json])
+    for obj in query:
+        if obj.get("label") == label:
+            return in_scope
+        if "unit" in obj:
+            if obj["unit"].get("label") == label:
+                return in_scope
+        if "sequence" in obj:
+            if obj["sequence"].get("label") == label:
+                return in_scope
+            reps = _parse_repetition(obj["sequence"].get("repetition", "1"))
+            tmp_in_scope = reps != (1, 1)
+            for m in obj["sequence"].get("members", []):
+                if _bound_label(label, m, tmp_in_scope):
+                    return True
+        if "logicalExpression" in obj:
+            logic = obj["logicalExpresion"]
+            tmp_in_scope = (
+                logic.get("naryOperator") == "OR" or logic.get("unaryOperator") == "NOT"
+            )
+            for a in logic.get("args", []):
+                if _bound_label(label, a, tmp_in_scope):
+                    return True
+        if obj.get("existentialQuantification", {}).get("quantor", "") == "NOT EXISTS":
+            for a in obj["existentialQuantification"].get("args", []):
+                if _bound_label(label, a, in_scope=True):
+                    return True
+
+    # Label not found
+    return False
+
+
 def _parse_comparison(
     comparison_object: dict,
 ) -> tuple[dict[str, Any], str, str, QueryType]:
-    assert "left" in comparison_object, KeyError("Couldn't find 'left' in comparison")
-    assert "operator" in comparison_object, KeyError(
-        "Couldn't find 'operator' in comparison"
+    left, right, comparator = (
+        comparison_object.get(x) for x in ("left", "right", "comparator")
     )
-    typ, right = next(
-        (a for a in comparison_object.items() if a[0].endswith("Comparison")),
-        (None, None),
+    assert left, KeyError(f"Couldn't find 'left' in comparison ({comparison_object})")
+    assert right, KeyError(f"Couldn't find 'right' in comparison ({comparison_object})")
+    assert comparator, KeyError(
+        f"Couldn't find 'comparator' in comparison ({comparison_object})"
     )
-    assert typ, KeyError("Couldn't find 'xyzComparison' in comparison")
-    key = cast(dict[str, Any], comparison_object["left"])
-    op = comparison_object["operator"]
-    if typ in ("stringComparison", "regexComparison"):
-        right = cast(str, right)[1:-1]
-    if op in (">=", "<=", ">", "<") and typ != "functionComparison":
-        typ = "mathComparison"  # Overwrite comparison type
-    return (key, cast(str, op), cast(str, typ), cast(str, right))
+
+    key = cast(dict[str, Any], left)
+    op = cast(str, comparator)
+    # op = comparison_object["comparator"]
+    # if typ in ("stringComparison", "regexComparison"):
+    #     right = cast(str, right)[1:-1]
+    # if op in (">=", "<=", ">", "<") and typ != "functionComparison":
+    #     typ = "mathComparison"  # Overwrite comparison type
+    # return (key, cast(str, op), cast(str, typ), cast(str, right))
+    return (key, op, "dummyType", right)
 
 
-def _label_layer(query_json: list | dict[str, Any]) -> LabelLayer:
+def _label_layer(
+    query_json: list | dict[str, Any], depth: int = 0, parent_label: str = ""
+) -> LabelLayer:
     """
     Map label to its correct layer, as well as other data:
 
@@ -165,41 +231,65 @@ def _label_layer(query_json: list | dict[str, Any]) -> LabelLayer:
         return {}
     if isinstance(query_json, list):
         for i in query_json:
-            out.update(_label_layer(i))
+            out.update(_label_layer(i, depth=depth + 1, parent_label=parent_label))
     elif isinstance(query_json, dict):
         # todo maybe: does set have members?
         if "set" in query_json:
             if "label" in query_json:
+                query_json["_depth"] = depth
+                if parent_label and "partOf" not in query_json:
+                    query_json["partOf"] = parent_label
                 out[query_json["label"]] = (query_json.get("layer", ""), query_json)
             if "label" in query_json["set"]:
                 meta = query_json["set"].copy()
                 meta["_is_set"] = True
+                meta["_depth"] = depth
+                if parent_label and "partOf" not in meta:
+                    meta["partOf"] = parent_label
                 sset = (query_json["set"].get("layer", ""), meta)
                 out[query_json["set"]["label"]] = sset
-            # if "layer" not in query_json["set"]:
-            #    query_json["set"]["layer"] = query_json["set"]["constraints"]["layer"]
-            out.update(_label_layer(query_json["set"]))
+            new_parent_label = query_json.get(
+                "partOf", query_json.get("set", {}).get("partOf", parent_label)
+            )
+            out.update(
+                _label_layer(
+                    query_json["set"], depth=depth + 1, parent_label=new_parent_label
+                )
+            )
         elif "group" in query_json:
             gro = query_json["group"]
             if "label" in gro and gro.get("members", []):
                 meta = gro.copy()
                 meta["_is_group"] = True
+                meta["_depth"] = depth
+                if parent_label and "partOf" not in meta:
+                    meta["partOf"] = parent_label
                 sgroup = ("", meta)
                 out[gro["label"]] = sgroup
 
         for i in ["sequence", "members"]:
             if i in query_json:
                 part = query_json[i]
+                new_parent_label = parent_label
                 if isinstance(part, dict) and part.get("label"):
+                    part["_depth"] = depth
+                    if parent_label and "partOf" not in part:
+                        part["partOf"] = parent_label
                     out[part["label"]] = (cast(str, part.get("layer", "")), part)
-                out.update(_label_layer(part))
+                    new_parent_label = part.get("partOf", parent_label)
+                out.update(
+                    _label_layer(part, depth=depth + 1, parent_label=new_parent_label)
+                )
         if "label" in query_json and "layer" in query_json:
+            query_json["_depth"] = depth
+            if parent_label and "partOf" not in query_json:
+                query_json["partOf"] = parent_label
             out[query_json["label"]] = (query_json["layer"], query_json)
         for k, v in query_json.items():
             if isinstance(k, (list, dict)):
-                out.update(_label_layer(k))
+                out.update(_label_layer(k, depth=depth + 1, parent_label=parent_label))
             if isinstance(v, (list, dict)):
-                out.update(_label_layer(v))
+                out.update(_label_layer(v, depth=depth + 1, parent_label=parent_label))
     return out
 
 
@@ -246,18 +336,6 @@ def arg_sort_key(d: dict[str, Any] | Any) -> str:
             assert isinstance(v, dict)
             out.append(arg_sort_key(v))
     return "".join(out)
-
-
-def _unique_label(references: dict[str, list], label: str = "anonymous") -> str:
-    """Return a string starting with 'anonymous' that's not a key in the pass dict"""
-    label = label or "anonymous"
-    new_label: str = label
-    n: int = 1
-    while new_label in references:
-        n += 1
-        new_label = f"{label}{str(n)}"
-    references[new_label] = []
-    return new_label
 
 
 def _parse_repetition(repetition: str | dict[str, str]) -> tuple[int, int]:

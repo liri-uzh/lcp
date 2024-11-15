@@ -103,15 +103,15 @@ Repository = "https://github.com/liri-uzh/lcp.git"
 lcp = "lcpvian.app:start"
 lcp-setup = "lcpvian.utils:setup"
 lcp-worker = "lcpvian.worker:start_worker"
-lcp-install-soundscape = "lcpvian.action:setup_ss"
-lcp-install-catchphrase = "lcpvian.action:setup_cp"
-lcp-install = "lcpvian.action:setup_cp"
-lcp-frontend-edrop = "lcpvian.action:edrop"
-lcp-frontend-npm-install = "lcpvian.action:npm_install"
-lcp-frontend-install = "lcpvian.action:install"
-lcp-serve-soundscript = "lcpvian.action:start_ss"
-lcp-serve-catchphrase = "lcpvian.action:start_cp"
-lcp-serve = "lcpvian.action:start_cp"
+#lcp-install-soundscape = "lcpvian.action:setup_ss"
+#lcp-install-catchphrase = "lcpvian.action:setup_cp"
+#lcp-install = "lcpvian.action:setup_cp"
+#lcp-frontend-edrop = "lcpvian.action:edrop"
+#lcp-frontend-npm-install = "lcpvian.action:npm_install"
+#lcp-frontend-install = "lcpvian.action:install"
+#lcp-serve-soundscript = "lcpvian.action:start_ss"
+#lcp-serve-catchphrase = "lcpvian.action:start_cp"
+#lcp-serve = "lcpvian.action:start_cp"
 
 #[tool.hatch.metadata]
 #allow-direct-references = true
@@ -134,23 +134,9 @@ python_version = "3.11"
 ignore_missing_imports = true
 
 [tool.hatch.build.targets.wheel.force-include]
-"frontend" = "frontend"
-# "frontend/babel.config.js" = "frontend/babel.config.js"
-#"frontend/jsconfig.json" = "frontend/jsconfig.json"
-# "frontend/package.json" = "frontend/package.json"
-# "frontend/README.md" = "frontend/README.md"
-# "frontend/vue.config.js" = "frontend/vue.config.js"
-# "frontend/yarn.lock" = "frontend/yarn.lock"
 "parser" = "parser"
 
 [tool.hatch.build.targets.sdist.force-include]
-"frontend/src" = "frontend/src"
-"frontend/babel.config.js" = "frontend/babel.config.js"
-"frontend/jsconfig.json" = "frontend/jsconfig.json"
-"frontend/package.json" = "frontend/package.json"
-"frontend/README.md" = "frontend/README.md"
-"frontend/vue.config.js" = "frontend/vue.config.js"
-"frontend/yarn.lock" = "frontend/yarn.lock"
 "parser" = "parser"
 
 [tool.hatch.build.targets.sdist]
@@ -166,13 +152,7 @@ include-only = [
 ]
 exclude = [
   "lcpcli",
-  "frontend/dist",
-  "frontend/node_modules",
-  "frontend/public",
-  "frontend/.gitignore",
-  "frontend/src",
-  "frontend/package.json",
-  "frontend/vue.config.js",
+  "frontend"
 ]
 #[tool.hatch.build.targets.sdist.sources]
 #".env.example" = "~/LCP.env"
@@ -190,18 +170,7 @@ include-only = [
 ]
 exclude = [
   "lcpcli",
-  "frontend/dist",
-  "frontend/node_modules",
-  "frontend/public",
-  "frontend/.gitignore",
-  #"frontend/src",
-  #"frontend/package.json",
-  "frontend/vue.config.js",
-  #"frontend/yarn.lock",
-  #"frontend/jsconfig.json",
-  "frontend/babel.config.js",
-  "frontend/.browserslistrc",
-  "frontend/.eslintrc.js",
+  "frontend"
 ]
 [tool.hatch.build.targets.wheel.sources]
 ".env.example" = ".env"

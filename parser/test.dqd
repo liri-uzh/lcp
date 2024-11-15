@@ -1,46 +1,61 @@
-Segment:en s_en
+Turn d
+    isPresident = "no"
+    politicalGroup != "NI"
 
-Token@s_en tv_en
-	upos = "VERB"
+Segment@d s
 
-Token@s_en to_en
-	upos = "NOUN"
-	keywords contain /something/
-	keywords !contain "something else"
-	length(form) > length(tv_en.form)
-	DepRel
-		head = to_en
-		dep = tv_en
-		label = "obj"
+sequence seq
+    Token@s t1
+        upos = "DET"
+    Token@s t2
+        upos = "ADJ"
+    Token@s t3
+        upos = "NOUN"
+        lemma.length > 5
 
-
-sequence seq 2..2
-	Token@s_en t1
-	Token@s_en t2
-
-Segment:de s_de
-	s_de <-> s_en
-
-Token@s_de tv_de
-	upos = "VERB"
-	tv_de <-> tv_en
-
-Token@s_de to_de
-	upos = "NOUN"
-	DepRel
-		head = to_en
-		dep = tv_en
-		label = "obj"
-	to_de <-> to_en
+set tdeps
+    Token@s tx
+        DepRel
+            head = t3
+            dep = tx
 
 
-myKWIC1 => plain
-	context
-		s_de
-		s_en
-	entities
-		tv_en
-		tv_de
-		to_en
-		to_de
+Token@s thead
+    upos = "VERB"
+    DepRel
+        head = thead
+        dep = t3
 
+
+kWIC1 => plain
+    context
+        s
+    entities
+        t1
+        t2
+        t3
+
+kWIC2 => plain
+    context
+        s
+    entities
+        seq
+
+stat1 => analysis
+    attributes
+        t1.lemma
+        t2.lemma
+        t3.lemma
+    functions
+        frequency
+    filter
+        frequency > 10
+
+stat2 => analysis
+    attributes
+        t3.lemma
+        d.OriginalLanguage
+    functions
+        frequency
+    filter
+        frequency > 10

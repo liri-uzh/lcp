@@ -1,0 +1,46 @@
+Segment:en s_en
+
+Token@s_en tv_en
+	upos = "VERB"
+
+Token@s_en to_en
+	upos = "NOUN"
+	keywords contain /something/
+	keywords !contain "something else"
+	length(form) > length(tv_en.form)
+	DepRel
+		head = to_en
+		dep = tv_en
+		label = "obj"
+
+
+sequence seq 2..2
+	Token@s_en t1
+	Token@s_en t2
+
+Segment:de s_de
+	s_de <-> s_en
+
+Token@s_de tv_de
+	upos = "VERB"
+	tv_de <-> tv_en
+
+Token@s_de to_de
+	upos = "NOUN"
+	DepRel
+		head = to_en
+		dep = tv_en
+		label = "obj"
+	to_de <-> to_en
+
+
+myKWIC1 => plain
+	context
+		s_de
+		s_en
+	entities
+		tv_en
+		tv_de
+		to_en
+		to_de
+

@@ -3,19 +3,18 @@ import re
 from typing import Any, cast
 
 from .constraint import Constraints, _get_constraints, process_set
-from .prefilter import Prefilter
 from .sequence import Cte, SQLSequence
-from .typed import JSON, JSONObject, Joins, LabelLayer, QueryJSON, QueryPart
+from .typed import JSONObject, Joins, LabelLayer, QueryJSON, QueryPart
 from .utils import (
     Config,
     QueryData,
     _get_table,
+    _get_mapping,
     _get_batch_suffix,
     _get_underlang,
     _joinstring,
     _layer_contains,
-    _unique_label,
-    _parse_repetition,
+    _bound_label,
 )
 
 MATCH_LIST = """
@@ -46,7 +45,6 @@ class Token:
         order: int | None,
         prev_label: str | None,
         conf: Config,
-        vian: bool,
         quantor: str | None,
         label_layer: LabelLayer,
         set_objects: set[str],
@@ -74,7 +72,6 @@ class Token:
         self.token = self.config["token"]
         self.segment = self.config["segment"]
         self.document = self.config["document"]
-        self.vian = vian
         self.label_layer = label_layer
         self.quantor = quantor
         self._n: int = n or 1
@@ -159,9 +156,7 @@ class QueryMaker:
         self.batch: str = conf.batch
         self.config: JSONObject = conf.config
         self.lang: str | None = conf.lang
-        self.vian: bool = conf.vian
         self._one_done: bool = False
-        self._prev_seg: str | None = None
         self._n = 1
         self.selects: set[str] = set()
         self.joins: Joins = {}
@@ -181,6 +176,7 @@ class QueryMaker:
         self.has_fts: bool = cast(bool, mapping.get("hasFTS", False))
         self.main_layer = ""
         self.main_label = ""
+        # _table is the main table on which the query is run: (table, lab)
         self._table: tuple[str, str] | None = None
         self._backup_table: tuple[str, str] | None = None
         self._base = ""
@@ -227,7 +223,6 @@ class QueryMaker:
             j,
             prev_label,
             self.conf,
-            self.vian,
             cast(str | None, obj.get("quantor", None)),
             self.r.label_layer,
             self.r.set_objects,
@@ -265,21 +260,17 @@ class QueryMaker:
         Establish whether or not we can work with a segment base
         """
         main_layer = self.segment
-        has_segment = any(
-            cast(dict, x).get("unit", {}).get("layer") == self.segment
-            for x in query_part
+        has_segment = next(
+            (
+                x
+                for x in query_part
+                if cast(dict, x).get("unit", {}).get("layer") == self.segment
+            ),
+            None,
         )
-        if has_segment:
-            label = cast(
-                str,
-                next(
-                    x["label"]
-                    for x in [
-                        cast(dict[str, Any], u.get("unit", {})) for u in query_part
-                    ]
-                    if x.get("layer") == self.segment and x.get("label")
-                ),
-            )
+        if has_segment and (
+            label := cast(dict, has_segment.get("unit", {})).get("label")
+        ):
             return label, main_layer, label
         alt: dict | None = next((s for s in query_part if s.get("unit")), None)
         if alt is not None:
@@ -329,22 +320,6 @@ class QueryMaker:
             batch_suffix = self.conf.batch[-first_num:]
         batch_suffix = self._underlang + batch_suffix
 
-        seg = next(
-            (
-                x
-                for x in [
-                    cast(dict[str, Any], u["unit"]) for u in query_json if "unit" in u
-                ]
-                if x.get("layer") == self.segment and "label" in x
-            ),
-            None,
-        )
-        lab = "s"
-        if seg is not None:
-            lab = cast(str, seg["label"])
-        tab = f"{self.segment}{self._underlang}".lower()
-        self._table = (tab, lab)
-
         groups: dict[str, list[str]] = {}
 
         obj: dict[str, Any]
@@ -364,9 +339,10 @@ class QueryMaker:
                         quantor = "EXISTS"
                     obj = next(a for a in quan_obj["args"])
                     obj["unit"]["quantor"] = quantor
-                    assert "partOf" in obj["unit"], SyntaxError(
-                        "Quantified entities require a scope (eg Token@s)"
-                    )
+
+            # Turn any logical expression into a main constraint
+            if any(x == "logicalExpression" for x in obj):
+                obj = {"args": [obj]}
 
             is_sequence = "sequence" in obj
             is_set = "set" in obj
@@ -379,9 +355,6 @@ class QueryMaker:
 
             if is_set:
                 continue  # sets are already handled in ResultsMaker and included as part of selects
-            elif is_sequence:
-                self.sequence(obj)
-                continue
             elif is_group:
                 lab = ""
                 group: list[str] = []
@@ -417,36 +390,20 @@ class QueryMaker:
                 f"An entity cannot be part of itself ('{label}')"
             )
             low = layer.lower()
-            is_gesture = low == "gesture"
             is_segment = low == self.segment.lower()
             is_token = low == self.token.lower()
             is_above_segment = _layer_contains(
                 cast(dict[str, Any], self.config), layer, self.segment
             )
             is_document = low == self.document.lower()
+
             layerlang = f"{layer}{self._underlang}".lower()
-
             llabel = label.lower()
-
-            if is_document and not self._table:
-                self._table = (layerlang, llabel)
-                self._base = f"{self.schema}.{layer} {label}".lower()
-            if is_segment and not self._backup_table:
-                self._backup_table = (layerlang, llabel)
-            if is_gesture and not self._backup_table:
-                self._backup_table = (layerlang, llabel)
-            if is_token and not self._backup_table:
+            if not self._backup_table and (is_document or is_segment or is_token):
                 self._backup_table = (layerlang, llabel)
 
-            if is_segment:
-                # here is a little hack for certain vian constructions
-                if self.vian and self._prev_seg:
-                    formed = f"{self._prev_seg}.frame_range @> {label}.frame_range"
-                    self.conditions.add(formed.lower())
-                self._prev_seg = label
-
-            if is_segment or is_gesture or is_document or is_meta or is_above_segment:
-                self.segment_level(obj, label, layer, main_label, main_layer)
+            if is_segment or is_document or is_meta or is_above_segment:
+                self.segment_level(obj, label, layer)
                 continue
             elif contains_token:
                 self.char_range_level(obj, label, layer)
@@ -460,11 +417,15 @@ class QueryMaker:
                     if q.strip():
                         self.conditions.add(q)
 
+            else:  # E.g. time-anchored layer not containing any sublayer
+                self.segment_level(obj, label, layer)
+                continue
+
         # Discard any select on a bound label so far
         self.selects = {
             s
             for s in self.selects
-            if not self._bound_label(self._get_label_as(s), self.query_json)
+            if not _bound_label(self._get_label_as(s), self.query_json)
         }
 
         # Multiple steps: first SELECT in the fixed_parts table
@@ -478,11 +439,8 @@ class QueryMaker:
         # If sequences require further CTEs, this will be updated
         last_table: str = "fixed_parts"
 
-        # The segment table's alias
-        sl = self._get_seg_label()
-
         # Add any fixed token needed for sequences
-        sequence_ranges: dict[str, tuple[str, str]] = dict()
+        sequence_ranges: dict[str, tuple[str, str, str]] = dict()
         entities: dict[str, list] = {
             self._get_label_as(s).split(".")[-1]: [] for s in self.selects
         }
@@ -500,7 +458,7 @@ class QueryMaker:
                 table: str = tok + batch_suffix
                 formed_join: str = f"{self.schema}.{table} {lab}".lower()
                 self.joins[formed_join] = self.joins.get(formed_join, None)
-            swhere, sleft_joins = s.where_fixed_members(entities_set, tok, seg_str, sl)
+            swhere, sleft_joins = s.where_fixed_members(entities_set, tok)
 
             for w in swhere:
                 self.conditions.add(w)
@@ -525,55 +483,81 @@ class QueryMaker:
                     if not s.ctes[-1].next_fixed_token:
                         max = f"___lasttable___.id"
 
-                min_label: str = _unique_label(
-                    entities, f"{min} as min_{s.sequence.label}"
-                )
-                max_label: str = _unique_label(
-                    entities, f"{max} as max_{s.sequence.label}"
+                min_label: str = self.r.unique_label(f"min_{s.sequence.label}")
+                max_label: str = self.r.unique_label(f"max_{s.sequence.label}")
+
+                sequence_ranges[s.sequence.label] = (
+                    f"{min} as {min_label}",
+                    f"{max} as {max_label}",
+                    s.part_of,
                 )
 
-                sequence_ranges[s.sequence.label] = (min_label, max_label)
+        # Go through all the segments and pick the most constrained one
+        # and set the suffixes for the segment tables
+        seg_suffixes: dict[str, str] = {}
+        n_segment_constraints_max = 0
+        n_sequence_length_max = 0
+        for lb, (lay, info) in self.r.label_layer.items():
+            if lay != self.segment:
+                continue
+            # Use the full segment table by default, see below for restrictions to current batch
+            seg_suffixes[lb] = "0"
+            n_segment_constraints = len(info.get("constraints", {}))
+            n_sequence_length: int = next(
+                (s.sequence.min_length for s in self.sqlsequences if s.part_of == lb), 0
+            )
+            if self._table and n_sequence_length < n_sequence_length_max:
+                continue
+            elif self._table and n_segment_constraints < n_segment_constraints_max:
+                continue
+            self._table = (
+                _get_table(lay, self.config, self.batch, self.lang or ""),
+                lb,
+            )
+            n_segment_constraints_max = n_segment_constraints
+            n_sequence_length_max = n_sequence_length
+        # Use the current batch suffix for the main / first segment table
+        current_batch_suffix: str = _get_batch_suffix(self.batch, self.n_batches)
+        if (
+            self._table
+            and self.r.label_layer[self._table[1]][0].lower() == self.segment.lower()
+        ):
+            seg_suffixes[self._table[1]] = current_batch_suffix
+        elif seg_suffixes:
+            seg_suffixes[next(k for k in seg_suffixes.keys())] = current_batch_suffix
+
+        table, label = self.remove_and_get_base()
+        from_table = table
 
         # we remove the selects that are not needed
-        has_char_range = self._seg_has_char_range()
         selects_in_fixed = {
-            i.replace(
-                "___seglabel___.char_range", has_char_range + ".char_range"
-            ).replace("___seglabel___", sl)
-            for i in selects_in_fixed
+            i.replace("___seglabel___", label) for i in selects_in_fixed
         }
         self.selects = {
-            i.replace(
-                "___seglabel___.char_range", has_char_range + ".char_range"
-            ).replace("___seglabel___", sl)
+            i.replace("___seglabel___", label)
             for i in self.selects
             if "___seglabel___" in i.lower()
             or any(
-                x.endswith(i.lower().split()[-1]) for x in [*self.r.entities, sl]
+                x.endswith(i.lower().split()[-1]) for x in [*self.r.entities, label]
             )  # Keep segment label in case it's needed later on
             or not self.r.entities
-            or "agent_name" in i.lower()
         }
 
-        table, label = self.remove_and_get_base()
-
-        from_table = f"{self.conf.schema}.{table} {label}"
-        if self.has_fts and self.sqlsequences:
-            prefilters: set[str] = {
-                p for s in self.sqlsequences for p in s.prefilters()
-            }
-            vector_name = f"fts_vector{batch_suffix}"
-            ps: str = " AND ".join(prefilters)
-            from_table = f"(SELECT {self.config['segment']}_id FROM {self.conf.schema}.{vector_name} vec WHERE {ps}) AS {sl}"
-
-        # Make sure the query only scopes over segments that are referenced in the batch being looked up
-        # if self.main_layer == self.segment and self.batch:
-        #     self.conditions.add(
-        #         f"{label}.{self.segment.lower()}_id IN (SELECT {self.segment.lower()}_id FROM {self.conf.schema}.{self.batch})"
-        #     )
-
+        # TODO: report tokens' part_of in their label_layer, then replace token<batch> accordingly
         formed_joins = _joinstring(self.joins)
-        formed_selects = ",\n".join(sorted(selects_in_fixed))
+        if seg_suffixes:
+            seg_full_table = f"{self.schema}.{_get_table(self.segment.lower(), self.config, self.batch, self.lang or '')}"
+            seg_table_no_schema = (
+                _get_mapping(self.segment, self.config, self.batch, self.lang or "")
+                .get("relation", self.segment)
+                .lower()
+            )
+            seg_table = f"{self.schema}.{seg_table_no_schema}"
+            formed_joins = re.sub(
+                rf"CROSS JOIN {seg_full_table} (\S+)",
+                lambda x: f"CROSS JOIN {seg_table.removesuffix('<batch>')}{seg_suffixes.get(x[1], current_batch_suffix)} {x[1]}",
+                formed_joins,
+            )
         join_conditions: set[str] = set()
         for v in self.joins.values():
             if not v:
@@ -596,7 +580,7 @@ class QueryMaker:
 
         # Simple subsequences: create subseq tables that check the series of tokens between two fixed tokens
         for n, s in enumerate(self.sqlsequences):
-            simple_seq: str = s.simple_sequences_table(
+            simple_seq, new_labels = s.simple_sequences_table(
                 fixed_part_ts=",\n".join(
                     [
                         f"{last_table}.{self._get_label_as(s)} AS {self._get_label_as(s)}"
@@ -609,6 +593,8 @@ class QueryMaker:
                 seg=seg_str,
                 schema=self.schema.lower(),
             )
+            for new_label in new_labels:
+                selects_in_fixed.add(new_label)
             if simple_seq:
                 # Update last_table
                 last_table = f"subseq{n}"
@@ -649,20 +635,27 @@ class QueryMaker:
         # If any sequence has a label and needs its range to be returned
         if sequence_ranges:
 
+            selects_intermediate = {self._get_label_as(s) for s in selects_in_fixed}
             gather_selects: str = ",\n".join(
-                sorted({s.replace("___lasttable___", last_table) for s in self.selects})
+                # sorted({s.replace("___lasttable___", last_table) for s in self.selects})
+                sorted(
+                    {
+                        s.replace("___lasttable___", last_table)
+                        for s in selects_intermediate
+                    }
+                )
             )
-            for seqlab, (min_seq, max_seq) in sequence_ranges.items():
+            for seqlab, (min_seq, max_seq, seg_lab) in sequence_ranges.items():
                 if self.r.entities and seqlab not in self.r.entities:
                     continue
                 gather_selects += f",\n{min_seq.replace('___lasttable___', last_table)}"
                 gather_selects += f",\n{max_seq.replace('___lasttable___', last_table)}"
                 min_label = min_seq.split(" as ")[-1]
                 max_label = max_seq.split(" as ")[-1]
-                jttable = _unique_label(entities, "t")
+                jttable = self.r.unique_label("t", layer=self.token)
                 infrom: str = f"{self.conf.schema}.{tok}{batch_suffix} {jttable}"
                 inwhere: str = (
-                    f"{jttable}.{self.segment.lower()}_id = gather.s AND {jttable}.{tok}_id BETWEEN gather.{min_label}::bigint AND gather.{max_label}::bigint"
+                    f"{jttable}.{self.segment.lower()}_id = gather.{seg_lab} AND {jttable}.{tok}_id BETWEEN gather.{min_label}::bigint AND gather.{max_label}::bigint"
                 )
                 self.selects.add(
                     f"ARRAY(SELECT {jttable}.{tok}_id FROM {infrom} WHERE {inwhere}) AS {seqlab}"
@@ -706,10 +699,12 @@ class QueryMaker:
                         for x in self.selects
                         if x != s
                     )
-                    and not self._bound_label(self._get_label_as(s), self.query_json)
+                    and not _bound_label(self._get_label_as(s), self.query_json)
                 }
             )
         )
+
+        formed_selects = ",\n".join(sorted(selects_in_fixed))
 
         out = self.template.format(
             schema=self.conf.schema,
@@ -728,7 +723,7 @@ class QueryMaker:
             match_selects=match_selects,
             match_from=last_table,
         )
-        return out, sl, self._seg_has_char_range()
+        return out, label, label
 
     def _get_groupby(self) -> str:
         """
@@ -760,81 +755,6 @@ class QueryMaker:
             self.r.selects.add(res)
         return None
 
-    # This is messy, it can be rewritten more cleanly
-    def _bound_label(
-        self,
-        label: str = "",
-        query_json: dict[str, Any] = dict(),
-        in_scope: bool = False,
-    ) -> bool:
-        """
-        Look through the query part of the JSON and return False if the label is found in an unbound context
-        """
-        if not label:
-            return False
-
-        query = query_json.get("query", [query_json])
-        for obj in query:
-            if obj.get("label") == label:
-                return in_scope
-            if "unit" in obj:
-                if obj["unit"].get("label") == label:
-                    return in_scope
-            if "sequence" in obj:
-                if obj["sequence"].get("label") == label:
-                    return in_scope
-                reps = _parse_repetition(obj["sequence"].get("repetition", "1"))
-                tmp_in_scope = reps != (1, 1)
-                for m in obj["sequence"].get("members", []):
-                    if self._bound_label(label, m, tmp_in_scope):
-                        return True
-            if "logicalOpNAry" in obj:
-                tmp_in_scope = obj["logicalOpNAry"].get("operator") == "OR"
-                for a in obj["logicalOpNAry"].get("args", []):
-                    if self._bound_label(label, a, tmp_in_scope):
-                        return True
-
-        # Label not found
-        return False
-
-    def _seg_has_char_range(self) -> str:
-        """
-        Return a label to refer to char_range after joining the segment table if necessary
-        """
-        segment: str = _get_table(
-            self.segment, self.config, self.batch, cast(str, self.lang)
-        )
-        lab: str = ""
-        if not self.sqlsequences:
-            lab = next(
-                (
-                    l
-                    for l, info in self.r.label_layer.items()
-                    if info[0] == self.segment
-                ),
-                f"has_char_range_{self._n}",
-            )
-        else:
-            rgx: str = f"{self.schema}.{segment} has_char_range_\d+"
-            lab = next(
-                (j for j in self.joins if re.match(rf"{rgx}", j, re.IGNORECASE)), ""
-            )
-        if lab:
-            lab = lab.split(" ")[-1]
-        else:
-            lab = f"has_char_range_{self._n}"
-            self._n += 1
-        formed: str = f"{self.schema}.{segment} {lab}".lower()
-        if not self.joins.get(formed.lower()):
-            self.joins[formed.lower()] = set()
-        assert self._table is not None, RuntimeError(
-            "No main table could be determined for query"
-        )
-        formed_cond = f"{self._table[1]}.{self.segment}_id = {lab}.{self.segment}_id"
-        joins: set = cast(set, self.joins[formed.lower()])
-        joins.add(formed_cond.lower())
-        return lab
-
     def _get_seg_label(self) -> str:
         if self.has_fts and self._table:
             return self._table[1]
@@ -853,16 +773,37 @@ class QueryMaker:
         elif self._backup_table:
             table, label = self._backup_table
 
-        if any(table.lower().startswith(x.lower()) for x in (self.token, self.segment)):
-            table += _get_batch_suffix(self.batch, n_batches=self.n_batches)
+        schema_prefix: str = f"{self.schema}."
+        base: str = f"{schema_prefix}{table} {label}".lower()
 
-        base = f"{self.schema}.{table} {label}"
-        conds = self.joins.pop(base, None)
-        if conds and isinstance(conds, list):
-            for c in conds:
-                self.conditions.add(c)
+        prefilters: set[str] = {
+            p for s in self.sqlsequences for p in s.prefilters() if s.part_of == label
+        }
+        if self.has_fts and prefilters:
+            batch_suffix = _get_batch_suffix(self.batch, self.n_batches)
+            vector_name = f"fts_vector{self._underlang}{batch_suffix}"  # Need better handling of this: add to mapping?
+            ps: str = " AND ".join(prefilters)
+            new_label = f"fts_vector_{label}"
+            old_base_joins: None | bool | list | set = self.joins.get(base, [])
+            new_joins: set[str | bool] = set()
+            if isinstance(old_base_joins, list) or isinstance(old_base_joins, set):
+                new_joins = {x for x in old_base_joins}
+            elif isinstance(old_base_joins, bool):
+                new_joins = {old_base_joins}
+            new_joins.add(
+                f"{new_label}.{self.segment}_id = {label}.{self.segment}_id".lower()
+            )
+            self.joins[base] = new_joins
+            table = f"(SELECT {self.config['segment']}_id FROM {self.conf.schema}.{vector_name} vec WHERE {ps})"
+            schema_prefix = ""
+            label = new_label
+        else:
+            conds = self.joins.pop(base, None)
+            if conds and (isinstance(conds, list) or isinstance(conds, set)):
+                for c in conds:
+                    self.conditions.add(c)
 
-        return table, label
+        return f"{schema_prefix}{table} AS {label}", label
 
     def constraint(self, obj: dict[str, Any]) -> None:
         """
@@ -888,21 +829,6 @@ class QueryMaker:
             if cond:
                 self.conditions.add(cond)
 
-    def sequence(self, obj: JSONObject) -> None:
-        """
-        Handle a sequence like DET ADJ NOUN
-        """
-
-        # SQLSequences are created in by ResultsMaker
-
-        # # We do not want to label anonymous sequences with a name that's already used by an entity
-        # seq: Sequence = Sequence(obj, sequence_references={e:[] for e in self.r.entities})
-        # sqlseq: SQLSequence = SQLSequence(seq)
-
-        # self.sqlsequences.append(sqlseq)
-
-        return None
-
     def char_range_level(self, obj: JSONObject, label: str, layer: str) -> None:
         """
         Process an object in the query larger than token unit that directly contains tokens
@@ -911,9 +837,13 @@ class QueryMaker:
         part_of_layer: str = self.r.label_layer.get(part_of_label, ("", None))[0]
         if not part_of_layer:
             return None
+        is_negative = obj.get("quantor", "") == "NOT EXISTS"
+        if not is_negative:
+            select = f"{label}.{layer}_id as {label}"
+            self.selects.add(select.lower())
         lab: str = part_of_label
-        if part_of_layer.lower() == self.segment.lower() and self.has_fts:
-            lab = self._seg_has_char_range()
+        # if part_of_layer.lower() == self.segment.lower() and self.has_fts:
+        #     lab = self._seg_has_char_range()
         join: str = f"{self.schema}.{layer}{self._underlang} {label}".lower()
         if join not in self.joins:
             self.joins[join] = None
@@ -942,23 +872,16 @@ class QueryMaker:
 
         return None
 
-    def segment_level(
-        self,
-        obj: JSONObject,
-        label: str,
-        layer: str,
-        main_label: str,
-        main_layer: str,
-    ) -> None:
+    def segment_level(self, obj: JSONObject, label: str, layer: str) -> None:
         """
         Process an object in the query larger than token unit
         """
-        is_gesture = layer.lower() == "gesture"
         layer_info = cast(JSONObject, self.config["layer"])
         layer_info = cast(JSONObject, layer_info[layer])
         contains = cast(str, layer_info.get("contains", ""))
         is_meta = bool(contains) and contains != self.token
-        if not is_meta:
+        is_negative = obj.get("quantor", "") == "NOT EXISTS"
+        if not is_meta and not is_negative:
             idx = "_id" if not is_meta else ""
             select = f"{label}.{layer}{idx} as {label}"
             self.selects.add(select.lower())
@@ -968,18 +891,22 @@ class QueryMaker:
             table += _get_batch_suffix(self.batch, n_batches=self.n_batches)
 
         join = f"{self.schema}.{table} {label}".lower()
-        if join != self._base:
+        if join != self._base and not is_negative:
             self.joins[join] = None
         # if is_meta:
         #     self.handle_meta(label, layer, contains)
         constraints = cast(JSONObject, obj.get("constraints", {}))
         part_of: str = cast(str, obj.get("partOf", ""))
-        part_of_layer = self.r.label_layer.get(part_of, ("", ""))[0]
-        if self.has_fts:
-            if part_of_layer.lower() == self.segment.lower():
-                part_of = self._seg_has_char_range()
-            elif layer.lower() == self.segment.lower():
-                label = self._seg_has_char_range()
+        # part_of_layer = self.r.label_layer.get(part_of, ("", ""))[0]
+        # if self.has_fts:
+        #     if part_of_layer.lower() == self.segment.lower():
+        #         part_of = self._seg_has_char_range()
+        #     elif (
+        #         layer.lower() == self.segment.lower()
+        #         and self._table  # Only use has_char_range if constraint on main segment table (could be another segment)
+        #         and label == self._table[1]
+        #     ):
+        #         label = self._seg_has_char_range()
         conn_obj: Constraints | None
         if constraints or part_of:
             conn_obj = _get_constraints(
@@ -994,7 +921,9 @@ class QueryMaker:
                 set_objects=self.r.set_objects,
                 n=self._n,
             )
-            if conn_obj:
+            if conn_obj and is_negative:
+                self.conditions.add(conn_obj._build_subquery(conn_obj))
+            elif conn_obj:
                 self._n = conn_obj._n + 1
                 joins = conn_obj.joins() if conn_obj else {}
                 for k, v in joins.items():
@@ -1002,15 +931,6 @@ class QueryMaker:
                 cond = conn_obj.conditions() if conn_obj else ""
                 if cond:
                     self.conditions.add(cond)
-
-        # todo: main_layer dead?
-        if is_gesture:
-            formed = f"{self.schema}.{layer} {label}"
-            self.joins[formed.lower()] = None
-            if main_layer == self.document:
-                formed = f"{main_label}.frame_range @> {label}.frame_range"
-                self.conditions.add(formed.lower())
-
         return None
 
     def handle_meta(self, label: str, layer: str, contains: str) -> None:
@@ -1032,11 +952,11 @@ class QueryMaker:
             self.conditions.add(formed.lower())
         ll = self.r.label_layer
         assert ll
-        if self.has_fts:
-            lab = self._seg_has_char_range()
-            segname = lab
-        else:
-            segname = next((k for k, v in ll.items() if v[0] == seg), None)
+        # if self.has_fts:
+        #     lab = self._seg_has_char_range()
+        #     segname = lab
+        # else:
+        segname = next((k for k, v in ll.items() if v[0] == seg), None)
         if not segname:
             print("Problem finding segment label -- ignoring ...")
         else:

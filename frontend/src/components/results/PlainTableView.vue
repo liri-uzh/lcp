@@ -30,6 +30,9 @@
             <span title="Play audio" @click="playAudio(resultIndex)" class="action-button" v-if="showAudio(resultIndex)">
               <FontAwesomeIcon :icon="['fas', 'play']" />
             </span>
+            <span title="Play video" @click="playVideo(resultIndex)" class="action-button" v-if="showVideo(resultIndex)">
+              <FontAwesomeIcon :icon="['fas', 'play']" />
+            </span>
             <span
               v-if="Object.keys(meta).length"
               style="margin-right: 0.5em"
@@ -43,7 +46,7 @@
             <span
               v-for="(token) in item"
               :key="`form-${token.index}`"
-              @mousemove="showPopover(token.token, resultIndex, $event)"
+              @mousemove="showPopover(token, resultIndex, $event)"
               @mouseleave="closePopover"
             >
               <span class="token" :class="[
@@ -123,14 +126,14 @@
       <table class="table popover-table">
         <thead>
           <tr>
-            <th v-for="(item, index) in columnHeaders.filter(ch=>ch!= 'spaceAfter')" :key="`th-${index}`">
+            <th v-for="(item, index) in currentToken.columnHeaders" :key="`th-${index}`">
               {{ item }}
             </th>
           </tr>
         </thead>
         <tbody>
           <tr>
-            <td v-for="(item, index) in columnHeaders.filter(ch=>ch!= 'spaceAfter')" :key="`tr-${index}`">
+            <td v-for="(item, index) in currentToken.columnHeaders" :key="`tr-${index}`">
               <span v-if="item == 'head'" v-html="headToken"> </span>
               <span
                 v-else
@@ -139,7 +142,7 @@
                     ? 'badge rounded-pill bg-secondary'
                     : ''
                 "
-                v-html="strPopover(currentToken[index])"
+                v-html="strPopover(currentToken.token[index])"
               ></span>
             </td>
           </tr>
@@ -151,23 +154,23 @@
       v-if="currentMeta"
       :style="{top: (stickMeta.y || popoverY) + 'px', left: (stickMeta.x || popoverX) + 'px' }"
     >
-      <table class="table popover-table">
-        <span
-          v-if="stickMeta.x && stickMeta.y"
-          style="position:absolute; right: 0px; cursor: pointer;"
-          @click="(stickMeta = {}) && this.closeMeta()"
-        >
-          [X]
-        </span>
+      <span
+        v-if="stickMeta.x && stickMeta.y"
+        style="position:absolute; right: 7px; top: 2px; cursor: pointer;"
+        @click="(stickMeta = {}) && this.closeMeta()"
+      >
+        <FontAwesomeIcon :icon="['fas', 'xmark']" />
+      </span>
+      <table class="popover-table">
         <template v-for="(meta, layer) in currentMeta" :key="`th-${layer}`">
           <tr v-if="layer in allowedMetaColums">
             <td>
-              {{ layer }}
-              <table class="table">
+              <span class="text-bold">{{ layer }}</span>
+              <table class="popover-deatils-table mb-2">
                 <template v-for="(meta_value, meta_key) in meta" :key="`${layer}-${meta_key}`">
                   <tr v-if="allowedMetaColums[layer].includes(meta_key)">
                     <td>{{ meta_key }}</td>
-                    <td>{{ meta_value }}</td>
+                    <td v-html="meta_render(meta_value)"></td>
                   </tr>
                 </template>
               </table>
@@ -270,6 +273,11 @@ span.action-button:hover {
 }
 .popover-table {
   margin-bottom: 0;
+  padding: 5px;
+}
+.popover-deatils-table {
+  border-radius: 4px;
+  background-color: #ffffff82;
 }
 .header-left {
   text-align: right;
@@ -302,7 +310,7 @@ span.action-button:hover {
 .popover-liri {
   position: fixed;
   background: #cfcfcf;
-  padding: 2px;
+  padding: 7px;
   border: #cbcbcb 1px solid;
   border-radius: 5px;
   z-index: 200;
@@ -331,6 +339,13 @@ span.action-button:hover {
   background-color: #1e999967 !important;
   color: #000 !important;
 }
+.popover-liri .popover-table td {
+  max-width: 50vw;
+}
+.popover-liri .popover-table td:nth-child(2) {
+  width: 100%;
+  padding-left: 0.5em;
+}
 *[class^="color-group-"] {
   border-radius: 2px;
 }
@@ -355,11 +370,11 @@ import Utils from "@/utils.js";
 import { FontAwesomeIcon } from "@fortawesome/vue-fontawesome";
 import config from "@/config";
 
-import WaveSurfer from 'wavesurfer.js'
-import RegionsPlugin from 'wavesurfer.js/dist/plugins/regions.esm.js'
+// import WaveSurfer from 'wavesurfer.js'
+// import RegionsPlugin from 'wavesurfer.js/dist/plugins/regions.esm.js'
 
 class TokenToDisplay {
-  constructor(tokenArray, index, groups, columnHeaders) {
+  constructor(tokenArray, index, groups, columnHeaders, annotations) {
     if (!(tokenArray instanceof Array) || tokenArray.length < 2)
       throw Error(`Invalid format for token ${JSON.stringify(tokenArray)}`);
     if (isNaN(Number(index)) || index<=0)
@@ -370,6 +385,21 @@ class TokenToDisplay {
     this.token = tokenArray;
     this.index = index;
     this.group = groups.findIndex( g => g.find(id=>id==index) );
+    this.columnHeaders = columnHeaders.filter(ch=>ch!= 'spaceAfter');
+    for (let [annotation_name, annotation_occurences] of Object.entries(annotations||{})) {
+      for (let [ann_start_idx, ann_num_toks, annotation] of annotation_occurences) {
+        if (index < ann_start_idx || index > (ann_start_idx+(ann_num_toks-1)))
+          continue;
+        this.columnHeaders.push(annotation_name);
+        tokenArray.push(annotation);
+        // tokenArray.push(
+        //   Object.entries(annotation)
+        //     .filter(a=>a[1])
+        //     .map((([attr_name,attr_value])=>`<abbr title="${attr_name}">${attr_value}</abbr>`))
+        //     .join(", ")
+        // );
+      }
+    }
   }
 }
 
@@ -464,8 +494,7 @@ export default {
       this.popoverY = event.clientY + 10;
       this.popoverX = event.clientX + 10;
       this.currentToken = token;
-      this.currentResultIndex =
-        resultIndex + (this.currentPage - 1) * this.resultsPerPage;
+      this.currentResultIndex = resultIndex + (this.currentPage - 1) * this.resultsPerPage;
     },
     closePopover() {
       this.currentToken = null;
@@ -474,8 +503,7 @@ export default {
     showMeta(resultIndex, event) {
       if (this.stickMeta.x || this.stickMeta.y) return;
       this.closePopover();
-      resultIndex =
-        resultIndex + (this.currentPage - 1) * this.resultsPerPage;
+      resultIndex = resultIndex + (this.currentPage - 1) * this.resultsPerPage;
       const sentenceId = this.data[resultIndex][0];
       this.currentMeta = this.meta[sentenceId];
       this.popoverY = event.clientY + 10;
@@ -563,7 +591,7 @@ export default {
     showAudio(resultIndex) {
       let retval = false;
       // Just for soundscript
-      if (config.appType == "soundscript") {
+      if (config.appType == "soundscript" || config.appType == "lcp") {
         resultIndex = resultIndex + (this.currentPage - 1) * this.resultsPerPage;
         if (this.getAudio(resultIndex)) {
           retval = true;
@@ -578,62 +606,122 @@ export default {
       let meta = this.meta[sentenceId];
       if (meta) {
         // corpus tamplete,
+        let documentId = meta[this.corpora.corpus.firstClass.document].id;
         let filename = this.getAudio(resultIndex); // meta[this.corpora.corpus.firstClass.document].audio
         let startFrame = meta[this.corpora.corpus.firstClass.document].frame_range[0]
         let startTime = (meta[this.corpora.corpus.firstClass.segment].frame_range[0] - startFrame)/25.
         let endTime = (meta[this.corpora.corpus.firstClass.segment].frame_range[1] - startFrame)/25.
+
+        this.$emit("playMedia", {
+          documentId: documentId,
+          filename: filename,
+          startTime: startTime,
+          endTime: endTime,
+          type: "audio"
+        })
         // console.log(filename, startTime, endTime)
         // let startTime = meta["Utterance"].start
         // let endTime = meta[this.corpora.corpus.firstClass.segment].end
-        if (filename) {
-          // TODO: get path from config
-          this.$refs.audioplayer.src = this.baseMediaUrl + filename;
-          this.$refs.audioplayer.currentTime = startTime;
-          this.$refs.audioplayer.ontimeupdate = () => {
-            if (this.$refs.audioplayer.currentTime >= endTime) {
-              this.$refs.audioplayer.pause();
-            }
-          };
-          this.$refs.audioplayer.play();
-          try {
-            const wavesurfer = WaveSurfer.create({
-              container: `.audioplayer-${resultIndex}`,
-              waveColor: '#4F4A85',
-              progressColor: '#383351',
-              url: this.baseMediaUrl + filename,
-              // media: this.$refs.audioplayer, // <- this is the important part
-              height: 32
-            })
-            wavesurfer.on('interaction', () => {
-              wavesurfer.play()
-            })
-            // Initialize the Regions plugin
-            const wsRegions = wavesurfer.registerPlugin(RegionsPlugin.create())
-            // Create some regions at specific time ranges
-            wavesurfer.on('decode', () => {
-              // Regions
-              wsRegions.addRegion({
-                start: startTime,
-                end: endTime,
-                content: '',
-                color: 'rgba(255, 0, 0, 0.1)',
-                drag: false,
-                resize: false,
-              })
-            })
-          }
-          catch (e){
-            console.log("Couldn't create the waveform", e);
-          }
-          this.playIndex = resultIndex;
-        }
+        // if (filename) {
+        //   // TODO: get path from config
+        //   this.$refs.audioplayer.src = this.baseMediaUrl + filename;
+        //   this.$refs.audioplayer.currentTime = startTime;
+        //   this.$refs.audioplayer.ontimeupdate = () => {
+        //     if (this.$refs.audioplayer.currentTime >= endTime) {
+        //       this.$refs.audioplayer.pause();
+        //     }
+        //   };
+        //   this.$refs.audioplayer.play();
+        //   try {
+        //     const wavesurfer = WaveSurfer.create({
+        //       container: `.audioplayer-${resultIndex}`,
+        //       waveColor: '#4F4A85',
+        //       progressColor: '#383351',
+        //       url: this.baseMediaUrl + filename,
+        //       // media: this.$refs.audioplayer, // <- this is the important part
+        //       height: 32
+        //     })
+        //     wavesurfer.on('interaction', () => {
+        //       wavesurfer.play()
+        //     })
+        //     // Initialize the Regions plugin
+        //     const wsRegions = wavesurfer.registerPlugin(RegionsPlugin.create())
+        //     // Create some regions at specific time ranges
+        //     wavesurfer.on('decode', () => {
+        //       // Regions
+        //       wsRegions.addRegion({
+        //         start: startTime,
+        //         end: endTime,
+        //         content: '',
+        //         color: 'rgba(255, 0, 0, 0.1)',
+        //         drag: false,
+        //         resize: false,
+        //       })
+        //     })
+        //   }
+        //   catch (e){
+        //     console.log("Couldn't create the waveform", e);
+        //   }
+        //   this.playIndex = resultIndex;
+        // }
       }
     },
-    strPopover(token) {
-      if (token && token.constructor.name == 'Object')
-        return Utils.dictToStr(token);
+    showVideo(resultIndex) {
+      let retval = false;
+      // Just for soundscript
+      if (config.appType == "videoscope" || config.appType == "lcp") {
+        resultIndex = resultIndex + (this.currentPage - 1) * this.resultsPerPage;
+        if (this.getAudio(resultIndex)) {
+          retval = true;
+        }
+      }
+      return retval;
+    },
+    playVideo(resultIndex) {
+      this.$refs.audioplayer.pause();
+      resultIndex = resultIndex + (this.currentPage - 1) * this.resultsPerPage;
+      const sentenceId = this.data[resultIndex][0];
+      let meta = this.meta[sentenceId];
+      if (meta) {
+        let documentId = meta[this.corpora.corpus.firstClass.document].id;
+        let filename = this.getAudio(resultIndex); // meta[this.corpora.corpus.firstClass.document].audio
+        let startFrame = meta[this.corpora.corpus.firstClass.document].frame_range[0]
+        let endFrame = meta[this.corpora.corpus.firstClass.document].frame_range[1]
+        let startTime = (meta[this.corpora.corpus.firstClass.segment].frame_range[0] - startFrame)/25.
+        let endTime = (meta[this.corpora.corpus.firstClass.segment].frame_range[1] - startFrame)/25.
+
+        this.$emit("playMedia", {
+          documentId: documentId,
+          filename: filename,
+          startFrame: startFrame,
+          endFrame: endFrame,
+          startTime: startTime,
+          endTime: endTime,
+          type: "video"
+        })
+      }
+    },
+    strPopover(attribute) {
+      if (attribute && attribute.constructor.name == 'Object')
+        return Utils.dictToStr(attribute);
       else
-        return token;
+        return attribute;
+    },
+    meta_render(meta_value) {
+      let ret = "";
+      try {
+        let metaJSON = JSON.parse(meta_value.replace(/'/gi, '"'))
+        if (Array.isArray(metaJSON)) {
+          ret = metaJSON.join(", ")
+        }
+        else {
+          ret = Utils.dictToStr(metaJSON, {addTitles: true, reorder: x=>x[0]=="id"}); // small hack to put id first
+        }
+      }
+      catch {
+        ret = meta_value;
+      }
+      return ret;
     }
   },
   computed: {
@@ -664,11 +752,12 @@ export default {
           let sentenceId = row[0];
           let startIndex = this.sentences[sentenceId][0];
           let tokens = this.sentences[sentenceId][1];
+          let annotations = this.sentences[sentenceId][2];
 
           let tokenData = JSON.parse(JSON.stringify(row[1])); // tokens are already gouped in sets/sequences
           tokenData = tokenData.map( tokenIdOrSet => tokenIdOrSet instanceof Array ? tokenIdOrSet : [tokenIdOrSet] );
           // Return a list of TokenToDisplay instances
-          tokens = tokens.map( (token,idx) => new TokenToDisplay(token, startIndex + idx, tokenData, this.columnHeaders) );
+          tokens = tokens.map( (token,idx) => new TokenToDisplay(token, startIndex + idx, tokenData, this.columnHeaders, annotations) );
 
           return tokens;
           // let range = tokenData.map( (tokensArr) =>

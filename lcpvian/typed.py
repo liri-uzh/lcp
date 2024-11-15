@@ -3,6 +3,7 @@ Module that stores custom types used around the backend
 
 TypedDicts for CorpusConfig and CorpusTemplate are in configure.py
 """
+
 import asyncio
 
 from collections import defaultdict
@@ -42,11 +43,18 @@ SentKey: TypeAlias = str | UUID | int
 # a single token within a sentence
 Token: TypeAlias = list[int | str | float]
 
-# an offset, plus list of tokens. either as tuple or list
+# an offset, plus list of tokens and possibly annotations. either as tuple or list
 # todo: figure out which of these alternatives is needed?
-Sentence: TypeAlias = tuple[int, list[Token]] | list[int | list[Token]]
+Sentence: TypeAlias = (
+    tuple[int, list[Token]]
+    | list[int | list[Token] | dict]
+    | tuple[int, list[Token], dict]
+)
 
-RawSent: TypeAlias = tuple[SentKey, int, list[Token]]
+# int = offset, list[Token] = prepared tokens, dict (optional) = annotations
+RawSent: TypeAlias = (
+    tuple[SentKey, int, list[Token]] | tuple[SentKey, int, list[Token], dict]
+)
 
 # the different kinds of sql results in the importer
 TableExists: TypeAlias = list[tuple[bool]]
@@ -65,7 +73,8 @@ MainCorpus: TypeAlias = tuple[
     dict[str, int] | None,  # token counts -- todo: remove none when tangram fixed
     dict[str, JSON] | None,  # mapping -- todo: remove none when tangram fixed
     bool,
-    str,
+    str,  # sample_query
+    str,  # project_id
 ]
 
 # what Importer.run_script can return
@@ -127,11 +136,6 @@ Iteration: TypeAlias = tuple[
 # one of the main endpoint functions like query(), upload()
 Endpoint: TypeAlias = Callable[
     [web.Request], Awaitable[web.Response | web.WebSocketResponse | web.FileResponse]
-]
-
-# a kwic line for vian, with seg, toks, doc, gesture, agent and frame ranges
-VianKWIC: TypeAlias = tuple[
-    int | str, list[int], int | str, str | None, str | None, list[list[int]]
 ]
 
 

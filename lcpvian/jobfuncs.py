@@ -33,15 +33,16 @@ async def _upload_data(
     """
     Script to be run by rq worker, convert data and upload to postgres
     """
-    corpus = os.path.join("uploads", project)
+    uploads_path = os.getenv("TEMP_UPLOADS_PATH", "uploads")
+    corpus = os.path.join(uploads_path, project)
     data_path = os.path.join(corpus, "_data.json")
 
     with open(data_path, "r") as fo:
         data: JSONObject = json.load(fo)
 
-    constraints = cast(list[str], data["constraints"])
-    perms = cast(str, data["perms"])
-    constraints.append(perms)
+    # constraints = cast(list[str], data["constraints"])
+    # perms = cast(str, data["perms"])
+    # constraints.append(perms)
 
     # template = cast(CorpusTemplate, data["template"])
 
@@ -73,7 +74,7 @@ async def _upload_data(
 async def _create_schema(
     create: str,
     schema_name: str,
-    drops: list[str] | None,
+    # drops: list[str] | None,
     user: str = "",
     room: str | None = None,
     **kwargs: str | None,
@@ -81,7 +82,8 @@ async def _create_schema(
     """
     To be run by rq worker, create schema in DB for a new corpus
     """
-    extra = {"user": user, "room": room, "drops": drops, "schema": schema_name}
+    # extra = {"user": user, "room": room, "drops": drops, "schema": schema_name}
+    extra = {"user": user, "room": room, "schema": schema_name}
 
     # todo: figure out how to make this block a little nicer :P
     async with get_current_job()._upool.begin() as conn:  # type: ignore
@@ -95,12 +97,14 @@ async def _create_schema(
                 #     create = "\n".join(drops) + "\n" + create
                 print("Creating schema...\n", create)
                 await con.execute(create)
-            except Exception:
-                script = f"DROP SCHEMA IF EXISTS {schema_name} CASCADE;"
-                extra.pop("drops")
-                msg = f"Attempting schema drop (create): {schema_name}"
-                logging.info(msg, extra=extra)
-                await con.execute(script)
+            except Exception as err:
+                print("Error when creating the schema", err)
+                pass  # All is handled as one transaction now in open_import
+                # script = f'DROP SCHEMA IF EXISTS "{schema_name}" CASCADE;'
+                # extra.pop("drops")
+                # msg = f"Attempting schema drop (create): {schema_name}"
+                # logging.info(msg, extra=extra)
+                # await con.execute(script)
     return None
 
 
@@ -179,6 +183,7 @@ async def _swissdox_export(
     config: dict[str, Any] = {},
     underlang: str = "",
     ne_cols: list[str] = [],
+    download: bool = False,
 ) -> None:
     """
     Take all the results from the relevant jobs and write them to storage
@@ -190,22 +195,36 @@ async def _swissdox_export(
     )
     named_entities_job: Job = Job.fetch(job_ids["named_entities"], connection=conn)
 
-    path = os.path.join("results", config["meta"].get("name", "anonymous_corpus"))
-
+    project_path = os.path.join(
+        os.environ.get("RESULTS_PATH", "results"),
+        config.get("project_id", "all"),
+    )
+    if not os.path.exists(project_path):
+        os.mkdir(project_path)
+    path = os.path.join(project_path, config["meta"].get("name", "anonymous_corpus"))
     if not os.path.exists(path):
         os.mkdir(path)
     elif os.path.exists(os.path.join(path, "swissdox.db")):
-        return None
+        os.remove(os.path.join(path, "swissdox.db"))
+        # return None
+
+    sources: dict[str, str] = {}
 
     # Documents
+    COLUMNS_TO_KEEP = ("pubdate", "doctype")
     docs_by_range: dict[int, tuple[int, str]] = {}
-    doc_columns = [c for c in documents["columns"] if c != "id"]
+    lg = next((x for x in ("de", "fr", "it", "en", "rm") if underlang[1:] == x), "")
+    doc_columns = [c for c in documents["columns"] if c in COLUMNS_TO_KEEP]
     doc_indices = []
     doc_rows = []
     doc_attrs = config["layer"][config["document"]]["attributes"]
     for n, row in enumerate(documents["rows"]):
         id = row.pop("id", n)
         doc_indices.append(str(id))
+        if "char_range" in row and isinstance(row["char_range"], Range):
+            cr = cast(Range, row["char_range"])
+            lower, upper = (int(cr.lower or 0), int(cr.upper or 0))
+            docs_by_range[lower] = (upper, id)
         # Sanitize types -- should do the same for all dfs
         formed_row = []
         for cl in doc_columns:
@@ -215,14 +234,13 @@ async def _swissdox_export(
                 c = int(c or 0)
             elif type in ("text", "string", "vector"):
                 c = str(c)
-            elif cl == "char_range" and isinstance(c, Range):
-                lower, upper = (int(c.lower or 0), int(c.upper or 0))
-                docs_by_range[lower] = (upper, id)
-                c = str(c)
             formed_row.append(c)
+        formed_row.append(lg)
+        sources[row["source"]] = row["source_name"]
+        formed_row.append(str(len(sources)))
         formed_row.append(str(id))
         doc_rows.append(formed_row)
-    doc_columns.append("doc_id")
+    doc_columns += ["language", "source_id", "doc_id"]
     doc_pandas = pandas.DataFrame(data=doc_rows, index=doc_indices, columns=doc_columns)
     # doc_pandas.to_feather(os.path.join(path, "documents.feather"))
 
@@ -249,7 +267,7 @@ async def _swissdox_export(
     for content, char_range in prepared_segments_job.result:
         if char_range.lower is None:
             continue  # Ignore segments that are not anchored
-        doc_id: str
+        doc_id: str = ""
         for lower, (upper, did) in docs_by_range.items():
             if lower > char_range.upper or upper < char_range.lower:
                 continue
@@ -318,9 +336,20 @@ async def _swissdox_export(
         data=ne_doc_rows, index=ne_doc_indices, columns=ne_doc_columns
     )
 
+    # Source
+    source_columns: list[str] = ["source_id", "code", "name"]
+    source_indices = []
+    source_rows = []
+    for source_id, (code, name) in enumerate(sources.items(), start=1):
+        source_indices.append(str(source_id))
+        source_rows.append((source_id, code, name))
+    source_pandas = pandas.DataFrame(
+        data=source_rows, index=source_indices, columns=source_columns
+    )
+
     assert all(
         isinstance(x, pandas.DataFrame)
-        for x in (tok_pandas, ne_pandas, ne_document_pandas)
+        for x in (doc_pandas, tok_pandas, ne_pandas, ne_document_pandas, source_pandas)
     )
 
     # # Zip file
@@ -338,6 +367,7 @@ async def _swissdox_export(
     con.execute("CREATE TABLE ne AS SELECT * FROM ne_pandas")
     con.execute("CREATE TABLE document AS SELECT * FROM doc_pandas")
     con.execute("CREATE TABLE ne_document AS SELECT * FROM ne_document_pandas")
+    con.execute("CREATE TABLE source AS SELECT * FROM source_pandas")
 
     # con.execute("ALTER TABLE token ADD FOREIGN KEY (doc_id) REFERENCES document(doc_id)")
     # con.execute("ALTER TABLE ne_document ADD FOREIGN KEY (doc_id) REFERENCES document(doc_id)")

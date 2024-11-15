@@ -1,5 +1,7 @@
+@import url('https://fonts.googleapis.com/css2?family=Nunito:ital,wght@0,200..1000;1,200..1000&display=swap');
+
 body {
-  font-family: Avenir, Helvetica, Arial, sans-serif;
+  font-family: Avenir, "Nunito", sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   /* text-align: center; */
@@ -95,6 +97,16 @@ nav a.router-link-exact-active {
 }
 .lds-ripple div:nth-child(2) {
   animation-delay: -0.75s;
+}
+.nav-link.active .lds-ripple.lds-white div {
+  border: 2px solid #ffffff;
+}
+.lds-ripple.lds-xs {
+  transform: scale(0.5);
+  width: 14px;
+  height: 15px;
+  margin-bottom: 2px;
+  margin-top: -9px;
 }
 @keyframes lds-ripple {
   0% {
@@ -228,4 +240,16 @@ nav a.router-link-exact-active {
 .btn-soundscript:hover {
   background-color: #0069d9;
   border-color: #005cb2;
+}
+
+.beta-flag {
+  position: fixed;
+  top: 0px;
+  padding: 2px 12px;
+  background-color: #fff;
+  left: 20px;
+  z-index: 10000;
+  font-weight: 800;
+  font-size: 9px;
+  border-radius: 0 0 3px 3px;
 }

@@ -1,510 +1,366 @@
-import json
 import os
 import re
-import sys
+
+from collections.abc import Iterable
+from json import dumps
+from typing import ClassVar
+
+from lark import Lark
+from lark.grammar import NonTerminal
+from lark.indenter import Indenter
+from lark.lexer import Token
+from sys import argv
+
+GRAMMAR_FILENAME = next((f for f in argv if f.endswith(".lark")), "dqd_grammar.lark")
+
+test_grammar: str = open(
+    os.path.join(os.path.dirname(__file__), GRAMMAR_FILENAME)
+).read()
+
+PATTERN_FILTERS: dict = {
+    "REGEX": lambda p: p[2:-2],  # remove slashes
+    "DOUBLE_QUOTED_STRING": lambda p: p[1:-1],  # remove double quotes
+    "FUNCTION_NAME": lambda p: re.sub("\\($", "(?", p),  # make trailing "(" optional
+}
 
 
-IGNORE = {"_INDENT", "_DEDENT", "_NL"}
+class TreeIndenter(Indenter):
+    NL_type: str = "_NL"
+    INDENT_type: str = "_INDENT"
+    DEDENT_type: str = "_DEDENT"
+    tab_len: int = 8
+    OPEN_PAREN_types: ClassVar[list[str]] = []
+    CLOSE_PAREN_types: ClassVar[list[str]] = []
+    # this fixes mypy but not sure if it breaks anything:
+    always_accept: Iterable[str] = ()
 
 
-class Ref:
-    def __init__(self, name, options={}):
-        self.name = name
-        self.minItems = (
-            int(options.get("minItems")) if options.get("minItems") else None
+parser = Lark(
+    test_grammar, parser="earley", start="top", postlex=TreeIndenter(), debug=True
+)
+
+
+def underscore_to_camel(s) -> str:
+    return re.sub("_(.)", lambda m: f"{m[1].upper()}", s)
+
+
+class Schema:
+    def __init__(self, grammar, lark="newgrammar.lark"):
+        self.grammar = grammar
+        self.schema = {}
+        self.defs = {}
+        self.ignores = (
+            "_NL",
+            "_INDENT",
+            "_DEDENT",
+            '"@"',
+            '","',
+            '".."',
+            '"..+"',
+            '")"',
+            '"set"',
+            '"sequence"',
+            '"=>"',
+            '"plain"',
+            '"context"',
+            '"entities"',
+            '"analysis"',
+            '"functions"',
+            '"attributes"',
+            '"filter"',
+            '"collocation"',
+            '"space"',
+            '"window"',
+            '"center"',
+            '"attribute"',
         )
-        self.maxItems = (
-            int(options.get("maxItems")) if options.get("maxItems") else None
-        )
-        self.required = not options.get("optional", False)
+        self.skips = {}
+        self.poly = {}
+        self.renames = {}
+        with open(lark, "r") as larkfile:
+            while line := larkfile.readline():
+                line = line.strip()
+                toskip = re.match(r".*// skip: ([^/]+)$", line)
+                poly = re.match(r".*// type: ([^/]+)$", line)
+                rename = re.match(r".*// rename: ([^/]+)$", line)
+                if toskip:
+                    rule_name = underscore_to_camel(line.split(":")[0].strip())
+                    self.skips[rule_name] = [s.strip() for s in toskip[1].split(" ")]
+                if poly:
+                    rule_name = line.split(":")[0].strip()
+                    self.poly[rule_name] = poly[1].strip()
+                if rename:
+                    rule_name = underscore_to_camel(line.split(":")[0].strip())
+                    self.renames[rule_name] = {}
+                    for r in rename[1].split(" "):
+                        subrule_name, newname = r.split(">")
+                        self.renames[rule_name][
+                            underscore_to_camel(subrule_name.strip())
+                        ] = newname.strip()
 
-    @property
-    def propertyName(self):
-        name = re.sub(r"__.*", "", self.name)
-        name = re.sub(r"_([a-z])", lambda x: x[1].upper(), name)
-        return name
+    def get_ref(self, x: dict):
+        ref = x.get("$ref", "")
+        ref_name = ref.removeprefix("#/$defs/")
+        return (ref, ref_name)
 
-
-class RuleRef(Ref):
-    def __init__(self, ruleName, options={}):
-        super().__init__(ruleName, options)
-
-    @property
-    def type(self):
-        if self.minItems:
-            return "array"
-        assert self.name in all_rules, f"Couldn't find {self.name} in rules"
-        # return "object"
-        return all_rules[self.name].type
-
-    @property
-    def as_object(self):
-        o = {"type": self.type}
-        if self.minItems or self.maxItems:
-            o["items"] = {"$ref": f"#/$defs/{self.name}"}
-            if self.minItems:
-                o["minItems"] = self.minItems
-            if self.maxItems:
-                o["maxItems"] = self.maxItems
-        else:
-            assert self.name in all_rules, f"Couldn't find {self.name} in rules"
-            rule = all_rules[self.name]
-            print(f"returning {self.name} as an object {rule} - {rule.name}")
-            if self.name.endswith("__"):
-                o = rule.as_object
+    def collapse_anyOf(self, anyOf: list) -> list:
+        o = []
+        patterns = set()
+        for x in anyOf:
+            if "pattern" in x:
+                patterns.add(x["pattern"])
             else:
-                o = {"type": self.type, "$ref": f"#/$defs/{self.name}"}
+                o.append(x)
+        if patterns:
+            disjunction = "|".join(p for p in patterns)
+            o.append({"type": "string", "pattern": f"({disjunction})"})
+        return o
 
-        return (o, self.required)
-
-
-class TermRef(Ref):
-    def __init__(self, terminalName, options={}):
-        super().__init__(terminalName, options)
-
-    @property
-    def type(self):
-        if self.minItems:
-            return "array"  # Should never happen?
-        return "string"
-
-    @property
-    def as_object(self):
-        assert (
-            self.type == "string"
-        ), f"Terminal references cannot be of a type other than string ({self.name})"
-        return (
-            {"type": "string", "pattern": all_terminals[self.name].pattern[1:-1]},
-            self.required,
-        )
-
-
-all_rules = dict()
-
-
-class Rule:
-    def __init__(self, name, firstline=None, anonymous=False):
-        name = re.sub(r"\.\d+", "", name)
-        if anonymous:
-            n = 0
-            while f"{name}_anonymous_{chr(n+97)}" in all_rules:
-                n += 1
-            name = f"{name}_anonymous_{chr(n+97)}"
-        else:
-            assert name not in all_rules, f"Rule name {name} defined more than once"
-        self.name = name
-        self.lines = []
-        if firstline:
-            self.addLine(firstline)
-        self.references = list()
-        self._object = {}
-        print("new rule", name)
-        all_rules[self.name] = self
-
-    @property
-    def propertyName(self):
-        name = re.sub(r"__.*", "", self.name)
-        name = re.sub(r"_([a-z])", lambda x: x[1].upper(), name)
-        return name
-
-    # This is particularly messy; needs to be rewritten
-    @property
-    def as_object(self):
-        if self._object:
-            return self._object
-
-        self._object = {"properties": {}, "oneOf": [], "required": []}
-        if all(isinstance(r,TermRef) for r in self.references):
-            if len(self.references) > 1:
-                self._object['type'] = "string"
-                self._object['oneOf'] = [r.as_object[0] for r in self.references]
+    def get_value_of_terminal(self, terminal, name="") -> str:
+        if not isinstance(terminal, Token):
+            if len(terminal.children) == 1:
+                return self.get_value_of_terminal(terminal.children[0], name=name)
             else:
-                self._object, _ = self.references[0].as_object
-        elif (
-            len(self.references) > 1
-        ):  # Big disjunction -- assumption: all disjuncts are named rules
-            if self.name.endswith(
-                "__"
-            ):  # If this is a forwarding rule, the named rules are properties
-                for r in self.references:
-                    assert isinstance(
-                        r[0], Ref
-                    ), f"Disjuncts of big disjunctions must all be named rules ({self.name}, {r[0]})"
-                    self._object["properties"][r[0].propertyName] = {
-                        "type": r[0].type,
-                        "$ref": f"#/$defs/{r[0].name}",
-                    }
-                    if r[0].required:
-                        self._object["oneOf"].append({"required": [r[0].propertyName]})
-                if not self._object["oneOf"]:
-                    self._object.pop("oneOf")
-            else:  # If this is not a forwarding rule, return a bare oneOf
-                for r in self.references:
-                    if not isinstance(r[0], Ref): continue
-                    o = {"type": r[0].type, "$ref": f"#/$defs/{r[0].name}"}
-                    if r[0].name.endswith("__"):
-                        self._object["oneOf"].append(o)
-                    else:
-                        self._object["properties"][r[0].propertyName] = o
-                        self._object["oneOf"].append({"required": [r[0].propertyName]})
+                disjuncts = [
+                    self.get_value_of_terminal(c, name=name) for c in terminal.children
+                ]
+                return "(" + "|".join(disjuncts) + ")"
+        value = ""
+        if terminal.type == "REGEXP":
+            value = re.sub(r"/(.+)/.*", "\\1", terminal.value)
         else:
-            refs = self.references[0]  # one-line rule
-            if isinstance(refs, list):  # the rule does not point to a terminal
-                if len(refs) == 1:
-                    if isinstance(refs[0], list) and all(
-                        isinstance(x, Ref) for x in refs[0]
-                    ):
-                        for r in refs[0]:
-                            o, required = r.as_object
-                            self._object["properties"][r.propertyName] = o.get(
-                                "properties", o
-                            )
-                            if required:
-                                self._object["oneOf"].append(r.propertyName)
-                        if not self._object["oneOf"]:
-                            self._object.pop("oneOf")
-                    elif isinstance(refs[0], Ref):
-                        self._object, required = refs[0].as_object
-                        if (
-                            required
-                            and not refs[0].name.endswith("__")
-                            and refs[0].type not in ("string", "array")
-                        ):
-                            self._object["required"] = [refs[0].propertyName]
-                    else:
-                        assert (
-                            False
-                        ), f"Reference {refs[0]} from rule {self.name} of type unhandled"
-                elif (
-                    len(refs) > 1
-                ):  # If there's more than one reference, there *need* to be properties
-                    for ref in refs:
-                        if isinstance(ref, list):  # Disjunction inside properties
-                            for disjunct in ref:
-                                array_required = []
-                                if isinstance(
-                                    disjunct, list
-                                ):  # Sequence of properties!
-                                    for subref in [
-                                        x for x in disjunct if isinstance(x, Ref)
-                                    ]:
-                                        o, required = subref.as_object
-                                        self._object["properties"][
-                                            subref.propertyName
-                                        ] = o.get("properties", o)
-                                        if required:
-                                            array_required.append(subref.propertyName)
-                                else:
-                                    assert isinstance(
-                                        disjunct, Ref
-                                    ), f"Unhandled reference type {disjunct} in {self.name}"
-                                    o, required = disjunct.as_object
-                                    self._object["properties"][
-                                        disjunct.propertyName
-                                    ] = o.get("properties", o)
-                                    if required:
-                                        array_required.append(disjunct.propertyName)
-                                self._object["oneOf"].append(
-                                    {"required": array_required}
-                                )
-                        else:  # Simple property
-                            assert isinstance(
-                                ref, Ref
-                            ), f"Unhandled reference type {disjunct} in {self.name}"
-                            o, required = ref.as_object
-                            print("simple property from within", self.name, ref.name, o)
-                            if (
-                                "properties" in o
-                            ):  # Forwarding references will themselves return properties
-                                for propname, propref in o["properties"].items():
-                                    self._object["properties"][propname] = propref
-                                for oneOf in o.get("oneOf", []):
-                                    self._object["oneOf"].append(oneOf)
-                            else:
-                                print(
-                                    f"adding property {ref.propertyName} to {self.name}",
-                                    ref,
-                                    o,
-                                )
-                                # self._object['properties'][ref.propertyName] = {"type":ref.type, "$ref":f"#/$defs/{ref.name}"}
-                                self._object["properties"][ref.propertyName] = o
-                                if required:
-                                    self._object["required"].append(ref.propertyName)
-                    # end for refs
-            else:
-                assert (
-                    False
-                ), f"Reference {refs} from rule {self.name} of type unhandled"
+            value = re.sub('([+*?"(){}])', lambda m: "\\" + m[0], terminal.value[1:-1])
+        if name in PATTERN_FILTERS:
+            value = PATTERN_FILTERS[name](value)
+        return value
 
-        for p in ("oneOf", "required", "properties"):
-            if p in self._object and not self._object[p]:
-                self._object.pop(p)
-        return self._object
-
-    @property
-    def type(self):
-        assert self.references, f"Rule {self.name} has no references!"
-        if all( # disjunction of terminal references
-            isinstance(r, TermRef) for r in self.references
-        ):
-            return "string"
-        elif len(self.references) > 1:  # big disjunction
-            if self.name.endswith(
-                "__"
-            ):  # forwarding: named disjunct rules count as properties ~> object
-                return "object"
-            if all(
-                r[0].type == "string" for r in self.references if isinstance(r[0], Ref)
-            ):
-                return "string"
-            elif all(
-                r[0].type == "array" for r in self.references if isinstance(r[0], Ref)
-            ):
-                return "array"
-            else:
-                return "object"
-        else:
-            refs = self.references[0]
-            if isinstance(refs, Ref) and (
-                isinstance(refs, TermRef) or refs.name.endswith("__")
-            ):
-                return refs.type
-            elif len(refs) == 1:
-                if isinstance(refs[0], list) and len(refs[0]) > 1:
-                    return refs[0][0].type
-                elif isinstance(refs[0], Ref):
-                    return refs[0].type
-        return "object"
-
-    def addLine(self, line):
-        line = line.strip()  # strip final \n
-        for i in IGNORE:
-            line = re.sub(
-                rf"{i}[^\s)\]]*", "", line
-            )  # strip rule names/keywords to ignore
-        line = re.sub(r"(^[\s\t]+|[\s\t]+$)", "", line)  # strip all spaces at start/end
-        line = re.sub(r"[\s\t]+", " ", line)  # Keep single spaces in the middle
-        if line:
-            self.lines.append(line)
-
-    def process_references_in_line(self, line):
-        line = re.sub(r"[\s\t]+", " ", line)
-
-        line = re.sub(
-            r"\".+?\"", "", line
-        )  # remove quote literals
-
-        line = re.sub(
-            r"(?<![a-z_])[_A-Z]+[+?*]?(?![a-z])", "", line
-        )  # remove literal references
-
-        line = re.sub(
-            r"\s+([|+?*~\])0-9.])", "\\1", line
-        )  # attach closing brackets and repetition flags to previous character
-        line = re.sub(
-            r"([(\[|~.])\s+", "\\1", line
-        )  # attach opening brackets and ~ to next character
-        line = re.sub(
-            r"([a-z0-9)\]+?*~])([\[(])", "\\1 \\2", line
-        )  # insert spaces before opening brackets
-
-        line = re.sub(
-            r"(\([^()]+\)|\[[^\[\]]+\])", lambda x: re.sub(r"\s+", "^", x[0]), line
-        )  # temporarily paste bracket members with carrets
-
-        continue_on_next = False
-        options = dict()
-        splitrules = [x for x in line.split(" ") if x]  # discard empty pieces
-
-        refs = []
-        for n, piece in enumerate(splitrules):
-            if continue_on_next:
-                continue_on_next = False
-                continue
-            # remove any attached literal
-            piece = re.sub(r"\"[^\"]+\"", "", piece)  # remove literals
-            # Special case: at least N
-            if n + 1 < len(splitrules) and splitrules[n + 1].startswith(piece):
-                options["minItems"] = 1
-                if splitrules[n + 1] and splitrules[n + 1][-1] == "?":
-                    options["maxItems"] = 2
-                continue_on_next = True
-            # [], ?, *, +, n..m
-            if re.match(r"^\[.+\]$", piece):
-                options["optional"] = True
-                piece = piece[1:-1]
-            if piece.endswith("?"):
-                options["optional"] = True
-                piece = piece[0:-1]
-            if piece.endswith("*"):
-                options["optional"] = True
-                options["minItems"] = 0
-                piece = piece[0:-1]
-            if piece.endswith("+"):
-                options["minItems"] = 1
-                piece = piece[0:-1]
-            exact_reps = re.match(r"^([a-z_]+)~(\d+)(\.\.(\d+))?$", piece)
-            if exact_reps:
-                options["minItems"] = exact_reps.group(2)
-                options["maxItems"] = exact_reps.group(4) or options["minItems"]
-                piece = exact_reps.group(1)
-
-            piece = re.sub(
-                "^\((.+)\)$", "\\1", piece
-            )  # remove any remaining parentheses
-
-            disjuncts = piece.split("|")
+    def get_terminal_regex(self, name) -> str:
+        rgx = name[1:-1]
+        if term := next((t for t in self.grammar.term_defs if t[0] == name), None):
+            expansions = term[1][0]
+            disjuncts: list[str] = []
+            for expansion in expansions.children:
+                value = self.get_value_of_terminal(expansion, name=name)
+                disjuncts.append(value)
             if len(disjuncts) > 1:
-                disjunct_refs = []
-                for d in disjuncts:
-                    sequents = d.split("^")
-                    if len(sequents) == 1:
-                        disjunct_refs.append(RuleRef(d, options))
-                    else:
-                        disjunct_refs.append(
-                            [RuleRef(x, options) for x in sequents]
-                        )  # append a an array
-                refs.append(disjunct_refs)
-            elif len(disjuncts) == 1:
-                sequents = disjuncts[0].split("^")
-                if len(sequents) == 1:
-                    refs.append(
-                        RuleRef(disjuncts[0], options)
-                    )  # no support for repetitions inside disjunctions for now
-                else:
-                    refs.append(
-                        [[RuleRef(x, options) for x in sequents]]
-                    )  # append a disjunction whose single member is an array
-
-        return refs
-
-    def build_references(self):
-        # Direct reference to a string
-        if (
-            len(self.lines) == 1
-            # and not re.match(r".*\|.*", self.lines[0])
-            and not re.match(r".*[a-z].*", self.lines[0])
-        ):
-            terminal_names = self.lines[0].split('|')
-            for terminal_name in terminal_names:
-                cleaned_name = re.sub(r"[^A-Z_]+","",terminal_name)
-                self.references.append(TermRef(cleaned_name))
-        else:
-            for line in self.lines:
-                self.references.append(self.process_references_in_line(line))
-
-
-all_terminals = dict()
-
-
-class Terminal:
-    def __init__(self, name, pattern):
-        name = re.sub("\.\d+", "", name)
-        assert name not in all_terminals, f"Terminal name {name} defined more than once"
-        self.name = name
-        self.pattern = pattern
-        all_terminals[self.name] = self
-        print("new terminal", name, pattern)
-
-
-# Parse a raw line from the LARK file
-def parse_line(line, rule):
-    terminal = re.match(r"^([A-Z_]+\.?\d*)\s*:\s*(.+)$", line)
-    new_rule = re.match(r"^[?]?([a-z_]+)\s*:\s*(.+?)( -> .+)?$", line)
-    disjunction = re.match(r"^\s+\|\s*(.+?)( -> .+)?$", line)
-
-    if terminal:
-        Terminal(*terminal.groups())
-    else:
-        name = rule.name if rule else ""
-        strrule, alias = (None, None)
-
-        if new_rule:
-            name, strrule, alias = new_rule.groups()
-
-        elif disjunction:
-            strrule, alias = disjunction.groups()
-
-        else:
-            assert False, f"Unrecognized rule line: {line}"
-
-        if alias:
-            alias = re.sub(r"\s*->\s*", "", alias)
-        if alias and alias != name:
-            aliasRule = Rule(alias, strrule)
-            if new_rule:
-                rule = Rule(name, aliasRule.name)
+                rgx = "(" + "|".join(d for d in disjuncts) + ")"
             else:
-                rule.addLine(aliasRule.name)
-        elif new_rule:
-            rule = Rule(name, strrule)
+                rgx = disjuncts[0]
         else:
-            rule.addLine(strrule)
+            rgx = re.sub('([+*?"(){}])', lambda m: "\\" + m[0], rgx)
+        return rgx
 
-        assert rule, "No rule to start with!"
-
-    return rule
-
-
-def convert(input_file, output_file=None):
-    current_rule = None
-
-    with open(input_file) as f:
-        for line in f.readlines():
-            if re.match(r"^\s*$", line):
-                continue
-            if line.startswith("%"):
-                continue
-            current_rule = parse_line(line, current_rule)
-
-    for _, rule in all_rules.items():
-        rule.build_references()
-
-    schema = {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "$id": "https://liri.linguistik.uzh.ch/cobquec5.schema.json",
-        "title": "Constraint-based Query Configuration",
-        "description": "A linguistic query for LCP data Representation",
-        "type": "object",
-        "$defs": {},
-    }
-
-    for name, rule in all_rules.items():
-        if name == "start":
-            schema["properties"] = rule.as_object["properties"]
+    def process_expr(self, expr) -> dict | None:
+        body: dict | None = None
+        child, op = expr.children
+        if op == "?":
+            body = self.process_node(child)
+            if body is None:
+                return None
+            body["required"] = False
         else:
-            schema["$defs"][name] = rule.as_object
+            items = self.process_node(child)
+            if items is None:
+                return None
+            body = {"items": items}
+            if op == "*":
+                body["type"] = ["array", "null"]
+                body["required"] = False
+            else:
+                body["type"] = "array"
+        return body
 
-    jsonSchema = json.dumps(schema)
+    def process_expansion(self, expansion) -> dict | None:
+        body: dict | None = None
+        children = self.process_children(expansion)
+        if not children:
+            return None
+        if len(children) == 1:
+            body = children[0]
+        else:
+            if all(c.get("type") == "string" for c in children):
+                body = {"type": "string"}
+                patterns = set()
+                for c in children:
+                    p = c.get("pattern", "")
+                    if c.get("required") is False:
+                        p += "?"
+                    patterns.add(p)
+                    if poly := c.get("poly"):
+                        body["poly"] = poly
+                body["pattern"] = f"({''.join(p for p in patterns)})"
+            else:
+                body = {"properties": children}
+        return body
 
-    for name in all_rules.keys():
-        if name not in schema["$defs"]:
-            continue
-        if re.match(rf".*#/\$defs/{name}", jsonSchema):
-            continue
-        schema["$defs"].pop(name)
+    def process_expansions(self, expansions) -> dict | None:
+        body: dict | None = None
+        if len(expansions.children) > 1:
+            children = self.process_children(expansions)
+            if not children:
+                return None
+            if all(c.get("type") == "string" for c in children):
+                disjunction = "|".join(c.get("pattern", "") for c in children)
+                body = {
+                    "type": "string",
+                    "pattern": f"({disjunction})",
+                }
+                if poly := next((c["poly"] for c in children if "poly" in c), None):
+                    body["poly"] = poly
+            else:
+                body = {"anyOf": self.collapse_anyOf(children)}
+        else:
+            body = self.process_expansion(expansions.children[0])
+        return body
 
-    jsd = json.dumps(schema, indent=4)
+    def process_node(self, node) -> dict | None:
+        body: dict | None = None
+        if node.data == "expr":
+            body = self.process_expr(node)
+        elif node.data == "expansions":
+            body = self.process_expansions(node)
+        elif node.data == "expansion":
+            body = self.process_expansion(node)
+        elif node.data == "value":
+            first_child = node.children[0]
+            if isinstance(first_child, NonTerminal):
+                if first_child.name in self.ignores:
+                    return None
+                rn = underscore_to_camel(first_child.name)
+                body = {"$ref": f"#/$defs/{rn}"}
+            else:
+                try:
+                    name = first_child.name
+                except:
+                    name = str(first_child.children[0])
+                if name in self.ignores:
+                    return None
+                pattern = self.get_terminal_regex(name)
+                body = {"type": "string", "pattern": pattern}
+                if name in self.poly:
+                    body["poly"] = self.poly[name]
+        return body
 
-    if output_file:
-        open(output_file, "w").write(jsd)
+    def process_children(self, node):
+        children = [self.process_node(c) for c in node.children]
+        return [c for c in children if c is not None]
 
-    print(jsd)
+    def process_rule(self, rule_name, expansions):
+        self.defs[rule_name] = self.process_expansions(expansions)
 
-    return jsd
+    def build_props(self, props):
+        o = {}
+        if "$ref" in props:
+            o = {"$ref": props["$ref"]}
+        if "properties" in props:
+            o["type"] = "object"
+            o["properties"] = {}
+            requireds = []
+            for x in props["properties"]:
+                if "anyOf" in x:
+                    assert all(
+                        "$ref" in y for y in x["anyOf"]
+                    ), "anyOf inside properties only accepts refs"
+                    o["anyOf"] = o.get("anyOf", [])
+                    for y in x["anyOf"]:
+                        ref, ref_name = self.get_ref(y)
+                        o["anyOf"].append({"required": [ref_name]})
+                        o["properties"][ref_name] = {"$ref": ref}
+                else:
+                    assert "$ref" in x, "properties only accepts refs or anyOfs"
+                    ref, ref_name = self.get_ref(x)
+                    o["properties"][ref_name] = {"$ref": ref}
+                    if x.get("required") is not False:
+                        requireds.append(ref_name)
+            if requireds:
+                o["required"] = requireds
+        elif "anyOf" in props:
+            typs = set()
+            o["anyOf"] = []
+            for x in props["anyOf"]:
+                p = self.build_props(x)
+                typs.add(p.get("type", "object"))
+                if "$ref" in p:
+                    o["properties"] = o.get("properties", {})
+                    ref, ref_name = self.get_ref(p)
+                    o["properties"][ref_name] = {"$ref": ref}
+                    o["anyOf"].append({"required": [ref_name]})
+                else:
+                    o["anyOf"].append(p)
+            o["type"] = [t for t in typs] if len(typs) > 1 else next(t for t in typs)
+        elif "items" in props:
+            o["type"] = "array"
+            o["items"] = self.build_props(props["items"])
+            o["minItems"] = 1
+        elif "poly" in props:
+            o = {"type": ["string", props["poly"]], "pattern": props["pattern"]}
+        else:
+            o = props
+        return o
+
+    def make(self):
+        defs = {}
+        # First convert each rule
+        for rule_name, props in self.defs.items():
+            defs[rule_name] = self.build_props(props)
+        # Now simplify the skips
+        for rule_name, to_skips in self.skips.items():
+            rule = defs[rule_name]
+            to_skip = to_skips[0]
+            dfpath = f"#/$defs/{to_skip}"
+            if "$ref" in rule and rule["$ref"] == dfpath:
+                defs[rule_name] = defs[to_skip]
+        # Finally, rename keys
+        for rule_name, renames in self.renames.items():
+            if "properties" in defs[rule_name]:
+                new_p = {
+                    (renames[p] if p in renames else p): v
+                    for p, v in defs[rule_name]["properties"].items()
+                }
+                defs[rule_name]["properties"] = new_p
+            if "anyOf" in defs[rule_name]:
+                new_a = [
+                    (
+                        {"required": [renames[a["required"][0]]]}
+                        if "required" in a and a["required"][0] in renames
+                        else a
+                    )
+                    for a in defs[rule_name]["anyOf"]
+                ]
+                defs[rule_name]["anyOf"] = new_a
+            if "required" in defs[rule_name]:
+                new_r = [
+                    (renames[r] if r in renames else r)
+                    for r in defs[rule_name]["required"]
+                ]
+                defs[rule_name]["required"] = new_r
+        schema = {
+            "$schema": "http://json-schema.org/draft-04/schema#",
+            "$defs": defs,
+            **defs.pop("top", {}),
+            "skips": {
+                k: [underscore_to_camel(x) for x in v] for k, v in self.skips.items()
+            },
+            "renames": self.renames,
+        }
+        self.schema = schema
+        return schema
 
 
-def cmdline() -> None:
-    input = next((f for f in sys.argv if f.endswith(".lark")), "")
-    output = next((f for f in sys.argv if f.endswith(".json")), "")
-
-    print("input: ", input)
-    print("output: ", output)
-
-    assert os.path.isfile(input), f"First argument should be a(n existing) .lark file"
-
-    convert(input, output)
+def lark_grammar_to_json_schema(grammar, filename=GRAMMAR_FILENAME):
+    schema = Schema(grammar, lark=filename)
+    for rule_name, _, expansions, _ in grammar.rule_defs:
+        rn = underscore_to_camel(rule_name.value)
+        schema.process_rule(rn, expansions)
+    schema.make()
+    return schema
 
 
 if __name__ == "__main__":
-    cmdline()
+    output_fn = next((f for f in argv if f.endswith(".json")), "cobquec.auto.json")
+    s = lark_grammar_to_json_schema(parser.grammar)
+    with open(os.path.join(os.path.dirname(__file__), output_fn), "w") as output_file:
+        output_file.write(dumps(s.schema, indent=4))
+
+# from testgrammar import test_parser, parsed, lark_grammar_to_json_schema, dqd_to_json
+# dqd_to_json(parsed, lark_grammar_to_json_schema(test_parser.grammar))

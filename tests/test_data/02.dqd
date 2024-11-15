@@ -1,0 +1,29 @@
+Session e
+    date = /^2000/
+
+Segment@e s
+
+sequence np
+    Token@s t1
+        upos = "VERB"
+    Token@s t2
+        upos = "DET"
+    Token@s t3
+        upos = "NOUN"
+        xpos = "NP"
+
+myKWIC1 => plain
+    context
+        s
+    entities
+        t1
+        t2
+        t3
+
+stat1 => analysis
+    attributes
+        t1.lemma
+    functions
+        frequency
+    filter
+        frequency > 1

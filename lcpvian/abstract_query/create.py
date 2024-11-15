@@ -30,7 +30,6 @@ def json_to_sql(
     batch: str = "token_rest",
     config: QueryJSON = {},
     lang: str | None = None,
-    vian: bool = False,
 ) -> tuple[str, QueryJSON, dict[int, Any]]:
     """
     The only public thing exposed by this module.
@@ -38,11 +37,13 @@ def json_to_sql(
     It requires a query in JSON format plus configuration stuff
     """
     language: str | None = lang.lower() if lang else None
-    conf: Config = Config(schema, batch, config, language, vian)
+    conf: Config = Config(schema, batch, config, language)
     result_data: QueryData = ResultsMaker(query_json, conf).results()
     query_part: str
     seg_label: str
-    query_part, seg_label, has_char_range = QueryMaker(query_json, result_data, conf).query()
+    query_part, seg_label, has_char_range = QueryMaker(
+        query_json, result_data, conf
+    ).query()
     unions_part: str = unions(query_json)
     result = result_data.needed_results
     result = result.replace("__seglabel__", seg_label)
@@ -54,6 +55,8 @@ def json_to_sql(
     }
 
     script = BASE.format(**formatters)
-    script = sqlparse.format(script, reindent=True, keyword_case="upper", use_space_around_operators=False)
+    script = sqlparse.format(
+        script, reindent=True, keyword_case="upper", use_space_around_operators=False
+    )
 
     return script, result_data.meta_json, result_data.post_processes

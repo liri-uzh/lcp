@@ -109,6 +109,8 @@ a:hover {
 </style>
 
 <script>
+import { mapState } from "pinia";
+import { useCorpusStore } from "@/stores/corpusStore";
 import Utils from "@/utils";
 
 export default {
@@ -117,18 +119,11 @@ export default {
   data() {
     return {
       userLicense: this.corpus.meta && this.corpus.meta.userLicense ? atob(this.corpus.meta.userLicense) : "",
-      licenses: [
-        {tag: "cc-by", name: "CC-BY", url: "https://creativecommons.org/licenses/by/4.0/"},
-        {tag: "cc-by-sa", name: "CC-BY-SA", url: "https://creativecommons.org/licenses/by-sa/4.0/"},
-        {tag: "cc-by-nc", name: "CC-BY-NC", url: "https://creativecommons.org/licenses/by-nc/4.0/"},
-        {tag: "cc-by-nc-sa", name: "CC-BY-NC-SA", url: "https://creativecommons.org/licenses/by-nc-sa/4.0/"},
-        {tag: "cc-by-nd", name: "CC-BY-ND", url: "https://creativecommons.org/licenses/by-nd/4.0/"},
-        {tag: "cc-by-nc-nd", name: "CC-BY-NC-ND", url: "https://creativecommons.org/licenses/by-nc-nd/4.0/"},
-        {tag: "cc-zero", name: "CC-0", url: "https://creativecommons.org/publicdomain/zero/1.0/"},
-        {tag: "user-defined", name: "User defined", url: null}
-      ],
       corpusData: { ...this.corpus },
     }
+  },
+  computed: {
+    ...mapState(useCorpusStore, ["licenses"]),
   },
   methods: {
     corpusDataType: Utils.corpusDataType,

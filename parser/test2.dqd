@@ -1,61 +1,64 @@
-Turn d
-    IsPresident = 'no'
-    PoliticalGroup != 'NI'
+Layer1 label1
+    left1 = right1
+    year = 1999
+    label1.year = 1999
+    year(label1.date) = 1999
+    left5 contain "right5"
+    left6 = /right6/
+    AND
+        left7 = right7
+        left8 = right8
+    length(lemma, dummy) = 35 + 30
 
-Segment@d s
+# This is a random comment
+Layer2@label1 label2 # this is another random comment
+    left2 != right2
+    left3 >= right3
+    left4 < right4
+    start(label2) > start(label1)
+    end(label2) < end(label1) - 30
 
-sequence seq
-    Token@s t1
-        upos = 'DET'
-    Token@s t2
-        upos = 'ADJ'
-    Token@s t3
-        upos = 'NOUN'
-        lemma.length > 5
+sequence@label1 seq 1..2
+    Token t1
+    Token t2
 
-set tdeps
-    Token@s tx
+set deps
+    Token tx
         DepRel
-            head = t3
+            head = t2
             dep = tx
 
+label1 = label2
 
-Token@s thead
-    upos = 'VERB'
-    DepRel
-        head = thead
-        dep = t3
+!EXISTS
+    Token@label2
+        upos = "ADV"
 
-
-KWIC1 => plain
+results1 => plain
     context
-        s
-    entities
-        t1
-        t2
-        t3
-
-KWIC2 => plain
-    context
-        s
+        label1
     entities
         seq
+        label2
 
-Stat1 => analysis
+results2 => analysis
     attributes
-        t1.lemma
-        t2.lemma
-        t3.lemma
+        label1.lemma
     functions
         frequency
     filter
-        frequency > 10
+        frequency > 2
 
-Stat2 => analysis
-    attributes
-        t3.lemma
-        d.OriginalLanguage
-    functions
-        frequency
-    filter
-        frequency > 10
+results3 => collocation
+    space
+        seq
+    attribute
+        t2.form
+
+results3 => collocation
+    center
+        t2
+    window
+        -32..+32
+    attribute
+        t2.form

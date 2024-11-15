@@ -31,7 +31,9 @@
               track-by="value"
             ></multiselect>
           </div>
-          <div class="mb-3">
+          <div class="mb-3"
+            v-if="selectedCorpora && availableLanguages.length > 1"
+          >
             <label class="form-label">Languages</label>
             <multiselect
               v-model="selectedLanguages"
@@ -240,6 +242,10 @@
                   :invalidError="
                     isQueryValidData && isQueryValidData.valid != true
                       ? isQueryValidData.error
+                      : null
+                  "
+                  :errorList="isQueryValidData && isQueryValidData.valid != true
+                      ? isQueryValidData.errorList
                       : null
                   "
                   @submit="submit"
@@ -599,7 +605,7 @@
             ></button>
           </div>
           <div class="modal-body text-start">
-            <label class="form-label">Plain fromat (TSV + JSON)</label>
+            <label class="form-label">Plain format (TSV + JSON)</label>
             <button
               type="button"
               @click="exportResults('plain', /*download=*/true, /*preview=*/true)"
@@ -608,17 +614,17 @@
             >
               Download preview
             </button>
-            <button
+            <!-- <button
               type="button"
               @click="exportResults('plain')"
               class="btn btn-primary me-1"
               data-bs-dismiss="modal"
             >
               Launch export
-            </button>
+            </button> -->
           </div>
-          <!-- <div class="modal-body text-start">
-            <label class="form-label">SwissDox</label>
+          <div class="modal-body text-start" v-if="selectedCorpora && selectedCorpora.corpus && selectedCorpora.corpus.shortname.match(/swissdox/i)">
+            <label class="form-label">Swissdox</label>
             <button
               type="button"
               @click="exportResults('swissdox')"
@@ -626,7 +632,7 @@
             >
               Launch export
             </button>
-          </div> -->
+          </div>
           <div class="modal-footer">
             <button
               type="button"
@@ -1014,7 +1020,7 @@ export default {
       ) {
         console.log("Submit");
         this.nResults = newNResults;
-        this.submit(null, true);
+        this.submit(null, /*resumeQuery=*/true, /*cleanResults=*/false);
       }
     },
     updateQueryDQD(queryDQD) {
@@ -1104,6 +1110,7 @@ export default {
             this.query = JSON.stringify(data.json, null, 2);
           }
           this.isQueryValidData = data;
+          console.log("isQueryValidData", data);
           return;
         }
         if (data["action"] === "stats") {
@@ -1136,7 +1143,10 @@ export default {
           console.log("query stored", data);
           return;
         } else if (data["action"] == "export_link") {
-          useCorpusStore().fetchExport(data.fn);
+          this.loading = false;
+          this.percentageDone = this.WSDataResults.percentage_done;
+          const {schema_path} = this.selectedCorpora.corpus;
+          useCorpusStore().fetchExport(schema_path, data.fn);
           useNotificationStore().add({
             type: "success",
             text: "Initiated export download"
@@ -1288,7 +1298,7 @@ export default {
     },
     isSubmitDisabled() {
       return (this.selectedCorpora && this.selectedCorpora.length == 0) ||
-              this.loading===true ||
+              this.loading === true ||
               (this.isQueryValidData != null && this.isQueryValidData.valid == false) ||
               !this.query ||
               !this.selectedLanguages
@@ -1323,8 +1333,8 @@ export default {
     async exportResults(format, download=false, preview=false) {
       const to_export = {};
       to_export.format = {
-        'plain':'dump',
-        'swissdox':'swissdox'
+        'plain': 'dump',
+        'swissdox': 'swissdox'
       }[format];
       to_export.preview = preview;
       to_export.download = download;

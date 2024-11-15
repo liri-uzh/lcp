@@ -41,8 +41,9 @@ class DataNeededLater:
     m_lemma_freqs: str = ""
     batchnames: list[str] = field(default_factory=list)
     mapping: dict[str, JSONObject] = field(default_factory=dict)
-    perms: str = ""
+    # perms: str = ""
     refs: list[str] = field(default_factory=list)
+    grant_query_select: str = ""
 
     def asdict(
         self,
@@ -66,7 +67,7 @@ class Globs:
         self.m_lemma_freqs: str = ""
         self.batchnames: list[str] = []
         self.mapping: dict[str, JSONObject] = {}
-        self.perms: str = ""
+        # self.perms: str = ""
 
 
 LB = "{"
@@ -80,19 +81,10 @@ class DDL:
     """
 
     def __init__(self) -> None:
-        self.perms: Callable[[str, str], str] = lambda x, y: dedent(
-            f"""
-            GRANT USAGE ON SCHEMA {x} TO {y};
-            GRANT SELECT ON ALL TABLES IN SCHEMA {x} TO {y};
-            ALTER DEFAULT PRIVILEGES IN SCHEMA {x} GRANT SELECT ON TABLES TO {y};\n\n"""
-        )
-
         self.create_scm: Callable[[str, str, str], str] = lambda x, y, z: dedent(
             f"""
-            BEGIN;
-            CREATE SCHEMA {x};
-            DELETE FROM main.corpus WHERE name = '{y}' AND current_version = {z};
-            SET search_path TO {x};"""
+            CALL main.open_import('{x}'::uuid, '{y}'::uuid, '{z.replace("'","''")}');
+            SET search_path TO "{x}";"""
         )
 
         self.create_prepared_segs: Callable[[str, str], str] = lambda x, y: dedent(
@@ -217,6 +209,7 @@ class DDL:
     @staticmethod
     def fmt(string: str, quote: bool = True, comma: bool = False) -> str:
         if quote:
+            string = re.sub(r"'", "''", string)
             string = "'" + string + "'"
         if comma:
             return string + ","
@@ -238,7 +231,7 @@ class DDL:
 class Column(DDL):
     _not_null_constr = "ALTER COLUMN {} SET NOT NULL;"
     _pk_constr = "ADD PRIMARY KEY ({});"
-    _fk_constr = "ADD FOREIGN KEY ({}) REFERENCES {}.{}({});"
+    _fk_constr = 'ADD FOREIGN KEY ({}) REFERENCES "{}".{}({});'
     _uniq_constr = "ADD UNIQUE ({});"
     _idx_constr = "{} ({});"
 
@@ -320,7 +313,7 @@ class Table(DDL):
         self.tabwidth = 8
         self.type_sizes: dict[str, int] = {}
         if anchorings:
-            for anchor in anchorings:
+            for anchor in set(anchorings):
                 self.cols.append(Column(*self.anchoring[anchor]))
         self._max_ident = (
             math.ceil((max([len(col.name) for col in cols]) + 1) / self.tabwidth)
@@ -359,7 +352,7 @@ class Table(DDL):
 
     def create_constrs(self, schema: str) -> list[str]:
         ret = [
-            f"ALTER TABLE {schema}.{self.name} " + constr
+            f'ALTER TABLE "{schema}".{self.name} ' + constr
             for col in self.cols
             if (constr := col.ret_constrs(schema))
         ]
@@ -367,7 +360,7 @@ class Table(DDL):
 
     def create_idxs(self, schema: str) -> list[str]:
         ret = [
-            f"CREATE INDEX ON {schema}.{self.name} " + idx
+            f'CREATE INDEX ON "{schema}".{self.name} ' + idx
             for col in self.cols
             if (idx := col.ret_idx())
         ]
@@ -478,11 +471,11 @@ class PartitionedTable(Table):
         pks = starts + ends
 
         ret.append(
-            f"ALTER TABLE {schema}.{self.name} ADD PRIMARY KEY ({', '.join(pks)});"
+            f"ALTER TABLE \"{schema}\".{self.name} ADD PRIMARY KEY ({', '.join(pks)});"
         )
 
         ret += [
-            f"ALTER TABLE {schema}.{self.name} " + constr
+            f'ALTER TABLE "{schema}".{self.name} ' + constr
             for col in self.cols
             if (constr := col.ret_constrs(schema))
         ]
@@ -522,9 +515,14 @@ class Type(DDL):
 
 class CTProcessor:
     def __init__(
-        self, corpus_template: dict[str, Any], glos: Globs, corpus_version: int = 1
+        self,
+        corpus_template: dict[str, Any],
+        project_id: str,
+        glos: Globs,
+        corpus_version: int = 1,
     ) -> None:
         self.corpus_temp = corpus_template
+        self.project_id = project_id
         self.schema_name = corpus_template.get("schema_name", "testcorpus")
         self.layers = self._order_ct_layers(corpus_template["layer"])
         self.global_attributes = corpus_template.get("globalAttributes", {})
@@ -588,7 +586,7 @@ class CTProcessor:
             nullable = vals.get("nullable", False) or False
             # TODO: make this working also for e.g. "isGlobal" & "text"
             typ = vals.get("type")
-            ref = vals.get("ref")
+            ref = vals.get("ref", "")
             if typ == "text" or ref:
                 norm_type = "text"
                 parent = entity_name.lower()
@@ -599,13 +597,15 @@ class CTProcessor:
                     norm_type = self.global_attributes[ref].get("type", "text")
                     parent = "global_attribute"
 
-                norm_col = f"{attr}_id"
+                ref_or_attr = (ref or attr).lower()
+
+                norm_col = f"{ref_or_attr}_id"
                 norm_table: Table
                 existing_table: Table | None = next(
                     (
                         t
                         for t in self.globals.tables
-                        if t.name == f"global_attribute_{attr}"
+                        if t.name == f"global_attribute_{ref}"
                     ),
                     None,
                 )
@@ -613,21 +613,23 @@ class CTProcessor:
                     norm_table = existing_table
                 else:
                     norm_table = Table(
-                        attr,
+                        ref_or_attr,
                         [
-                            Column(norm_col, "int", primary_key=True),
-                            Column(
-                                attr, TYPES_MAP.get(norm_type, norm_type), unique=True
-                            ),
+                            Column(norm_col, "text", primary_key=True),
+                            Column(ref_or_attr, TYPES_MAP.get(norm_type, norm_type)),
                         ],
                         parent=parent,
                     )
-                map_attr[attr] = {"name": norm_table.name, "type": "relation"}
+                map_attr[attr] = {
+                    "name": norm_table.name,
+                    "type": "relation",
+                    "key": ref_or_attr,
+                }
 
                 table_cols.append(
                     Column(
-                        norm_col,
-                        "int",
+                        attr.lower() + "_id",
+                        "text",
                         foreign_key={"table": norm_table.name, "column": norm_col},
                         nullable=nullable,
                     )
@@ -666,9 +668,10 @@ class CTProcessor:
                     assert (
                         "values" in vals
                     ), f"List of values is needed when type is categorical ({entity_name}:{attr})"
-                    enum_type = Type(attr, vals["values"])
+                    enum_name = f"{entity_name}_{attr}".lower()
+                    enum_type = Type(enum_name, vals["values"])
                     types.append(enum_type)
-                    table_cols.append(Column(attr, attr, nullable=nullable))
+                    table_cols.append(Column(attr, enum_name, nullable=nullable))
 
             elif typ == "date":
                 table_cols.append(Column(attr, "date", nullable=nullable))
@@ -784,9 +787,16 @@ class CTProcessor:
             has_media = self.corpus_temp["meta"].get("mediaSlots", {})
             if l_name == self.globals.base_map["document"] and has_media:
                 table_cols.append(Column("media", "jsonb"))
-            if any(x.get("mediaType") == "video" for x in has_media.values()):
-                table_cols.append(Column("name", "text"))
+                if any(
+                    x.get("mediaType") in ("audio", "video") for x in has_media.values()
+                ):
+                    table_cols.append(Column("name", "text"))
             ptable = None
+            # If this layer is contained in another, add an FK column
+            for parent_layer, pl_conf in self.layers.items():
+                if pl_conf.get("contains") != l_name:
+                    continue
+                table_cols.append(Column(f"{parent_layer.lower()}_id", "int"))
             table = Table(table_name, table_cols, anchorings=anchs)
             tables.append(table)
 
@@ -909,7 +919,7 @@ class CTProcessor:
             if x.name == self.globals.base_map["token"].lower() + "0"
         )
         rel_cols = [
-            x.name.rstrip("_id")
+            x.name.removesuffix("_id")
             for x in tok_tab.cols
             if not (x.constrs.get("primary_key") or x.name.endswith("range"))
         ]
@@ -917,23 +927,27 @@ class CTProcessor:
         self.globals.mapping = mapd
 
     def process_schema(self) -> str:
-        corpus_name = re.sub(r"\W", "_", self.corpus_temp["meta"]["name"].lower())
+        original_name = self.corpus_temp["meta"]["name"]
+        corpus_name = re.sub(r"\W", "_", original_name.lower())
         corpus_name = re.sub(r"_+", "_", corpus_name)
         # corpus_version = str(int(self.corpus_temp["meta"]["version"]))
         # corpus_version = re.sub(r"\W", "_", corpus_version.lower())
         # corpus_version = re.sub(r"_+", "_", corpus_version)
-        corpus_version = str(self.corpus_version)
+        # corpus_version = str(self.corpus_version)
         schema_name: str = self.schema_name
+        project_id: str = self.project_id
+        corpus_template: str = json.dumps(self.corpus_temp)
 
-        scm: str = self.ddl.create_scm(schema_name, corpus_name, corpus_version)
+        # scm: str = self.ddl.create_scm(schema_name, corpus_name, corpus_version)
+        scm: str = self.ddl.create_scm(schema_name, project_id, corpus_template)
         self.globals.schema.append(scm)
-        query_user = os.getenv("SQL_QUERY_USERNAME", "lcp_dev_webuser")
-        perms: str = self.ddl.perms(schema_name, query_user)
-        self.globals.perms = perms
+        # query_user = os.getenv("SQL_QUERY_USERNAME", "lcp_dev_webuser")
+        # perms: str = self.ddl.perms(schema_name, query_user)
+        # self.globals.perms = perms
         return schema_name
 
     def create_collocation_views(self) -> None:
-        search_path = f"\nSET search_path TO {self.schema_name};"
+        search_path = f'\nSET search_path TO "{self.schema_name}";'
         tok_tbl = self.globals.base_map["token"].lower()
         statement: str = self.ddl.m_token_n(tok_tbl, tok_tbl + "0")
 
@@ -979,7 +993,7 @@ class CTProcessor:
             ],
             key=lambda x: x.name,
         )
-        rel_cols_names = [x.name.rstrip("_id") for x in rel_cols]
+        rel_cols_names = [x.name.removesuffix("_id") for x in rel_cols]
         # Process any token dependency
         for lay_name, lay_conf in self.layers.items():
             if lay_conf.get("layerType") != "relation":
@@ -1026,7 +1040,7 @@ class CTProcessor:
         }
         self.globals.mapping = mapd
 
-        searchpath = f"\nSET search_path TO {self.schema_name};"
+        searchpath = f'\nSET search_path TO "{self.schema_name}";'
 
         ddl: str = self.ddl.create_prepared_segs(
             seg_tab.name, seg_tab.primary_key()[0].name
@@ -1099,12 +1113,12 @@ class CTProcessor:
 
 
 def generate_ddl(
-    corpus_temp: dict[str, Any], corpus_version: int = 1
+    corpus_temp: dict[str, Any], project_id: str, corpus_version: int = 1
 ) -> dict[str, str | list[str] | dict[str, int]]:
     globs = Globs()
     globs.base_map = corpus_temp["firstClass"]
 
-    processor = CTProcessor(corpus_temp, globs, corpus_version)
+    processor = CTProcessor(corpus_temp, project_id, globs, corpus_version)
 
     schema_name = processor.process_schema()
     processor.process_layers()
@@ -1126,6 +1140,7 @@ def generate_ddl(
 
     # todo: i don't think this defaultdict trick is needed, all the tables
     # must have unique names right?
+    QUERY_USER: str = os.getenv("SQL_QUERY_USERNAME", "lcp_dev_webuser")
     constraints: defaultdict[str, list[str]] = defaultdict(list)
     refs: list[str] = []
     for table in sorted(globs.tables):
@@ -1136,6 +1151,9 @@ def generate_ddl(
                 refs.append(c)
             else:
                 constraints[table.name].append(c)
+    grant_query_select = (
+        f'GRANT SELECT ON ALL TABLES IN SCHEMA "{schema_name}" TO {QUERY_USER}'
+    )
     formed_constraints = ["\n".join(i) for i in constraints.values()]
 
     return DataNeededLater(
@@ -1149,8 +1167,9 @@ def generate_ddl(
         globs.m_lemma_freqs,
         globs.batchnames,
         globs.mapping,
-        globs.perms,
+        # globs.perms,
         refs,
+        grant_query_select,
     ).asdict()
 
 
@@ -1158,7 +1177,7 @@ def main(corpus_template_path: str) -> None:
     with open(corpus_template_path) as f:
         corpus_temp = json.load(f)
 
-    data = generate_ddl(corpus_temp)
+    data = generate_ddl(corpus_temp, "project_id")
 
     # print(json.dumps(data, indent=4))
     print(data["create"])
@@ -1173,7 +1192,8 @@ def main(corpus_template_path: str) -> None:
     print(data["m_token_n"])
     print(data["m_token_freq"])
     print(data["m_lemma_freqs"])
-    print(data["perms"])
+    # print(data["perms"])
+    print(data["grant_query_select"])
 
     print("Mapping:", data["mapping"])
 

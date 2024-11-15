@@ -14,10 +14,10 @@
           </th>
         </tr>
         <tr>
-          <th scope="col" v-for="(col, index) in calcAttributes" :key="index" @click="sortChange(index)" :class="col.class">
+          <th scope="col" v-for="(col, index) in calcAttributes" :key="index" @click="sortChange(index, $event)" :class="col.class">
             {{ col.name }}
-            <span v-if="index == sortBy">
-              <FontAwesomeIcon :icon="['fas', 'arrow-up']" v-if="sortDirection == 0" />
+            <span v-if="isSortedBy(index)">
+              <FontAwesomeIcon :icon="['fas', 'arrow-up']" v-if="getSortDirection(index) == 0" />
               <FontAwesomeIcon :icon="['fas', 'arrow-down']" v-else />
             </span>
           </th>
@@ -142,8 +142,7 @@ export default {
       modalVisible: false,
       modalIndex: null,
       currentPage: 1,
-      sortBy: attributes.length - 1,
-      sortDirection: 1,
+      sortBy: [{ index: attributes.length - 1, direction: 1 }], // Track columns and directions for sorting
       filters: attributes.map(() => ''),
       filterErrors: attributes.map(() => false),
       additionalColumData: [],
@@ -169,16 +168,14 @@ export default {
           ])
         }
         else if (this.type == "collocation") {
-          // row[1] = O
-          // row[2] = E
           data = this.data.map(row => [
             ...row,
-            (row[1]/row[2]).toFixed(4),  // O/E
-            Math.log2(row[1]/row[2]).toFixed(4),  // MI
-            Math.log2(Math.pow(row[1], 3)/row[2]).toFixed(4),  // MI³
-            (row[1]*Math.log2(row[1]/row[2])).toFixed(4),  // local-MI
-            ((row[1] - row[2]) / Math.sqrt(row[1])).toFixed(4),  // t-score
-            ((row[1] - row[2]) / Math.sqrt(row[2])).toFixed(4),  // z-score
+            (row[1]/row[2]).toFixed(4),
+            Math.log2(row[1]/row[2]).toFixed(4),
+            Math.log2(Math.pow(row[1], 3)/row[2]).toFixed(4),
+            (row[1]*Math.log2(row[1]/row[2])).toFixed(4),
+            ((row[1] - row[2]) / Math.sqrt(row[1])).toFixed(4),
+            ((row[1] - row[2]) / Math.sqrt(row[2])).toFixed(4),
             (2*(row[1]*Math.log(row[1]/row[2]) - (row[1] - row[2]))).toFixed(4),
           ]);
         }
@@ -186,7 +183,6 @@ export default {
       return data
     },
     getImpovedAttibutes(attributes) {
-      // Add relative frequency to analysis
       if (this.attributes) {
         attributes = JSON.parse(JSON.stringify(this.attributes));
         if (this.type == "analysis") {
@@ -249,37 +245,25 @@ export default {
       this.currentPage = currentPage;
       this.$emit("updatePage", this.currentPage);
     },
-    bgCheck (resultIndex, tokenIndex, range, type) {
-      let classes = []
-      resultIndex = resultIndex + ((this.currentPage - 1)*this.resultsPerPage)
-      if (this.currentIndex == resultIndex) {
-        let headIndex = this.columnHeaders.indexOf("head");
-        let currentTokenHeadId = this.currentToken[headIndex];
-        let startId = this.data[this.currentIndex][2];
-        let tokenId
-        if (type == 1) {
-          tokenId = range[0] - tokenIndex + startId - 1
+    sortChange(index, event) {
+      let existingIndex = this.sortBy.findIndex(item => item.index === index);
+
+      if (event.shiftKey) {
+        if (existingIndex > -1) {
+          this.sortBy[existingIndex].direction = this.sortBy[existingIndex].direction === 0 ? 1 : 0;
+        } else {
+          this.sortBy.push({ index, direction: 1 });
         }
-        else if (type == 2) {
-          tokenId = range[0] + tokenIndex + startId
-        }
-        else if (type == 3) {
-          tokenId = range[1] + tokenIndex + startId + 1
-        }
-        if (tokenId == currentTokenHeadId) {
-          classes.push("highlight")
-        }
+      } else {
+        this.sortBy = [{ index, direction: existingIndex > -1 ? (this.sortBy[0].direction === 0 ? 1 : 0) : 1 }];
       }
-      return classes
     },
-    sortChange(index) {
-      if (this.sortBy == index) {
-        this.sortDirection = this.sortDirection == 0 ? 1 : 0
-      }
-      else {
-        this.sortBy = index
-        this.sortDirection = 1
-      }
+    isSortedBy(index) {
+      return this.sortBy.some(sortCondition => sortCondition.index === index);
+    },
+    getSortDirection(index) {
+      const condition = this.sortBy.find(sortCondition => sortCondition.index === index);
+      return condition ? condition.direction : null;
     },
     round(float) {
       if (float < this.roundBelow)
@@ -289,76 +273,40 @@ export default {
     }
   },
   computed: {
-    columnHeaders() {
-      let partitions = this.corpora.corpus.partitions
-        ? this.corpora.corpus.partitions.values
-        : [];
-      let columns = this.corpora.corpus["mapping"]["layer"][this.corpora.corpus["segment"]];
-      if (partitions.length) {
-        columns = columns["partitions"][partitions[0]];
-      }
-      return columns["prepared"]["columnHeaders"];
-    },
     filteredData() {
       let start = this.resultsPerPage * (this.currentPage - 1);
       let end = start + this.resultsPerPage;
 
-      let matchFilters = []
-      this.filters.forEach((filter, index) => {
-        let matchCoparator = filter.match(/^\s*(=|<|>|>=|<=|!=).*$/);
-        let isRegExField = this.calcAttributes[index].valueType == "float"  // For now just float
-        let match = filter.match(/^\s*(=|<|>|>=|<=|!=)\s*(-?\d+(\.\d+)?)\s*$/);
-        matchFilters.push(match ? match : null)
-        this.filterErrors[index] = (!match && isRegExField && matchCoparator && filter.length > 0) ? true : false
-      })
-
       let filtered = this.calcData.filter(row => {
-        let res = true
-        row.forEach((data, index) => {
-          let filter = null;
-          if (this.calcAttributes[index].valueType == "float") {
-            let match = matchFilters[index];
+        return this.filters.every((filter, index) => {
+          if (!filter) return true;
+          let data = row[index];
+          if (this.calcAttributes[index].valueType === "float") {
+            let match = filter.match(/^\s*(=|<|>|>=|<=|!=)\s*(-?\d+(\.\d+)?)\s*$/);
             if (match) {
-              filter = v=>{
-                let comp = [];
-                if (match[1].includes("=")) comp.push(this.round(Number(v)) == Number(match[2]));
-                if (match[1].includes(">")) comp.push(this.round(Number(v)) > Number(match[2]));
-                if (match[1].includes("<")) comp.push(this.round(Number(v)) < Number(match[2]));
-                if (match[1].startsWith("!"))
-                  return !comp.reduce((x,y)=>x||y,false);
-                else
-                  return comp.reduce((x,y)=>x||y,false);
-              };
+              let comp = Number(match[2]);
+              return eval(`${data} ${match[1]} ${comp}`);
             }
           }
-          else {
-            filter = v => v.toString().toLowerCase().includes(this.filters[index].toLowerCase());
-          }
-          // if (filter && (!data || !data.toString().toLowerCase().includes(this.filters[index].toLowerCase()))){
-          if (filter && (!data || !filter(data.toString().toLowerCase()))) {
-            res = false
-          }
-        })
-        return res
-      })
-      let castFunction = (value) => (value||"").toString()
-      if (this.sortBy && this.calcAttributes[this.sortBy] && this.calcAttributes[this.sortBy].valueType == "float"){
-        castFunction = (value) => parseFloat(value||NaN)
-      }
-      filtered.sort((a, b) => {
-        let retval = 0
-        let _a = castFunction(a[this.sortBy])
-        let _b = castFunction(b[this.sortBy])
-        if (_a > _b) {
-          retval = this.sortDirection == 0 ? 1 : -1
-        }
-        if (_a < _b) {
-          retval = this.sortDirection == 0 ? -1 : 1
-        }
-        return retval
-      })
+          return data.toString().toLowerCase().includes(filter.toLowerCase());
+        });
+      });
 
-      return filtered.filter((row, rowIndex) => rowIndex >= start && rowIndex < end)
+      filtered.sort((a, b) => {
+        for (let sortCondition of this.sortBy) {
+          let { index, direction } = sortCondition;
+          let valA = a[index] || "";
+          let valB = b[index] || "";
+          if (valA !== valB) {
+            return direction === 1
+              ? valA > valB ? 1 : -1
+              : valA < valB ? 1 : -1;
+          }
+        }
+        return 0;
+      });
+
+      return filtered.slice(start, end);
     },
   },
   watch: {
@@ -368,7 +316,7 @@ export default {
     attributes(newValue) {
       let attributes = this.getImpovedAttibutes(newValue)
       this.calcAttributes = attributes
-      this.sortBy = attributes.length - 1
+      this.sortBy = [{ index: attributes.length - 1, direction: 1 }];
       this.filters = attributes.map(() => '')
     },
   }

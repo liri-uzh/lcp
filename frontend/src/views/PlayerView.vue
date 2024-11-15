@@ -71,7 +71,7 @@
         <div class="video-box">
           <div class="video-text" v-html="subtext"></div>
           <div :class="mainVideo == 1 ? 'active' : ''">
-            <video ref="videoPlayer1" @timeupdate="timeupdate">
+            <video ref="videoPlayer1" @timeupdate="timeupdate" @canplay="videoPlayer1CanPlay">
               <source
                 :src="baseMediaUrl + currentDocument[2][0]"
                 type="video/mp4"
@@ -375,6 +375,20 @@
           </div>
         </div>
       </div>
+      <div
+        id="timelinePopin"
+        ref="timelinePopin"
+        v-if="timelineEntry"
+        :style="_getTimelinePopinXY()"
+      >
+        <div
+          v-for="(entry, index) in timelineEntry"
+          :key=index
+        >
+          <div class="header" v-html=entry[0]></div>
+          <div v-html=entry[1]></div>
+        </div>
+      </div>
       <TimelineView
         v-if="Object.keys(currentDocumentData).length > 0 && loadingDocument == false"
         :data="currentDocumentData"
@@ -382,6 +396,8 @@
         :playerIsPlaying="playerIsPlaying"
         :playerCurrentTime="playerCurrentTime"
         @updateTime="_playerSetTime"
+        @annotationEnter="_annotationEnter"
+        @annotationLeave="_annotationLeave"
         :key="documentIndexKey"
       />
       <div v-else-if="loadingDocument == true">
@@ -558,15 +574,15 @@
                     <div class="col-2">
                       <span
                         class="badge bg-secondary"
-                        v-html="frameNumberToTime(frameFromResult(result,index)[0])"
+                        v-html="frameNumberToTimeInResults(result, index)"
                       ></span>
                     </div>
                     <div class="col">
                       <span class="text-bold" v-html="contextWithHighlightedEntities(result, index)" />
                       <span v-html="otherEntityInfo(result, index)"></span>
                     </div>
-                    <div class="col-1">
-                      <span v-html="documentDict[docIdFromFrame(frameFromResult(result,index))]"></span>
+                    <div class="col-1" :title="documentDict[docIdFromFrame(frameFromResult(result, index))]">
+                      <span v-html="documentDict[docIdFromFrame(frameFromResult(result, index))]"></span>
                       <!-- <br>
                       <span v-html="result[4]"></span> -->
                     </div>
@@ -605,6 +621,8 @@ import EditorView from "@/components/EditorView.vue";
 import TimelineView from "@/components/videoscope/TimelineView.vue";
 import PaginationComponent from "@/components/PaginationComponent.vue";
 
+const urlRegex = /(https?:\/\/(www\.)?[-a-zA-Z0-9@:%._+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_+.~#?&//=]*))/g;
+
 export default {
   data() {
     return {
@@ -615,6 +633,7 @@ export default {
       currentMediaDuration: 0,
       documentIndexKey: 0,
       loadingDocument: false,
+      loadingMedia: false,
       isQueryValidData: null,
       loading: false,
       failedStatus: false,
@@ -640,7 +659,9 @@ export default {
       volume: 0.5,
       frameRate: 25.0,
 
-      setResultTime: null,
+      timelineEntry: null,
+
+      setResultTimes: null,
       query: "",
       queryDQD: '',
       corpusData: [],
@@ -685,7 +706,7 @@ export default {
   },
   methods: {
     setDocument(document) {
-      this.currentDocument = document
+      this.currentDocument = document;
     },
     otherEntityInfo(result, index) {
       index = 0; // hard-coded for now
@@ -700,7 +721,10 @@ export default {
       const n_entities = this.WSDataResults.result[0].result_sets[index].attributes.findIndex(a=>a.name == "entities");
       const context = [];
       const offset = parseInt(this.WSDataResults.result[-1][result[0]][0]);
-      const toks = this.WSDataResults.result[-1][result[0]][1].map(x=>x[0]);
+      const segment_layer_name = this.selectedCorpora.corpus.firstClass.segment;
+      const column_names = this.selectedCorpora.corpus.mapping.layer[segment_layer_name].prepared.columnHeaders;
+      const form_n = column_names.indexOf("form");
+      const toks = this.WSDataResults.result[-1][result[0]][1].map(x=>x[form_n]);
       for (let n in toks) {
         if (n_entities<0 || !(result[n_entities]||[]).includes(offset+parseInt(n))) context.push(toks[n]);
         else context.push("<span style='color:brown;'>"+toks[n]+"</span>");
@@ -711,7 +735,15 @@ export default {
       let seconds = Utils.frameNumberToSeconds(frameNumber);
       return Utils.msToTime(seconds);
     },
-    frameFromResult(result,index) {
+    frameNumberToTimeInResults(result, index) {
+      let docId = this.docIdFromFrame(this.frameFromResult(result, index))
+      return this.frameNumberToTime(
+        parseInt(this.frameFromResult(result, index)[0])
+        -
+        parseInt(this.corpusData.find(c => c[0] == docId)[3][0])
+      )
+    },
+    frameFromResult(result, index) {
       // if (index >= this.WSDataResults.result[0].result_sets.length)
       //   return [0,0];
       index = 0; // hard-coded for now
@@ -724,44 +756,66 @@ export default {
     updatePage(currentPage) {
       this.currentPage = currentPage;
     },
+    // docIdFromFrame(frame) {
+    //   let [minFrame, maxFrame] = frame;
+    //   return this.corpusData.find(c=>c[3][0] <= minFrame && maxFrame <= c[3][1])[0];
+    // },
     docIdFromFrame(frame) {
+      // Binary search
       let [minFrame, maxFrame] = frame;
-      return this.corpusData.find(c=>c[3][0] <= minFrame && maxFrame <= c[3][1])[0];
+      let left = 0, right = this.corpusData.length - 1;
+
+      while (left <= right) {
+          let mid = Math.floor((left + right) / 2);
+          let [start, end] = this.corpusData[mid][3];
+
+          if (start <= minFrame && maxFrame <= end) {
+              return this.corpusData[mid][0];
+          } else if (minFrame < start) {
+              right = mid - 1;
+          } else {
+              left = mid + 1;
+          }
+      }
+      return null;
     },
     resultClick(result, index) {
       // if (index >= this.WSDataResults.result[0].result_sets.length)
       //   return;
       index = 0; // hard-coded for now
-      // console.log(result, result[4][0][1], this.currentDocument)
       const frameFromResult = this.frameFromResult(result,index);
       const doc_result_id = this.docIdFromFrame(frameFromResult);
-      let value = Utils.frameNumberToSeconds(frameFromResult[0]) / 1000;
-      if (this.currentDocument[0] == doc_result_id) {
-        this._playerSetTime(value);
+      const doc_result = this.corpusData.filter(corpus => corpus[0] == doc_result_id)[0];
+      const adjustedFrames = frameFromResult.map(x=>parseInt(x) - parseInt(doc_result[3][0]));
+      let [start, end] = adjustedFrames.map(x=>Utils.frameNumberToSeconds(x) / 1000);
+      if (this.currentDocument == doc_result) {
+        this._playerSetTime(start);
         window.scrollTo(0, 120);
-        this.playerPlay();
+        this.playerPlay(end);
       } else {
         //   // this.currentDocument = this.corpusData[result[2] - 1];
         // this.currentDocument = this.documentDict[result[2]];
-        this.setResultTime = value;
+        this.setResultTimes = [start,end];
         // TODO: should be fixed - corpusData changed
-        this.currentDocument = this.corpusData.filter(corpus => corpus[0] == doc_result_id)[0]
-        //   // console.log("Change document")
-        // console.log("Set doc", this.currentDocument, this.corpusData, result)
+        this.currentDocument = doc_result;
       }
     },
-    playerPlay() {
-      if (this.$refs.videoPlayer1) {
-        this.$refs.videoPlayer1.play();
-      }
-      if (this.$refs.videoPlayer2) {
-        this.$refs.videoPlayer2.play();
-      }
-      if (this.$refs.videoPlayer3) {
-        this.$refs.videoPlayer3.play();
-      }
-      if (this.$refs.videoPlayer4) {
-        this.$refs.videoPlayer4.play();
+    playerPlay(end=0) {
+      const n_players = [1,2,3,4];
+      for (let n of n_players) {
+        const player = this.$refs['videoPlayer'+n];
+        if (!player)
+          continue
+        if (end >= 0) {
+          end = Math.min(end, player.duration);
+          const handler = ()=>{
+            if (player.currentTime < end) return;
+            this.playerStop();
+          };
+          player.addEventListener("pause", ()=>player.removeEventListener("timeupdate", handler), {once: true});
+          player.addEventListener("timeupdate", handler);
+        }
+        player.play();
       }
       this.playerIsPlaying = true;
       // this.$refs.timeline.player.playing = true;
@@ -806,21 +860,13 @@ export default {
       this._playerSetTime(value);
     },
     _playerSetTime(value) {
-      if (this.$refs.videoPlayer1) {
-        this.$refs.videoPlayer1.currentTime = value;
-        this.playerCurrentTime = value;
-      }
-      if (this.$refs.videoPlayer2) {
-        this.$refs.videoPlayer2.currentTime = value;
-        this.playerCurrentTime = value;
-      }
-      if (this.$refs.videoPlayer3) {
-        this.$refs.videoPlayer3.currentTime = value;
-        this.playerCurrentTime = value;
-      }
-      if (this.$refs.videoPlayer4) {
-        this.$refs.videoPlayer4.currentTime = value;
-        this.playerCurrentTime = value;
+      const n_players = [1, 2, 3, 4];
+      for (let n in n_players) {
+        const player = this.$refs["videoPlayer" + n];
+        if (!player) continue
+        const time = Math.min(value, (isNaN(player.duration) ? 0.1 : player.duration) - 0.1);
+        player.currentTime = time;
+        this.playerCurrentTime = time;
       }
     },
     playerFrameDown(value) {
@@ -875,6 +921,18 @@ export default {
       //   this.$refs.timeline.player.time = this.$refs.videoPlayer1.currentTime;
       // }
     },
+    videoPlayer1CanPlay() {
+      this.loadingMedia = false;
+      this.currentMediaDuration = this.$refs.videoPlayer1.duration;
+      this.$refs.videoPlayer1.addEventListener("pause", ()=>this.playerIsPlaying=false);
+      if (this.setResultTimes) {
+        const [start, end] = this.setResultTimes;
+        this.setResultTimes = null;
+        this._playerSetTime(start);
+        this.playerPlay(end);
+        window.scrollTo(0, 120);
+      }
+    },
     playerMainVideo(number) {
       this.mainVideo = number;
     },
@@ -923,6 +981,36 @@ export default {
         this.$refs.videoPlayer4.volume = this.mainAudio == 4 ? _volume : 0;
       }
       this.volume = _volume
+    },
+    _annotationEnter({x, y, mouseX, mouseY, entry}) {
+      this.timelinePopinY = Number(mouseY);
+      this.timelinePopinX = Number(x);
+      this.timelinePopinY = Number(y);
+      this.timelinePopinX = Number(mouseX);
+      this.timelineEntry = [
+        ...Object.entries(entry).filter(kv=>!(kv[0] in {frame_range:1,char_range:1,prepared:1,meta:1})),
+        ...Object.entries(entry.meta||{})
+      ]
+      .filter(kv=>kv && kv[0] && kv[1])
+      .map(([name,value])=>[name,value.replace(urlRegex, "<a href='$1' target='_blank'>$1</a>")]);
+    },
+    _annotationLeave() {
+      this.timelineEntry = null;
+    },
+    _getTimelinePopinXY() {
+      let {x, y} = document.querySelector("#timeline-svg").getBoundingClientRect();
+      x += this.timelinePopinX + window.scrollX;
+      y += this.timelinePopinY + window.scrollY;
+      const bottom = window.scrollY + window.innerHeight, right = window.scrollX + window.innerWidth;
+      const {width, height} = (
+        this.$refs.timelinePopin
+        || {getBoundingClientRect:()=>Object({width:0,height:0})}
+      ).getBoundingClientRect();
+      if (x + width > right)
+        x = right - width;
+      if (y + height > bottom)
+        y = bottom - height;
+      return {'left': x+'px', 'top': y+'px'};
     },
     // loadData() {
     //   if (this.currentDocument) {
@@ -974,12 +1062,13 @@ export default {
           let dataToShow = {};
           // TODO: replace what's hard-coded in this with reading 'tracks' from corpus_template
           let document_id = parseInt(this.currentDocument[0])
-          if (this.selectedCorpora.value in {59: 1, 127: 1}) {
+          if (!(this.selectedCorpora.value in {115: 1})) { // old tangram exception
             let tracks = this.selectedCorpora.corpus.tracks;
             dataToShow = {
               layers: Object.fromEntries(Object.entries(tracks.layers).map((e, n)=>[n+1, Object({name: e[0]})])),
               tracks: {},
-              document_id: document_id
+              document_id: document_id,
+              groupBy: tracks.group_by
             };
             for (let gb of (tracks.group_by||[])) {
               if (!(gb in (data.document.global_attributes||{})))
@@ -1013,33 +1102,89 @@ export default {
             }
           }
 
+          const segment_name = this.selectedCorpora.corpus.firstClass.segment;
+          const column_names = this.selectedCorpora.corpus.mapping.layer[segment_name].prepared.columnHeaders;
+          const form_n = column_names.indexOf("form");
           let timelineData = []
-          for (const [key, track] of Object.entries(dataToShow.tracks)) {
-            let values = []
-            const keyName = dataToShow.layers[track.layer].name;
 
-            for (const entry of track[keyName]) {
-              const [startFrame, endFrame] = entry.frame_range
-              let shift = this.currentDocument[3][0];
-              let startTime = (parseFloat(startFrame - shift) / this.frameRate);
-              let endTime = (parseFloat(endFrame - shift) / this.frameRate);
-              values.push({
-                x1: startTime,
-                x2: endTime,
-                // TODO [HARDCODED]: This should be changed
-                n: keyName == "Segment" ? entry.prepared.map(row => row[0]).join(" ") : entry.type,
-                l: key
-              })
+          // Sort by name
+          let tracksNamesSorted = Object.values(dataToShow.tracks).sort((a, b) => {
+            // TODO: hardcoded - use list from BR to order groups. Segements are hardcoded to be first
+            let a_name = a.name.toLowerCase().replace(" segment", " aa_segment")
+            let b_name = b.name.toLowerCase().replace(" segment", " aa_segment")
+            if (a_name < b_name) {
+              return -1;
+            }
+            if (a_name > b_name) {
+              return 1;
+            }
+            return 0;
+          });
+
+          // Add group_by speaker
+          if (this.selectedCorpora.corpus &&
+              this.selectedCorpora.corpus.tracks &&
+              this.selectedCorpora.corpus.tracks.group_by &&
+              this.selectedCorpora.corpus.tracks.group_by[0] == "speaker"
+          ) {
+            let trackGroupCounter = {};
+            let newTracksNamesSorted = [];
+            tracksNamesSorted.forEach(track => {
+              let groupName = track.name.split(" ").slice(0, 2).join(" ");
+              if (!(groupName in trackGroupCounter)) {
+                trackGroupCounter[groupName] = 0
+                let speakerIndex = Object.keys(trackGroupCounter).length
+                newTracksNamesSorted.push(new Proxy({
+                  name: `Speaker ${speakerIndex}`,
+                  layer: -1,
+                  level: 0
+                }, {}))
+              }
+              trackGroupCounter[groupName]++
+              track.level = 1
+              track.name = track.name.replace(groupName, "").trim()
+              newTracksNamesSorted.push(track)
+            })
+            tracksNamesSorted = newTracksNamesSorted
+          }
+
+          // Generate timeline data
+          tracksNamesSorted.forEach((track, key) => {
+            let values = []
+            if (track.layer != -1){
+              const keyName = dataToShow.layers[track.layer].name;
+              const isSegment = keyName.toLowerCase() == segment_name.toLowerCase();
+
+              for (const entry of track[keyName]) {
+                const [startFrame, endFrame] = entry.frame_range
+                let shift = this.currentDocument[3][0];
+                let startTime = (parseFloat(startFrame - shift) / this.frameRate);
+                let endTime = (parseFloat(endFrame - shift) / this.frameRate);
+                const unitData = {x1: startTime, x2: endTime, l: key, entry: entry};
+                if (isSegment)
+                  unitData.n = entry.prepared.map(row => row[form_n]).join(" ");
+                else {
+                  let firstStringAttribute = Object.entries(
+                    this.selectedCorpora.corpus.layer[keyName].attributes || {}
+                  ).find( e=> e[1].type in {text:1,categorical:1} );
+                  if (firstStringAttribute)
+                    unitData.n = entry[firstStringAttribute[0]];
+                }
+                values.push(unitData);
+              }
             }
 
             timelineData.push({
               name: track.name,
+              level: track.level || 0,
               heightLines: 1,
               values: values
             })
-          }
+          })
 
           this.currentMediaDuration = this.$refs.videoPlayer1.duration;
+          if (!this.currentMediaDuration && "doc" in this.documentData && "frame_range" in this.documentData.doc)
+            this.currentMediaDuration = this.documentData.doc.frame_range.reduce((x,y)=>y-x) / this.frameRate;
           this.currentDocumentData = timelineData;
           this.loadingDocument = false;
           this.documentIndexKey++;
@@ -1102,6 +1247,8 @@ export default {
             text: data.info,
           });
         }
+        if (["finished","satisfied"].includes(data["status"]))
+          this.loading = false;
       } else if (Object.prototype.hasOwnProperty.call(data, "status")) {
         if (data["status"] == "failed") {
           this.loading = false;
@@ -1120,6 +1267,7 @@ export default {
       }
     },
     setExample(num) {
+      console.log("setting example query", num);
       if (num == 1) {
         this.queryDQD = `Segment s
 
@@ -1253,8 +1401,13 @@ KWIC => plain
         setTimeout(() => this.loadDocuments(), 200)
       }
     },
-    loadDocument() {
+    async loadDocument() {
       try {
+        const checkVideoPlayer = r=>{
+          if (this.$refs.videoPlayer1) r();
+          else window.requestAnimationFrame(()=>checkVideoPlayer(r));
+        }
+        await new Promise(r=>checkVideoPlayer(r));
         this.$refs.videoPlayer1.load();
         if (this.currentDocument[2].length > 1) {
           this.$refs.videoPlayer2.load();
@@ -1271,6 +1424,8 @@ KWIC => plain
       if (this.currentDocument) {
         this.currentDocumentData = {}
         this.loadingDocument = true
+        this.loadingMedia = true
+        this.timelineEntry = null
         // console.log("AA", this.currentDocument)
         useCorpusStore().fetchDocument({
           doc_id: this.currentDocument[0],
@@ -1299,6 +1454,8 @@ KWIC => plain
       }
     });
     this.setExample(1);
+    if (this.selectedCorpora && this.selectedCorpora.corpus && this.selectedCorpora.corpus.sample_query)
+      this.updateQueryDQD(this.selectedCorpora.corpus.sample_query);
   },
   unmounted() {
     if (this.updateTimer) {
@@ -1330,6 +1487,8 @@ KWIC => plain
               value: corpus[0].meta.id,
               corpus: corpus[0],
             }
+            if (corpus[0].sample_query)
+              this.queryDQD = corpus[0].sample_query;
           }
           this.preselectedCorporaId = null
           this.loadDocuments()
@@ -1359,7 +1518,7 @@ KWIC => plain
       )
     },
     currentDocument() {
-      this.loadDocument()
+      this.loadDocument();
     },
     volume() {
       this._setVolume();
@@ -1381,6 +1540,7 @@ KWIC => plain
         if (["finished"].includes(this.WSDataResults.status)) {
           this.percentageDone = 100;
           this.percentageTotalDone = 100;
+          this.loading = false;
         }
         if (["satisfied"].includes(this.WSDataResults.status)) {
           // this.percentageDone = this.WSDataResults.hit_limit/this.WSDataResults.projected_results*100.
@@ -1398,6 +1558,11 @@ KWIC => plain
 </script>
 
 <style scoped>
+#nav-tab {
+  height: 5em;
+  display: flex;
+  overflow: scroll;
+}
 video {
   margin-right: 3px;
   object-fit: fill;
@@ -1466,5 +1631,28 @@ div.active video {
 .list-no-bullets li:hover {
   cursor: pointer;
   opacity: 0.8;
+}
+.list-no-bullets .col-1 {
+  width: 20%;
+  max-height: 2em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#timelinePopin {
+  position: absolute;
+  width: 25em;
+  min-height: 2em;
+  max-height: 10em;
+  overflow: scroll;
+  left: 20vw;
+  background-color: white;
+  box-shadow: 2px 2px 20px 0px black;
+  border-radius: 0.25em;
+  z-index: 99;
+}
+#timelinePopin .header {
+  font-weight: bold;
+  background-color: lightgray;
 }
 </style>

@@ -23,13 +23,22 @@
               </router-link>
             </li>
             <li class="nav-item">
-              <router-link class="nav-link" to="/player">
+              <router-link class="nav-link" to="/query">
                 <FontAwesomeIcon
-                  :icon="['fas', 'video']"
+                  :icon="['fas', 'magnifying-glass']"
                   class="me-1"
                 />
-                Viewer
+                Query
               </router-link>
+            </li>
+            <li class="nav-item">
+              <a href="https://lcp.linguistik.uzh.ch/manual" target="_blank" class="nav-link">
+                <FontAwesomeIcon
+                  :icon="['fas', 'circle-question']"
+                  class="me-1"
+                />
+                Manual
+              </a>
             </li>
           </ul>
           <ul class="navbar-nav ms-auto">
@@ -37,6 +46,12 @@
               <span class="nav-link version-number">
                 #{{ appVersion }}
               </span>
+            </li>
+            <li class="nav-item">
+              <a :href="appLinks['lcphome']" target="_blank" class="nav-link">
+                <FontAwesomeIcon :icon="['fas', 'database']" class="me-2" />
+                LCP Home
+              </a>
             </li>
             <li class="nav-item">
               <a
@@ -61,6 +76,7 @@
     <FooterView />
     <NotificationView />
     <LoadingView />
+    <div class="beta-flag">BETA</div>
   </div>
 </template>
 
@@ -80,6 +96,7 @@ export default {
   data() {
     return {
       appVersion: process.env.GIT_HASH,
+      appLinks: config.appLinks,
     }
   },
   mounted() {
@@ -152,5 +169,19 @@ footer {
   --bs-btn-active-border-color: #54226d;
   --bs-btn-disabled-bg: #622A7F;
   --bs-btn-disabled-border-color: #622A7F;
+}
+* >>> .progress-bar {
+  background-color: #622A7F;
+}
+* >>> span.action-button {
+  background-color: #622A7F !important;
+}
+* >>> .page-link.active {
+  background-color: #622A7F !important;
+  border-color: #622A7F !important;
+  color: #fff !important;
+}
+* >>> .page-link {
+  color: #622A7F !important;
 }
 </style>

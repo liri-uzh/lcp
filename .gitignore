@@ -9,6 +9,7 @@ worker.cpython*
 uploads/*
 media/*
 results/*
+database/wip/*
 .coverage
 .env
 *.so

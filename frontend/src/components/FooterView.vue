@@ -2,7 +2,9 @@
   <footer>
     <img class="logo" src="../assets/logos/uzh.svg" alt="UZH">
     <hr>
-    Copyright &copy; 2024 LiRI
+    Copyright &copy; 2024 LiRI 
+    | 
+    <a style="color: white;" href="mailto:lcp@linguistik.uzh.ch?subject=Bug%20report">Report a bug</a>
   </footer>
 </template>
 

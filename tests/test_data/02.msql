@@ -1,0 +1,22 @@
+SELECT -2::int2 AS rstype,
+    s.Segment_id AS seg_id,
+    Turn.alignment_id AS Turn_id,
+    Turn."meta"::jsonb AS Turn_meta,
+    Turn_en."char_range" AS Turn_char_range,
+    Session.alignment_id AS Session_id,
+    Session."meta"::jsonb AS Session_meta,
+    Session_en."char_range" AS Session_char_range,
+    s.segment_id AS Segment_id,
+    s."char_range" AS Segment_char_range
+FROM sparcling1.segment_enrest s
+LEFT JOIN sparcling1.turn_en Turn_en ON Turn_en.char_range @> s.char_range
+LEFT JOIN sparcling1.turn_alignment Turn ON Turn_en.alignment_id = Turn.alignment_id
+LEFT JOIN sparcling1.session_en Session_en ON Session_en.char_range @> s.char_range
+LEFT JOIN sparcling1.session_alignment Session ON Session_en.alignment_id = Session.alignment_id
+WHERE s.Segment_id = ANY(:ids)
+GROUP BY Turn.alignment_id,
+         Turn_en."char_range",
+         Session.alignment_id,
+         Session_en."char_range",
+         s.segment_id,
+         s."char_range";

@@ -1,0 +1,100 @@
+services:
+  redis:
+    image: "redis:latest"
+    container_name: lcp-redis
+    networks:
+      - lcp-network
+
+  db:
+    build: ./database
+    container_name: lcp-postgres
+    env_file: .env.docker
+    shm_size: 10g # increase this if queries pull too much data
+    volumes:
+      - db-data:/var/lib/postgresql/data
+      - ./database/init-db:/docker-entrypoint-initdb.d
+    ports:
+      - "15432:5432"
+    networks:
+      - lcp-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres && [ -f /var/lib/postgresql/data/db.ready ]"]
+      interval: 15s
+      timeout: 180s
+      retries: 10
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    container_name: lcp-worker
+    environment:
+      - IS_DOCKER=1
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    volumes:
+      - ./:/app
+      - ./media/:/opt/media/
+      - ./uploads:/app/uploads
+    networks:
+      - lcp-network
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    container_name: lcp-backend
+    ports:
+      - "9090:9090"
+    environment:
+      - IS_DOCKER=1
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      worker:
+        condition: service_started
+    volumes:
+      - ./:/app
+      - ./media/:/opt/media/
+      - ./uploads:/app/uploads
+    networks:
+      - lcp-network
+
+  mediasrv:
+    image: "nginx:alpine"
+    container_name: lcp-mediasrv
+    volumes:
+      - ./media:/usr/share/nginx/html
+    ports:
+      - "8090:80"
+    networks:
+      - lcp-network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    container_name: lcp-frontend
+    command: ["yarn", "serve:lcp"]
+    depends_on:
+      - worker
+      - backend
+    volumes:
+      - ./frontend:/app
+    ports:
+      - "8080:8080"
+    networks:
+      - lcp-network
+
+networks:
+  lcp-network:
+    driver: bridge
+
+volumes:
+  db-data:
+    driver: local

@@ -94,7 +94,15 @@ def process_brackets(node: Any) -> dict:
             and get_leaf_value(nget(query, "modifier")) == "%l"
             else "regexComparison"
         )
-        return {"comparison": {"left": {"entity": at}, "operator": op, comparison_type: value}}
+        if comparison_type == "regexComparison":
+            value = f"/^{value[1:-1]}$/"
+        return {
+            "comparison": {
+                "left": {"entity": at},
+                "operator": op,
+                comparison_type: value,
+            }
+        }
 
     elif section:
         processed_section: dict
@@ -155,9 +163,10 @@ def process_node(
             if label:
                 s["sequence"]["label"] = get_leaf_value(label)
             if range != [1, 1]:
-                s["sequence"][
-                    "repetition"
-                ] = {"min": range[0], "max": '*' if range[1]<0 else str(range[1])}
+                s["sequence"]["repetition"] = {
+                    "min": range[0],
+                    "max": "*" if range[1] < 0 else str(range[1]),
+                }
             members.append(s)
             return
 
@@ -172,7 +181,7 @@ def process_node(
 
         if string_node:
             comp: str = get_leaf_value(string_node)
-            comp = f"/{comp[1:-1]}/"  # replace "s with /s
+            comp = f"/^{comp[1:-1]}$/"  # replace "s with /s
             token["unit"]["constraints"] = [
                 {
                     "comparison": {
@@ -201,7 +210,10 @@ def process_node(
                 {
                     "sequence": {
                         "members": [token],
-                        "repetition": {"min": str(range[0]), "max": '*' if range[1] == -1 else str(range[1])}
+                        "repetition": {
+                            "min": str(range[0]),
+                            "max": "*" if range[1] == -1 else str(range[1]),
+                        },
                     }
                 }
             )

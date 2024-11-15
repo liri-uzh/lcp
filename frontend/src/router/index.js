@@ -32,7 +32,8 @@ const routes = [
     path: "/query",
     alias: "/query/:id/:name/",
     component: () =>
-      import("../views/QueryView.vue"),
+      // import("../views/QueryView.vue"),
+      import("../views/QueryViewV2.vue"),
     meta: {
       requiresAuth: true,
     },

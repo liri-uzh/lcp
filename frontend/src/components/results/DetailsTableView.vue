@@ -217,7 +217,7 @@ export default {
         for (let [entityOffset, entityLength, attributes] of entities) {
           if (tokenIndexOffset < entityOffset || tokenIndexOffset >= (entityOffset+entityLength))
             continue
-          ret.push(`${layer}: ${Utils.dictToStr(attributes)}`)
+          ret.push(`${layer}: ${Utils.dictToStr(attributes,{replaceYesNo: true, addTitles: true})}`)
         }
       }
       return ret.join(", ");

@@ -9,7 +9,14 @@ from typing import Any, cast
 from .callbacks import _export_complete, _general_failure
 from .jobfuncs import _db_query, _swissdox_export
 from .typed import JSONObject
-from .utils import _determine_language, format_meta_lines, push_msg
+from .utils import (
+    _determine_language,
+    format_meta_lines,
+    hasher,
+    push_msg,
+    results_dir_for_corpus,
+    META_QUERY_REGEXP,
+)
 
 import json
 import os
@@ -19,30 +26,41 @@ EXPORT_TTL = 5000
 CHUNKS = 1000000  # SIZE OF CHUNKS TO STREAM, IN # OF CHARACTERS
 
 SWISSDOX_PREPARED_QUERY = """SELECT ps.content, sg.char_range
-FROM {schema}.prepared_{seg_table}{underlang} ps
-CROSS JOIN {schema}.{seg_table}{underlang}0 sg
+FROM "{schema}".prepared_{seg_table}{underlang} ps
+CROSS JOIN "{schema}".{seg_table}{underlang}0 sg
 WHERE ps.{seg_table}_id = sg.{seg_table}_id
 AND {doc_multi_range} @> sg.char_range;"""
 
 SWISSDOX_NE_QUERY = """SELECT {ne_selects_str}
-FROM {schema}.{ne_table} ne {ne_joins_str}
+FROM "{schema}".{ne_table} ne {ne_joins_str}
 WHERE {ne_wheres_str};"""
-SWISSDOX_NE_SELECTS = ["form","type"]
+SWISSDOX_NE_SELECTS = ["form", "type"]
+
 
 def _format_kwic(
-    args: list, columns: list, sentences: dict[str, tuple], result_meta: dict
+    args: list, columns: list, sentences: dict[str, tuple], result_meta: dict, config={}
 ) -> tuple[str, str, dict, list, list]:
+    """
+    Return (kwic_name, sid, matches, tokens, annotations) for (sid,[tokens])+
+    """
     kwic_name: str = result_meta.get("name", "")
     attributes: list = result_meta.get("attributes", [])
     entities_attributes: dict = next(
         (x for x in attributes if x.get("name", "") == "entities"), dict({})
     )
     entities: list = entities_attributes.get("data", [])
-    sid, matches = args
+    sid, matches, *frame_range = (
+        args  # TODO: pass doc info to compute timestamp from frame_range
+    )
     first_token_id, prep_seg, annotations = sentences[sid]
     matching_entities: dict[str, int | list[int]] = {}
     for n in entities:
-        if n.get("type") in ("sequence", "set"):
+        n_type = n.get("type", "")
+        is_span = n_type in ("sequence", "set") or (
+            config.get("layer", {}).get(n_type, {}).get("contains", "").lower()
+            == config["token"].lower()
+        )
+        if is_span:
             matching_entities[n["name"]] = []
         else:
             matching_entities[n["name"]] = 0
@@ -70,9 +88,10 @@ async def kwic(jobs: list[Job], resp: Any, config):
     sentence_jobs = []
     meta_jobs = []
     for j in jobs:
-        if not j.kwargs.get("sentences_query"):
+        j_kwargs = cast(dict, j.kwargs)
+        if not j_kwargs.get("sentences_query"):
             continue
-        if j.kwargs.get("meta_query"):
+        if j_kwargs.get("meta_query"):
             meta_jobs.append(j)
         else:
             sentence_jobs.append(j)
@@ -80,60 +99,70 @@ async def kwic(jobs: list[Job], resp: Any, config):
 
     buffer: str = ""
     for j in query_jobs:
-
-        if "current_batch" not in j.kwargs:
+        j_kwargs = cast(dict, j.kwargs)
+        if "current_batch" not in j_kwargs:
             continue
         segment_mapping = config["mapping"]["layer"][config["segment"]]
         columns: list = []
-        if "partitions" in segment_mapping and "languages" in j.kwargs:
-            lg = j.kwargs["languages"][0]
+        if "partitions" in segment_mapping and "languages" in j_kwargs:
+            lg = j_kwargs["languages"][0]
             columns = segment_mapping["partitions"].get(lg)["prepared"]["columnHeaders"]
         else:
             columns = segment_mapping["prepared"]["columnHeaders"]
 
-        sentence_job: Job | None = next(
-            (sj for sj in sentence_jobs if sj.kwargs.get("depends_on") == j.id), None
-        )
         sentences: dict[str, tuple] = {}
-        if not sentence_job or not sentence_job.result:
-            continue
-        for row in sentence_job.result:
-            uuid: str = str(row[0])
-            first_token_id = row[1]
-            tokens = row[2]
-            annotations = []
-            if len(row) > 3:
-                annotations = row[3]
-            sentences[uuid] = (first_token_id, tokens, annotations)
+        for sentence_job in sentence_jobs:
+            if sentence_job.kwargs.get("depends_on") != j.id:
+                continue
+            if not sentence_job or not sentence_job.result:
+                continue
+            for row in sentence_job.result:
+                uuid: str = str(row[0])
+                first_token_id = row[1]
+                tokens = row[2]
+                annotations = []
+                if len(row) > 3:
+                    annotations = row[3]
+                sentences[uuid] = (first_token_id, tokens, annotations)
 
-        meta_job: Job | None = next(
-            (mj for mj in meta_jobs if mj.kwargs.get("depends_on") == j.id), None
-        )
-        if not meta_job:
-            continue
-        formatted_meta: dict[str, Any] = cast(
-            dict[str, Any],
-            format_meta_lines(meta_job.kwargs.get("meta_query"), meta_job.result),
-        )
+        formatted_meta: dict[str, Any] = {}
+        for meta_job in meta_jobs:
+            if meta_job.kwargs.get("depends_on") == j.id:
+                continue
+            if not meta_job:
+                continue
+            result = meta_job.result or []
+            incoming_meta: dict[str, Any] = cast(
+                dict[str, Any],
+                format_meta_lines(meta_job.kwargs.get("meta_query"), result),
+            )
+            formatted_meta.update(incoming_meta)
 
-        meta = j.kwargs.get("meta_json", {}).get("result_sets", [])
+        meta = j_kwargs.get("meta_json", {}).get("result_sets", [])
         kwic_indices = [n + 1 for n, o in enumerate(meta) if o.get("type") == "plain"]
 
-        for (n_type, args) in j.result:
+        for n_type, args in j.result:
             # We're only handling kwic results here
             if n_type not in kwic_indices:
                 continue
             try:
                 kwic_name, sid, matching_entities, tokens, annotations = _format_kwic(
-                    args, columns, sentences, meta[n_type - 1]
+                    args, columns, sentences, meta[n_type - 1], config=config
                 )
-                data = {"sid": sid, "matches": matching_entities, "segment": tokens, "annotations": annotations}
+                data = {
+                    "sid": sid,
+                    "matches": matching_entities,
+                    "segment": tokens,
+                    "annotations": annotations,
+                }
                 if sid in formatted_meta:
+                    # TODO: check frame_range in meta here + return frame_range from _format_kwic to compute time?
                     data["meta"] = formatted_meta[sid]
                 line: str = "\t".join(
                     [str(n_type), "plain", kwic_name, json.dumps(data)]
                 )
-            except:
+            except Exception as err:
+                print("Issue with _format_kwic when exporting", err)
                 # Because queries for prepared segments only fetch what's needed for previewing purposes,
                 # queries with lots of matches can only output a small subset of lines
                 continue
@@ -146,12 +175,14 @@ async def kwic(jobs: list[Job], resp: Any, config):
         resp.write(buffer)
 
 
-async def export_dump(filepath: str, job_id: str, config: dict, download = False) -> None:
+async def export_dump(
+    filepath: str, job_id: str, config: dict, download=False, **kwargs
+) -> None:
     """
     Read the results from all the query, sentence and meta jobs and write them in dump.tsv
     """
-    if os.path.exists(filepath):
-        return
+    # if os.path.exists(filepath):
+    #     return
     output = open(filepath, "w")
     output.write((("\t".join(["index", "type", "label", "data"]) + f"\n")))
 
@@ -165,12 +196,21 @@ async def export_dump(filepath: str, job_id: str, config: dict, download = False
         ]
         for jid in registry.get_job_ids()
     ]
-    associated_jobs = [j for j in finished_jobs if j.kwargs.get("first_job") == job_id]
+    associated_jobs = [
+        j for j in finished_jobs if cast(dict, j.kwargs).get("first_job") == job_id
+    ]
 
-    meta = job.kwargs.get("meta_json", {}).get("result_sets", {})
+    job_kwargs = cast(dict, job.kwargs)
+
+    meta = job_kwargs.get("meta_json", {}).get("result_sets", {})
 
     # Write query itself in first row
-    output.write("\t".join(["0", "query", "query", json.dumps(job.kwargs.get("original_query", {}))]) + f"\n")
+    output.write(
+        "\t".join(
+            ["0", "query", "query", json.dumps(job_kwargs.get("original_query", {}))]
+        )
+        + f"\n"
+    )
 
     # Write KWIC results
     if next((m for m in meta if m.get("type") == "plain"), None):
@@ -194,16 +234,13 @@ async def export_dump(filepath: str, job_id: str, config: dict, download = False
     output.close()
 
 
-async def swissdox_query(
-    query: str,
-    use_cache: bool = True
-) -> Job:
+async def swissdox_query(query: str, use_cache: bool = True) -> Job:
     """
     Here we send the query to RQ and therefore to redis
     """
     conn = get_current_connection()
 
-    hashed = str(hash(query))
+    hashed = str(hasher(query))
     job: Job | None
 
     if use_cache:
@@ -222,7 +259,7 @@ async def swissdox_query(
         result_ttl=EXPORT_TTL,
         job_timeout=EXPORT_TTL,
         job_id=hashed,
-        args=(query,)
+        args=(query,),
     )
     return cast(Job, job)
 
@@ -232,7 +269,8 @@ async def export_swissdox(
     first_job_id: str,
     underlang: str,
     config,
-    download = False
+    download=False,
+    **kwargs,
 ) -> Job:
     """
     Schedule jobs to fetch all the prepared segments and named entities associated of the matched documents
@@ -245,17 +283,17 @@ async def export_swissdox(
         Job.fetch(jid, connection=conn)
         for registry in [
             FinishedJobRegistry(name=x, connection=conn)
-            for x in ("query","background")
+            for x in ("query", "background")
         ]
         for jid in registry.get_job_ids()
     ]
     jobs = [
         j
         for j in finished_jobs
-        if j.id == first_job_id or j.kwargs.get("first_job") == first_job_id
+        if j.id == first_job_id or cast(dict, j.kwargs).get("first_job") == first_job_id
     ]
 
-    meta_jobs: list[Job] = [j for j in jobs if j.kwargs.get("meta_query")]
+    meta_jobs: list[Job] = [j for j in jobs if cast(dict, j.kwargs).get("meta_query")]
 
     document_layer: str = config["firstClass"]["document"]
 
@@ -264,8 +302,7 @@ async def export_swissdox(
         if not j.result:
             continue
         cols_from_sql = re.match(
-            r"SELECT -2::int2 AS rstype, ((.+ AS .+[, ])+?)FROM.+",
-            j.kwargs.get("meta_query", ""),
+            META_QUERY_REGEXP, cast(dict, j.kwargs).get("meta_query", "")
         )
         if not cols_from_sql:
             continue
@@ -340,22 +377,28 @@ async def export_swissdox(
     ne_selects = ["ne.char_range AS char_range"]
     ne_joins = []
     ne_wheres = [f"{doc_multi_range} @> ne.char_range"]
-    for attr_name, attr_values in config["layer"]["NamedEntity"]["attributes"].items():
+    ne_attributes = config["layer"]["NamedEntity"].get("attributes", {})
+    # for attr_name, attr_values in ne_attributes.items():
+    for attr_name in ne_attributes:
         if attr_name not in SWISSDOX_NE_SELECTS:
             continue
         ne_cols.append(attr_name)
-        if attr_values.get("type", "") == "text":
-            ne_selects.append(f"ne_{attr_name}.{attr_name} AS {attr_name}")
-            ne_joins.append(
-                f"{schema}.{ne_mapping['attributes'][attr_name]['name']} AS ne_{attr_name}"
-            )
-            ne_wheres.append(f"ne.{attr_name}_id = ne_{attr_name}.{attr_name}_id")
-            pass
+        # if attr_values.get("type", "") == "text":
+        mapping = ne_mapping.get("attributes", {}).get(attr_name, {})
+        if mapping.get("type") == "relation":
+            lookup_key = mapping.get("key", attr_name)
+            lookup_table = mapping.get("name", attr_name)
+            new_label = f"ne_{attr_name}".lower()
+            join_table: str = f"{schema}.{lookup_table} {new_label}"
+            formed_join_condition = f"ne.{lookup_key}_id = {new_label}.{lookup_key}_id"
+            ne_joins.append(join_table)
+            ne_wheres.append(formed_join_condition)
+            ne_selects.append(f"{new_label}.{attr_name} AS {attr_name}")
         else:
             ne_selects.append(f"ne.{attr_name} AS {attr_name}")
 
     ne_selects_str = ", ".join(ne_selects)
-    ne_joins_str = "\n".join(ne_joins)
+    ne_joins_str = "\n        CROSS JOIN ".join(ne_joins)
     if ne_joins_str:
         ne_joins_str = f"\n        CROSS JOIN {ne_joins_str}"
     ne_wheres_str = "\n        AND ".join(ne_wheres)
@@ -390,10 +433,7 @@ async def export_swissdox(
             config,
             underlang,
         ),
-        kwargs={
-            "ne_cols": ne_cols,
-            "download": download
-        }
+        kwargs={"ne_cols": ne_cols, "download": download},
     )
 
 
@@ -403,6 +443,8 @@ async def export(app: web.Application, payload: JSONObject, first_job_id: str) -
     Called in sock.py after the last batch was queried
     """
     export_format = payload.get("format", "")
+    room = payload.get("room", "")
+    user = payload.get("user", "")
     print("All batches done! Ready to start exporting")
     corpus_conf = payload.get("config", {})
     # Retrieve the first job to get the list of all the sentence and meta jobs that export_dump depends on (also batch for swissdox)
@@ -414,19 +456,33 @@ async def export(app: web.Application, payload: JSONObject, first_job_id: str) -
     ]
     job: Job
     if export_format == "dump":
-        print("Scheduled dump export depending on", depends_on)
+        rest: dict[str, Any] = {}
+        if depends_on:
+            print("Scheduled dump export depending on", depends_on)
+            rest = {"depends_on": depends_on}
         job = app["background"].enqueue(
             export_dump,
             on_success=Callback(_export_complete, EXPORT_TTL),
             on_failure=Callback(_general_failure, EXPORT_TTL),
             result_ttl=EXPORT_TTL,
             job_timeout=EXPORT_TTL,
-            depends_on=depends_on,
-            args=(f"./results/dump_{first_job_id}.tsv", first_job_id, corpus_conf),
-            kwargs={'download': payload.get("download", False)}
+            args=(
+                os.path.join(
+                    results_dir_for_corpus(corpus_conf), f"dump_{first_job_id}.tsv"
+                ),
+                first_job_id,
+                corpus_conf,
+            ),
+            kwargs={
+                "download": payload.get("download", False),
+                "room": room,
+                "user": user,
+            },
+            **rest,
         )
     elif export_format == "swissdox":
-        underlang = _determine_language(first_job.kwargs.get("current_batch")[2]) or ""
+        batch: str = cast(dict, first_job.kwargs).get("current_batch", ["", "", ""])[2]
+        underlang = _determine_language(batch) or ""
         if underlang:
             underlang = f"_{underlang}"
         job = app["background"].enqueue(
@@ -435,12 +491,12 @@ async def export(app: web.Application, payload: JSONObject, first_job_id: str) -
             result_ttl=EXPORT_TTL,
             job_timeout=EXPORT_TTL,
             depends_on=depends_on,
-            args=(
-                first_job_id,
-                underlang,
-                corpus_conf
-            ),
-            kwargs={'download': payload.get("download", False)}
+            args=(first_job_id, underlang, corpus_conf),
+            kwargs={
+                "download": payload.get("download", False),
+                "room": room,
+                "user": user,
+            },
         )
 
     room = cast(str, payload.get("room", ""))
@@ -467,4 +523,5 @@ async def export(app: web.Application, payload: JSONObject, first_job_id: str) -
 
 async def download_export(request: web.Request) -> web.FileResponse:
     fn = request.match_info["fn"]
-    return web.FileResponse(f"./results/{fn}")
+    path = os.path.join(results_dir_for_corpus(request.match_info), fn)
+    return web.FileResponse(path)

@@ -2,7 +2,7 @@
 Nothing but typealiases for common objects
 """
 
-from typing import Any, Literal, TypeAlias
+from typing import Any, Literal, TypeAlias, TypedDict
 from pydantic import JsonValue
 
 QueryType: TypeAlias = str | int | list[str | int] | dict[str, Any]
@@ -17,8 +17,17 @@ JSONObject: TypeAlias = dict[str, JSON]
 QueryPart: TypeAlias = list[dict[str, JSON]]
 QueryJSON: TypeAlias = dict[str, QueryPart]
 
-# the LabelLayer object maps label names to their associated label and metadata
+# the LabelLayer object maps label names to their associated layer and metadata
 LabelLayer: TypeAlias = dict[str, tuple[str, dict[str, JSONObject]]]
+
+
+# information about a reference in a comparison
+class RefInfo(TypedDict, total=False):
+    type: str
+    layer: str
+    mapping: dict | None
+    meta: dict | None
+
 
 # model corpus config data
 ConfigJSON: TypeAlias = JSONObject

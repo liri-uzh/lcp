@@ -72,7 +72,6 @@ class QueryIteration:
     languages: set[str]
     simultaneous: str
     sentences: bool
-    is_vian: bool
     app: Application
     resume: bool = False
     previous: str = ""
@@ -116,7 +115,6 @@ class QueryIteration:
             batch=self.current_batch[2],
             config=self.app["config"][str(self.current_batch[0])],
             lang=self._determine_language(self.current_batch[2]),
-            vian=self.is_vian or "tangram" in self.current_batch[1].lower(),
         )
         if self.jso:
             json_query = self.jso
@@ -148,7 +146,6 @@ class QueryIteration:
         corpora: list[int],
         config: dict[str, CorpusConfig],
         languages: set[str],
-        is_vian: bool,
     ) -> list[Batch]:
         """
         Get a list of tuples in the format of (corpus, batch, size) to be queried
@@ -201,11 +198,13 @@ class QueryIteration:
             total_duration = prev_kwargs.get("total_duration", 0.0)
             total_results_so_far = prev.meta.get("total_results_so_far", 0)
             needed = -1  # to be figured out later
-        is_vian = request_data.get("appType") == "vian"
         sim = request_data.get("simultaneous", False)
         all_batches = cls._get_query_batches(
-            corpora_to_use, request.app["config"], languages, is_vian
+            corpora_to_use, request.app["config"], languages
         )
+
+        to_export: dict = request_data.get("to_export", {})
+        preview = to_export.get("preview", False)
 
         details = {
             "corpora": corpora_to_use,
@@ -219,7 +218,7 @@ class QueryIteration:
             "languages": set(langs),
             "full": request_data.get("full", False),
             "query": request_data["query"],
-            "resume": request_data.get("resume", False),
+            "resume": request_data.get("resume", False) and not preview,
             "total_results_requested": total_requested,
             "needed": needed,
             "current_kwic_lines": request_data.get("current_kwic_lines", 0),
@@ -228,14 +227,12 @@ class QueryIteration:
             "total_results_so_far": total_results_so_far,
             "simultaneous": str(uuid4()) if sim else "",
             "previous": previous,
-            # "is_vian": is_vian,
-            "is_vian": False,
         }
-        if request_data.get("to_export", False):
+        if to_export:
             details["to_export"] = {
-                "format": str(request_data["to_export"].get("format", "")),
-                "preview": request_data["to_export"].get("preview", False),
-                "download": request_data["to_export"].get("download", False),
+                "format": str(to_export.get("format", "")),
+                "preview": to_export.get("preview", False),
+                "download": to_export.get("download", False),
                 "config": request.app["config"][str(corpora_to_use[0])],
                 "user": request_data.get("user", ""),
                 "room": request_data.get("room", ""),
@@ -274,10 +271,15 @@ class QueryIteration:
         Helper to submit a query job to the Query Service
         """
         job: Job
-        if self.offset > 0:
+        # if self.offset > 0 and not self.full and not self.resume:
+        preview: bool = self.to_export.get("preview", False)
+        load_more_from_cache: bool = self.resume and self.offset > 0
+        if preview or load_more_from_cache:
             job = Job.fetch(self.previous, connection=self.app["redis"])
             self.job = job
             self.job_id = job.id
+            if load_more_from_cache:
+                self.submit_sents(query_started=True)
             return job, False
 
         parent: str | None = None
@@ -304,12 +306,12 @@ class QueryIteration:
             simultaneous=self.simultaneous,
             full=self.full,
             total_duration=self.total_duration,
-            is_vian=self.is_vian,
             current_kwic_lines=self.current_kwic_lines,
             dqd=self.dqd,
             first_job=self.first_job,
             jso=self.jso,
             sql=self.sql,
+            offset=self.offset,
             meta_json=self.meta,
             word_count=self.word_count,
             parent=parent,
@@ -421,7 +423,10 @@ class QueryIteration:
             seg_name = f"prepared_{name}{underlang}"
         annotations: str = ""
         for layer, properties in config["layer"].items():
-            if layer == seg or properties.get("contains", "") != config["token"]:
+            if (
+                layer == seg
+                or properties.get("contains", "").lower() != config["token"].lower()
+            ):
                 continue
             annotations = ", annotations"
             break
@@ -490,8 +495,7 @@ class QueryIteration:
             "total_results_so_far": tot_so_far,
             "languages": set(cast(list[str], manual["languages"])),
             "done_batches": done_batches,
-            "is_vian": manual.get("is_vian", False),
-            "to_export": manual.get("to_export", kwargs.get("to_export", "")),
+            "to_export": manual.get("to_export", kwargs.get("to_export", {})),
         }
         return cls(**details)
 
@@ -523,10 +527,6 @@ class QueryIteration:
         buffer = 0.1  # set to zero for picking smaller batches
 
         so_far = self.total_results_so_far
-        if self.is_vian:
-            if self.done_batches:
-                raise ValueError("VIAN corpora have only one batch!?")
-            return self.all_batches[0]
 
         if not len(self.done_batches):
             # return the "rest" batch or the next smallest
@@ -536,7 +536,7 @@ class QueryIteration:
             )
 
         # set here ensures we don't double count, even though it should not happen
-        total_words_processed_so_far = sum([x[-1] for x in set(self.done_batches)])
+        total_words_processed_so_far = sum([x[-1] for x in set(self.done_batches)]) or 1
         proportion_that_matches = so_far / total_words_processed_so_far
         first_not_done: Batch | None = None
 

@@ -32,7 +32,7 @@
               </router-link>
             </li>
             <li class="nav-item">
-              <a href="https://liri.linguistik.uzh.ch/wiki/langtech/lcp/start" target="_blank" class="nav-link">
+              <a href="https://lcp.linguistik.uzh.ch/manual" target="_blank" class="nav-link">
                 <FontAwesomeIcon
                   :icon="['fas', 'circle-question']"
                   class="me-1"
@@ -63,6 +63,12 @@
               </span>
             </li>
             <li class="nav-item">
+              <a :href="appLinks['lcphome']" target="_blank" class="nav-link">
+                <FontAwesomeIcon :icon="['fas', 'database']" class="me-2" />
+                LCP Home
+              </a>
+            </li>
+            <li class="nav-item">
               <a
                 v-if="userData && userData.user && userData.user.displayName"
                 class="nav-link"
@@ -85,6 +91,7 @@
     <FooterView />
     <NotificationView />
     <LoadingView />
+    <div class="beta-flag">BETA</div>
   </div>
 </template>
 
@@ -102,9 +109,9 @@ import config from "@/config";
 export default {
   name: "AppCatchphrase",
   data() {
-    console.log("Application version:", process.env.GIT_HASH)
     return {
       appVersion: process.env.GIT_HASH,
+      appLinks: config.appLinks,
     }
   },
   mounted() {

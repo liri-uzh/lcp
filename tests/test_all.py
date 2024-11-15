@@ -102,7 +102,6 @@ class MyAppTestCase(AioHTTPTestCase):
                 batch=meta["batch"],
                 config=meta,
                 lang=_determine_language(meta["batch"]),
-                vian="tangram" in meta["schema"],
             )
             json_query = dqd_to_json(dqd, meta)
             sql_query, meta_json, post_processes = json_to_sql(json_query, **kwa)

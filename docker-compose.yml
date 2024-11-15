@@ -1,0 +1,79 @@
+services:
+  redis:
+    image: "redis:latest"
+    container_name: lcp-redis
+    networks:
+      - lcp-network
+
+  db:
+    build: ./database
+    container_name: lcp-postgres
+    env_file: .env.docker
+    shm_size: 10g # increase this if queries pull too much data
+    volumes:
+      - db-data:/var/lib/postgresql/data
+      - ./database/init-db:/docker-entrypoint-initdb.d
+    networks:
+      - lcp-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres && [ -f /var/lib/postgresql/data/db.ready ]"]
+      interval: 15s
+      timeout: 180s
+      retries: 10
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    container_name: lcp-worker
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    volumes:
+      - ./media/:/opt/media/
+      - ./uploads:/app/uploads
+    networks:
+      - lcp-network
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    container_name: lcp-backend
+    ports:
+      - "9090:9090"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      worker:
+        condition: service_started
+    volumes:
+      - ./media/:/opt/media/
+      - ./uploads:/app/uploads
+    networks:
+      - lcp-network
+
+  frontend:
+    build: ./frontend
+    container_name: lcp-web
+    depends_on:
+      - worker
+      - backend
+    volumes:
+      - ./media/:/opt/media/
+    ports:
+      - "8080:80"
+    networks:
+      - lcp-network
+
+networks:
+  lcp-network:
+    driver: bridge
+
+volumes:
+  db-data:
+    driver: local

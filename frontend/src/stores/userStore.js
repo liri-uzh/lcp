@@ -46,8 +46,8 @@ export const useUserStore = defineStore("userData", {
         }
 
         // When no user, generate random id
-        if (Object.keys(this.userData.user).length === 0) {
-          this.userData.user = {"id": Utils.uuidv4()}
+        if (this.userData.user.id === undefined) {
+          this.userData.user = {"id": Utils.uuidv4(), "anon": true}
         }
       });
     },

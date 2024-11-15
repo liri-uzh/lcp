@@ -46,7 +46,8 @@ async def _do_resume(qi: QueryIteration) -> QueryIteration:
 
     """
     prev_job = Job.fetch(qi.previous, connection=qi.app["redis"])
-    dones = cast(list[tuple[int, str, str, int]], prev_job.kwargs["done_batches"])
+    pjkwargs = cast(dict, prev_job.kwargs)
+    dones = cast(list[tuple[int, str, str, int]], pjkwargs["done_batches"])
     done_batches: list[Batch] = [(a, b, c, d) for a, b, c, d in dones]
     so_far = cast(int, prev_job.meta["total_results_so_far"])
     tot_req = qi.total_results_requested
@@ -62,7 +63,7 @@ async def _do_resume(qi: QueryIteration) -> QueryIteration:
     left_in_batch = prev_batch_results - qi.offset
     not_enough = left_in_batch < need_now
 
-    prev = cast(Batch, tuple(prev_job.kwargs["current_batch"]))
+    prev = cast(Batch, tuple(pjkwargs["current_batch"]))
     previous_batch: Batch = (prev[0], prev[1], prev[2], prev[3])
     if previous_batch not in done_batches:
         done_batches.append(previous_batch)
@@ -171,7 +172,7 @@ async def _query_iteration(
         print(f"\nNow querying: {schema_table} ... {query_job.id}")
 
     # prepare and submit sentences query
-    if do_sents is not None and (qi.sentences or qi.resume):
+    if do_sents and (qi.sentences or qi.resume):
         sents_jobs = qi.submit_sents(do_sents)
 
     jobs = {
@@ -189,6 +190,7 @@ async def _query_iteration(
         qi.current_batch = None
 
     return qi
+
 
 @ensure_authorised
 @logged
@@ -239,10 +241,9 @@ async def query(
             if not isinstance(qi, QueryIteration):
                 return qi
             elif qi.to_export:
-                ready_to_export = (
-                    len(qi.done_batches) == len(qi.all_batches)
-                    or (qi.to_export.get("preview") and qi.total_results_so_far >= 200)
-                )
+                ready_to_export = len(qi.done_batches) == len(
+                    qi.all_batches
+                ) or qi.to_export.get("preview")
                 if ready_to_export:
                     await export(qi.app, qi.to_export, qi.first_job)
                 # elif qi.job and len(qi.done_batches)+1 == len(qi.all_batches):

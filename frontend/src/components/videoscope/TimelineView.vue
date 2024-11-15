@@ -1,10 +1,17 @@
 <template>
   <div>
-    <!-- <div class="button-container">
-      <button class="zoom-button" id="zoom-in">Zoom In</button>
-      <button class="zoom-button" id="zoom-out">Zoom Out</button>
-      <input type="range" id="zoom-slider" min="1" max="20" value="0" step="1" />
+    <div class="button-container">
+      <button class="btn btn-primary btn-sm me-1" :disabled="zoomValue <= 1" @click="zoomOut">
+        <FontAwesomeIcon :icon="['fas', 'magnifying-glass-minus']" class="me-1" />
+        Zoom Out
+      </button>
+      <input type="range" min="1" :max="MAX_ZOOM_LEVEL" class="zoom-slider" v-model="zoomValue" step="1" />
+      <button class="btn btn-primary btn-sm me-1" :disabled="zoomValue >= MAX_ZOOM_LEVEL" @click="zoomIn">
+        <FontAwesomeIcon :icon="['fas', 'magnifying-glass-plus']" class="me-1" />
+        Zoom In
+      </button>
     </div>
+    <!--
     <div class="slider-container">
       <input type="range" id="horizontal-slider" min="0" max="156" value="0" step="0.1" />
     </div> -->
@@ -16,10 +23,13 @@
   /* #timeline-svg {
     margin: 0 10px;
   } */
-  /* .button-container {
-    margin-top: 10px;
+  .button-container {
+    margin-left: 178px;
   }
-
+  /* .zoom-slider {
+    margin-top: 5px;
+  } */
+  /*
   .zoom-button {
     margin-right: 5px;
   } */
@@ -28,7 +38,14 @@
     margin-top: 10px;
   } */
 
-  * {
+  * >>> .tooltip-rect {
+    fill: #fffffff0;
+    stroke: #e6e6e6;
+    stroke-width: 1px;
+  }
+
+  svg#timeline-svg {
+    cursor: pointer;
     color: #2c3e50;
     font-size: 12px;
   }
@@ -48,9 +65,11 @@ let zoom;
 let linearScale = null;
 let currentTime = 0;
 let playerState = false;
+let hoveringAnnotation = null;
 const padding = 180;
 const width = document.body.clientWidth - 20;
 const paddingBeforeTimeline = 40;
+const MAX_ZOOM_LEVEL = 100
 
 // Function to update the vertical timeline
 function updateVerticalLine(xPosition) {
@@ -102,21 +121,42 @@ export default {
   props: ["data", "playerIsPlaying", "playerCurrentTime", "mediaDuration"],
   data() {
     return {
+      defaultCurrentTime: this.playerCurrentTime,
       currentTime: 0,
+      zoomValue: 1,
+      MAX_ZOOM_LEVEL: MAX_ZOOM_LEVEL,
     }
   },
   watch: {
     playerIsPlaying(){
       playerState = this.playerIsPlaying;
-      console.log("playerState", playerState)
+      // console.log("playerState", playerState);
     },
     playerCurrentTime(){
-      currentTime = this.playerCurrentTime
-      const newXScale = d3.zoomTransform(svg.node()).rescaleX(linearScale);
-      updateVerticalLine(newXScale(currentTime));
+      this.updateCurrentPosition(this.playerCurrentTime)
+    },
+    zoomValue(){
+      const verticalLine = svg.selectAll(".vertical-line");
+      const xPosition = verticalLine.attr("x1");
+      const scale = this.zoomValue;
+      svg.transition().call(zoom.scaleTo, parseFloat(scale), [xPosition, 0]);
     }
   },
+  methods: {
+    zoomIn() {
+      this.zoomValue = Math.min(parseFloat(this.zoomValue) + 1, MAX_ZOOM_LEVEL);
+    },
+    zoomOut() {
+      this.zoomValue = Math.max(parseFloat(this.zoomValue) - 1, 1);
+    },
+    updateCurrentPosition(time) {
+      this.currentTime = time;
+      const newXScale = d3.zoomTransform(svg.node()).rescaleX(linearScale);
+      updateVerticalLine(newXScale(this.currentTime));
+    },
+  },
   mounted() {
+
     // Example
     // const data = [
     //   {
@@ -181,16 +221,18 @@ export default {
     // Create the scaleLinear
     linearScale = d3.scaleLinear().domain([0, this.mediaDuration]).range([padding, width - 1]);
 
+    let data = [...this.data];
+
     // Add names to the chart
     let heightStart = {}
     let totalHeight = 50; // Height before the first row
     svg
       .selectAll(".name")
-      .data(this.data)
+      .data(data)
       .enter()
       .append("text")
       .attr("class", "name")
-      .attr("x", 10)
+      .attr("x", d => 10 + 20 * (d.level ? d.level : 0))
       .attr("y", (d, i) => {
         let height = totalHeight + 10
         totalHeight += d.heightLines * 15 + 10
@@ -217,7 +259,7 @@ export default {
 
     // Create individual groups for each bar and its text label
     const barAndTextGroups = barsGroup.selectAll("g")
-      .data(this.data.flatMap(d => d.values))
+      .data(data.flatMap(d => d.values))
       .enter()
       .append("g")
       .attr("clip-path", (d, i) => `url(#barClip${i})`); // Unique clip-path for each group
@@ -283,10 +325,20 @@ export default {
       .on("zoom", zoomed);
 
     // Apply zoom behavior to SVG
-    svg.call(zoom);
+    svg.call(zoom).on("wheel.zoom", null)
+    // .on("wheel.zoom", event => {
+    //   if (event.ctrlKey == true) {
+    //     zoomed(d3.event)
+    //     event.preventDefault();
+    //   }
+    //   return null
+    // });
 
     // Zoom event handler
     function zoomed(event) {
+      // if (event.sourceEvent && event.sourceEvent.type === "wheel") {
+      //   return true;
+      // }
       const { transform } = event;
       const newXScale = transform.rescaleX(linearScale);
       xAxis.scale(newXScale);
@@ -303,7 +355,8 @@ export default {
 
       // Update the vertical line
       // const sliderValue = parseFloat(d3.select("#vertical-slider").node().value);
-      updateVerticalLine(newXScale(currentTime));
+      const verticalLineX = newXScale(currentTime);
+      updateVerticalLine(verticalLineX);
     }
 
     // Zoom control event handlers
@@ -353,7 +406,6 @@ export default {
       .attr("y2", height)
       .attr("stroke", "red")
       .attr("stroke-width", 1);
-
 
     // const mouseLine =
     svg
@@ -414,13 +466,38 @@ export default {
         d3.select('.mouse-line').style('opacity', '0.5');
         d3.select('.mouse-text').style('opacity', '0.5');
       })
-      .on('mousemove', function () {
-        const mouseOverX = d3.pointer(event)[0];
+      .on('mousemove', () => {
+        const [mouseOverX, mouseOverY] = d3.pointer(event).slice(0, 2);
+        // const mouseOverX = d3.pointer(event)[0]
         d3
           .select(".mouse-line")
           .attr("x1", mouseOverX)
           .attr("x2", mouseOverX)
           .style('opacity', '1');
+
+        const hovering = barAndTextGroups
+          .filter( function () {
+            const rect = this.querySelector("rect");
+            const {x, y, width, height} = Object.fromEntries([...rect.attributes].map(v=>[v.name,v.value]));
+            return x<=mouseOverX && Number(x)+Number(width)>=mouseOverX && y<=mouseOverY && Number(y)+Number(height)>=mouseOverY;
+          } );
+        if ([...hovering].length && [...hovering][0] != hoveringAnnotation) {
+          hoveringAnnotation = [...hovering][0];
+          const rect = hoveringAnnotation.querySelector("rect");
+          const {x, y, height} = Object.fromEntries([...rect.attributes].map(v=>[v.name,v.value]));
+          const event = {
+            x: Number(x),
+            y: Number(y) + Number(height),
+            mouseX: mouseOverX,
+            mouseY: mouseOverY,
+            entry: hovering.data()[0].entry
+          }
+          this.$emit("annotationEnter", event);
+        }
+        else if ([...hovering].length == 0 && hoveringAnnotation) {
+          hoveringAnnotation = null;
+          this.$emit("annotationLeave");
+        }
 
         const transform = d3.zoomTransform(svg.node());
         const clickX = transform.invertX(d3.pointer(event)[0]);
@@ -432,6 +509,10 @@ export default {
           .style('opacity', '1')
           .text(Utils.secondsToTime(originalValue, true));
       });
+
+      this.zoomValue = 20;
+
+      this.updateCurrentPosition(this.defaultCurrentTime);
   },
 };
 </script>

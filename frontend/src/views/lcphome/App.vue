@@ -32,7 +32,7 @@
               </router-link>
             </li> -->
             <li class="nav-item">
-              <a href="https://liri.linguistik.uzh.ch/wiki/langtech/lcp/start" target="_blank" class="nav-link">
+              <a href="https://lcp.linguistik.uzh.ch/manual" target="_blank" class="nav-link">
                 <FontAwesomeIcon
                   :icon="['fas', 'circle-question']"
                   class="me-1"
@@ -86,6 +86,7 @@
     <FooterView />
     <NotificationView />
     <LoadingView />
+    <div class="beta-flag">BETA</div>
   </div>
 </template>
 

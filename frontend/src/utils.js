@@ -1,4 +1,5 @@
 import moment from 'moment';
+import config from "@/config";
 
 const Utils = {
     uuidv4(){
@@ -80,14 +81,24 @@ const Utils = {
     formatDate: (date, format = 'DD.MM.YYYY HH:mm') => {
       return date ? moment(date).format(format) : '';
     },
-    dictToStr: (dict,replaceYesNo=true) => {
+    dictToStr: (dict,{replaceYesNo, addTitles, reorder} = {}) => {
+      // default values
+      replaceYesNo = replaceYesNo === undefined ? true : replaceYesNo;
+      addTitles = addTitles === undefined ? false : addTitles;
+      reorder = reorder && reorder instanceof Function ? reorder : ()=>0;
       const vals = [];
-      for (let k of Object.keys(dict).sort()) {
-        if (replaceYesNo && dict[k].match(/^(yes|no)$/i))
-          vals.push(dict[k].replace(/yes/i,"+").replace(/no/i,"-") + k);
-        else
-          vals.push(dict[k]);
+      for (let k of Object.keys(dict).sort(reorder)) {
+        let val = dict[k]
+        if (!val)
+          continue;
+        if (replaceYesNo && typeof(dict[k])=="string" && dict[k].match(/^(yes|no)$/i))
+          val = dict[k].replace(/yes/i,"+").replace(/no/i,"-") + k;
+        if (addTitles)
+          val = `<abbr title="${k}">${val}</abbr>`;
+        vals.push(val);
       }
+      if (["number","string"].includes(typeof(dict)))
+        vals.push(String(dict));
       return vals.join(" ")
     },
     slugify(str) {
@@ -121,6 +132,45 @@ const Utils = {
         }
       }
       return corpusType
+    },
+    _hasProtocol(url) {
+      // Regular expression to check if the URL starts with http:// or https://
+      return /^(https?:\/\/)/i.test(url);
+    },
+    getURLWithProtocol(url) {
+      if (!Utils._hasProtocol(url) && url) {
+        return `https://${url}`; // Add default http:// if no protocol
+      }
+      return url; // Return the URL unchanged if it has a protocol
+    },
+    hasAccessToCorpus(corpus, userData) {
+      // return (
+      //   (userData.user.displayName) && (
+      //     corpus.isSwissdox != true || userData.user.swissdoxUser == true
+      //   )
+      // );
+      // Allow public corpora
+      return corpus.authRequired != true
+        || (
+          (corpus.authRequired == true && userData.user.displayName) && (
+            corpus.isSwissdox != true || userData.user.swissdoxUser == true
+          )
+        );
+    },
+    calculateSum(array) {
+      return array.reduce((accumulator, value) => {
+        return accumulator + value;
+      }, 0);
+    },
+    getAppLink(appType, corpus) {
+      let appLink = config.appLinks[appType]
+      if (["catchphrase", "soundscript"].includes(appType)) {
+        appLink = `${appLink}/query/${corpus.meta.id}/${Utils.slugify(corpus.shortname)}`
+      }
+      else {
+        appLink = `${appLink}/player/${corpus.meta.id}/${Utils.slugify(corpus.shortname)}`
+      }
+      return appLink
     },
   }
 

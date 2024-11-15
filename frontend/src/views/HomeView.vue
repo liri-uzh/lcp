@@ -114,7 +114,7 @@
               <div
                 v-for="corpus in filterCorpora(project.corpora)"
                 :key="corpus.id"
-                @click="openCorpus(corpus)"
+                @click="openQueryWithCorpus(corpus)"
                 class="col-4 mb-3"
               >
                 <div class="corpus-block" :class="`data-type-${corpusDataType(corpus)}`">
@@ -152,7 +152,7 @@
                   <div
                     class="details-button icon-1 tooltips"
                     title="Query corpus"
-                    v-if="hasAccess(corpus)"
+                    v-if="hasAccessToCorpus(corpus, userData)"
                     @click.stop="openQueryWithCorpus(corpus)"
                   >
                     <FontAwesomeIcon :icon="['fas', 'magnifying-glass-chart']" />
@@ -171,20 +171,41 @@
                   >
                     <FontAwesomeIcon :icon="['fas', 'magnifying-glass-chart']" />
                   </div>
-                  <a class="details-button icon-2 tooltips" :href="corpus.meta.url" title="Corpus origin"
-                    :disabled="!corpus.meta.url" target="_blank" @click.stop>
-                    <FontAwesomeIcon :icon="['fas', 'link']" />
-                  </a>
-                  <div class="details-button icon-3 tooltips" title="Corpus details">
-                    <FontAwesomeIcon :icon="['fas', 'circle-info']" />
-                  </div>
-                  <div
-                    v-if="project.isAdmin"
-                    class="details-button icon-4 tooltips"
-                    title="Corpus edit"
-                    @click.stop="openCorpusEdit(corpus)"
-                  >
-                    <FontAwesomeIcon :icon="['fas', 'gear']" />
+
+                  <div class="details-button icon-2">
+                    <span
+                      v-if="project.isAdmin"
+                      class="tooltips icon-x"
+                      title="Corpus edit"
+                      @click.stop="openCorpusEdit(corpus)"
+                    >
+                      <FontAwesomeIcon :icon="['fas', 'gear']" />
+                    </span>
+                    <span
+                      :href="corpusStore.getLicenseByTag(corpus.meta.license)"
+                      class="tooltips icon-x"
+                      target="_blank"
+                      :title="`Corpus licence: User defined - Check details`"
+                      v-if="corpus.meta.license == 'user-defined'"
+                    >
+                      <FontAwesomeIcon :icon="['fas', 'certificate']" />
+                    </span>
+                    <a
+                      :href="corpusStore.getLicenseByTag(corpus.meta.license).url"
+                      target="_blank"
+                      class="tooltips icon-x"
+                      v-else-if="corpus.meta.license"
+                      :title="`Corpus licence: ${corpus.meta.license}`"
+                    >
+                      <FontAwesomeIcon :icon="['fas', 'certificate']" />
+                    </a>
+                    <span class="tooltips icon-x" title="Corpus details" @click.stop="openCorpusDetailsModal(corpus)">
+                      <FontAwesomeIcon :icon="['fas', 'circle-info']" />
+                    </span>
+                    <a class="tooltips icon-x" :href="getURLWithProtocol(corpus.meta.url)" title="Corpus origin"
+                      :disabled="!corpus.meta.url" target="_blank" @click.stop>
+                      <FontAwesomeIcon :icon="['fas', 'link']" />
+                    </a>
                   </div>
                   <div class="details-data-type icon-3 tooltips" title="Data type" v-if="appType == 'lcp'">
                     <FontAwesomeIcon :icon="['fas', 'music']" v-if="corpusDataType(corpus) == 'audio'" />
@@ -235,7 +256,7 @@
             <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
           </div>
           <div class="modal-body text-start" v-if="corpusModal">
-            <div class="row mb-2" v-if="hasAccess(corpusModal)">
+            <!-- <div class="row mb-2" v-if="hasAccessToCorpus(corpusModal, userData)">
               <div class="col-12">
                 <div
                   class="btn btn-primary btn-sm btn-catchphrase me-1 tooltips"
@@ -267,63 +288,8 @@
                   <i>videoscope</i>
                 </div>
               </div>
-            </div>
-            <div class="row">
-              <div class="col-5">
-                <div class="title mb-0">
-                  <span>{{ corpusModal.meta.name }}</span>
-                </div>
-                <!-- <p class="author mb-0" v-if="corpusModal.meta.author">
-                  by {{ corpusModal.meta.author }}
-                </p> -->
-                <p class="description mt-3">
-                  {{ corpusModal.meta.corpusDescription }}
-                </p>
-                <p class="word-count mb-0">
-                  Word count:
-                  <b>{{
-                    calculateSum(
-                      Object.values(corpusModal.token_counts)
-                    ).toLocaleString("de-DE")
-                  }}</b>
-                </p>
-                <p class="word-count mb-0">
-                  Revision: {{ corpusModal.meta.revision }}
-                </p>
-                <p class="word-count mb-0">
-                  URL:
-                  <a :href="corpusModal.meta.url" target="_blank">{{
-                    corpusModal.meta.url
-                  }}</a>
-                </p>
-                <p class="word-count mb-0">
-                  Description: {{ corpusModal.description }}
-                </p>
-                <span v-if="corpusModal.partitions">
-                  <p class="word-count" v-if="corpusModal.partitions">
-                    Partitions: {{ corpusModal.partitions.values.join(", ") }}
-                  </p>
-                  <div class="" v-for="partition in corpusModal.partitions.values" :key="partition">
-                    <p class="text-bold">{{ partition.toUpperCase() }}</p>
-                    <p class="word-count">
-                      Segments:
-                      {{
-                        corpusModal.mapping.layer.Segment.partitions[
-                          partition
-                        ].prepared.columnHeaders.join(", ")
-                      }}
-                    </p>
-                    <!-- <p class="word-count">
-                      Segments:
-                      {{ corpusModal.mapping.layer.Segment.partitions[partition].prepared.columnHeaders.join(", ") }}
-                    </p> -->
-                  </div>
-                </span>
-              </div>
-              <div class="col-7">
-                <CorpusGraphView :corpus="corpusModal" v-if="showGraph" />
-              </div>
-            </div>
+            </div> -->
+            <CorpusDetailsModal :corpusModal="corpusModal" :key="modalIndexKey" />
           </div>
           <div class="modal-footer">
             <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
@@ -395,7 +361,7 @@ import { useNotificationStore } from "@/stores/notificationStore";
 
 import Title from "@/components/TitleComponent.vue";
 import ProjectNewView from "@/components/project/NewView.vue";
-import CorpusGraphView from "@/components/CorpusGraphView.vue";
+import CorpusDetailsModal from "@/components/corpus/DetailsModal.vue";
 import MetadataEdit from "@/components/corpus/MetadataEdit.vue";
 import ProjectEdit from "@/components/project/EditView.vue";
 import router from "@/router";
@@ -410,7 +376,6 @@ export default {
   data() {
     return {
       corpusModal: null,
-      showGraph: false,
       allowProjectModalSave: false,
       modalProjectData: null,
       appName: config.appName,
@@ -423,24 +388,19 @@ export default {
       inviteEmails: '',
       currentProjectToSubmit: null,
       modalIndexKey: 0,
+
+      corpusStore: useCorpusStore(),
     };
   },
   components: {
     Title,
     ProjectNewView,
-    CorpusGraphView,
+    CorpusDetailsModal,
     MetadataEdit,
     ProjectEdit,
   },
   methods: {
-    hasAccess(corpus) {
-      return !corpus.authRequired
-        || (
-          (corpus.authRequired == true && this.userData.user.displayName) && (
-            corpus.isSwissdox != true || this.userData.user.swissdoxUser == true
-          )
-        );
-    },
+    hasAccessToCorpus: Utils.hasAccessToCorpus,
     projectIcons(project) {
       let icons = ['fas']
       if (project.isPublic == true || project.isSemiPublic == true) {
@@ -530,7 +490,7 @@ export default {
       corpora = corpora.sort(compare)
       return corpora;
     },
-    openCorpus(corpus) {
+    openCorpusDetailsModal(corpus) {
       this.corpusModal = { ...corpus };
       let modal = new Modal(document.getElementById('corpusDetailsModal'));
       this.modalIndexKey++
@@ -544,10 +504,12 @@ export default {
       modal.show()
     },
     openQueryWithCorpus(corpus) {
-      if (config.appType == "videoscope") {
-        router.push(`/player/${corpus.meta.id}/${Utils.slugify(corpus.shortname)}`);
-      } else {
-        router.push(`/query/${corpus.meta.id}/${Utils.slugify(corpus.shortname)}`);
+      if (this.hasAccessToCorpus(corpus, this.userData)) {
+        if (config.appType == "videoscope") {
+          router.push(`/query/${corpus.meta.id}/${Utils.slugify(corpus.shortname)}`);
+        } else {
+          router.push(`/query/${corpus.meta.id}/${Utils.slugify(corpus.shortname)}`);
+        }
       }
     },
     // getAppLink(appType, corpus) {
@@ -567,6 +529,7 @@ export default {
     },
     nFormatter: Utils.nFormatter,
     formatDate: Utils.formatDate,
+    getURLWithProtocol: Utils.getURLWithProtocol,
     updateProjectModalData(valid, data) {
       this.allowProjectModalSave = valid;
       this.modalProjectData = data;
@@ -705,12 +668,6 @@ export default {
     }
   },
   mounted() {
-    this.$refs.vuemodaldetails.addEventListener("shown.bs.modal", () => {
-      this.showGraph = true;
-    });
-    this.$refs.vuemodaldetails.addEventListener("hide.bs.modal", () => {
-      this.showGraph = false;
-    });
     // this.setTooltips();
     setTooltips();
 
@@ -842,6 +799,9 @@ export default {
 .title {
   font-size: 110%;
   font-weight: bold;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .description {
@@ -888,7 +848,11 @@ export default {
   opacity: 0.9;
 }
 
-details-button:disabled {
+.data-type-text .details-button .icon-x {
+  color: #2a7f62;
+}
+
+.details-button:disabled {
   filter: grayscale(100);
   opacity: 0.5;
 }
@@ -897,7 +861,8 @@ details-button:disabled {
   opacity: 1;
 }
 
-.details-button:hover {
+.details-button .icon-1:hover,
+.details-button .icon-x:hover {
   opacity: 0.7 !important;
 }
 
@@ -918,12 +883,9 @@ details-button:disabled {
   display: block;
 }
 
-.details-button.icon-1.disabled {
-  background-color: #969696;
-}
-
 .data-type-audio .details-data-type,
-.data-type-audio .details-button {
+.data-type-audio .details-button,
+.data-type-audio .icon-x {
   color: #0059be;
 }
 
@@ -937,7 +899,8 @@ details-button:disabled {
 }
 
 .data-type-video .details-data-type,
-.data-type-video .details-button {
+.data-type-video .details-button,
+.data-type-video .icon-x {
   color: #622A7F;
 }
 
@@ -950,16 +913,19 @@ details-button:disabled {
   color: #fff;
 }
 
+.details-button.icon-1.disabled {
+  background-color: #969696;
+  width: 45px;
+}
+
 .details-button.icon-2 {
   right: 55px;
 }
 
-.details-button.icon-3 {
-  right: 90px;
-}
-
-.details-button.icon-4 {
-  right: 125px;
+.icon-x {
+  display: inline-block;
+  padding-left: 7px;
+  padding-right: 7px;
 }
 
 .horizontal-space {

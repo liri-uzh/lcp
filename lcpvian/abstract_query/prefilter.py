@@ -51,12 +51,22 @@ class SingleNode:
         for piece in search:
             pref = ""
             for pattern in sorted(SUFFIXES, key=len, reverse=True):
+                centerpiece = self.query.lstrip("^").rstrip("$")
+                if (
+                    centerpiece.isalnum()
+                    and self.query.startswith("^")
+                    and self.query.endswith("$")
+                ):
+                    # special case: anchored regular expression with no funny suffix
+                    piece = centerpiece
+                    break
                 if piece.strip().startswith("^") and piece.lstrip("^").isalnum():
                     pref = ":*"
                     piece = piece.lstrip("^")
                     break
-                if piece.rstrip().endswith(pattern):
+                if piece.rstrip().rstrip("$").endswith(pattern):
                     pref = ":*"
+                    piece = piece.rstrip().rstrip("$")
                     piece = piece[: -len(pattern)]
                     piece = piece.lstrip().lstrip("^")
                     break
@@ -240,6 +250,33 @@ class Prefilter:
     def _condition(self) -> str:
         return self._stringify(self._prefilter_conjuncts())
 
+    def parse_comparison(self, comparison) -> tuple[str, str, str, str]:
+        """
+        Return (attribute,operator,patter,type) where type can be string, regex or other
+        """
+        left, right = (comparison["left"], comparison["right"])
+        attribute = next(
+            (x["reference"] for x in [left, right] if "reference" in x),
+            "",
+        )
+        if not attribute:
+            return ("", "", "", "other")
+        pattern = ""
+        typ = "other"
+        if "string" in left:
+            pattern = left["string"]
+        if "string" in right:
+            pattern = right["string"]
+        if "regex" in left and "caseInsensitive" not in left["regex"]:
+            pattern = left["regex"]["pattern"]
+            # Prefilters *need* to be case-sensitive because of E''
+            typ = "other" if "caseInsensitive" in left["regex"] else "regex"
+        if "regex" in right:
+            # Prefilters *need* to be case-sensitive because of E''
+            pattern = right["regex"]["pattern"]
+            typ = "other" if "caseInsensitive" in right["regex"] else "regex"
+        return (attribute, comparison["comparator"], pattern, typ)
+
     def _process_unit(
         self, filt: list[dict[str, Any]]
     ) -> SingleNode | Conjuncted | None:
@@ -251,19 +288,17 @@ class Prefilter:
             return result
         else:
             if "comparison" in filt[0]:
-                key, op, type, text = _parse_comparison(filt[0]["comparison"])
-                if "function" in key or type == "functionComparison":
-                    return None
-                key_str = cast(str, key.get("entity", ""))
-                if _is_prefix(cast(str, text), op, type):
-                    return SingleNode(
-                        key_str, op, cast(str, text), type == "regexComparison"
-                    )
-            elif next(iter(filt[0]), "").startswith("logicalOp"):
-                logic: dict[str, Any] = next(iter(filt[0].values()), {})
-                result = self._attempt_conjunct(
-                    logic.get("args", []), logic.get("operator", "AND")
+                attribute, operator, pattern, typ = self.parse_comparison(
+                    filt[0]["comparison"]
                 )
+                if typ == "other":
+                    return None
+                if _is_prefix(pattern, operator, typ):
+                    return SingleNode(attribute, operator, pattern, typ == "regex")
+            elif next(iter(filt[0]), "") == "logicalExpression":
+                logic: dict[str, Any] = next(iter(filt[0].values()), {})
+                operator = logic.get("unaryOperator", logic.get("naryOperator", "AND"))
+                result = self._attempt_conjunct(logic.get("args", []), operator)
                 return result
         return None
 
@@ -277,23 +312,22 @@ class Prefilter:
 
         for arg in sorted(filt, key=arg_sort_key):
             # todo recursive ... how to handle?
-            if next(iter(arg), "").startswith("logicalOp"):
+            if next(iter(arg), "") == "logicalExpression":
                 logic: dict[str, Any] = next(iter(arg.values()), {})
                 filt = cast(list[dict[str, Any]], logic.get("args", []))
-                result = self._attempt_conjunct(filt, logic.get("operator", "AND"))
+                result = self._attempt_conjunct(
+                    filt, logic.get("unaryOperator", logic.get("naryOperator", "AND"))
+                )
                 if result:
                     matches.append(result)
                 continue
             if "comparison" not in arg:
                 continue
-            key, op, typ, text = _parse_comparison(arg["comparison"])
-            if "function" in key or typ == "functionComparison":
-                continue  # todo: check this?
-            key_str = cast(str, key.get("entity", ""))
-            if _is_prefix(cast(str, text), op, typ):
-                matches.append(
-                    SingleNode(key_str, op, cast(str, text), typ == "regexComparison")
-                )
+            attribute, operator, pattern, typ = self.parse_comparison(arg["comparison"])
+            if typ == "other":
+                return None
+            if _is_prefix(pattern, operator, typ):
+                matches.append(SingleNode(attribute, operator, pattern, typ == "regex"))
 
         # Do not use any prefilter at all for the disjunction if one of the disjuncts could not be used
         if kind == "OR" and len(matches) < len(filt):
@@ -371,17 +405,19 @@ def _is_prefix(query: str, op: str = "=", typ: str = "string") -> bool:
     """
     if op not in ("=", "!="):
         return False
-    if typ == "stringComparison":
+    if typ == "string":
         return True
-    if query.startswith("^") and query.lstrip("^").isalnum():
+    if query.startswith("^") and query.lstrip("^").rstrip("$").isalnum():
         return True
     for pattern in sorted(SUFFIXES, key=len, reverse=True):
-        if query.rstrip().endswith(pattern):
-            query = query[: -len(pattern)]
-            query = query.lstrip().lstrip("^")
-            if not query or any(
-                i in query for i in ".^$*+-?[]{}\\/()|"
-            ):  # there remain regex characters in the rest of the pattern
-                continue
-            return True
+        if not query.rstrip().rstrip("$").endswith(pattern):
+            continue
+        query = query.rstrip().rstrip("$")
+        query = query[: -len(pattern)]
+        query = query.lstrip().lstrip("^")
+        if not query or any(
+            i in query for i in ".^$*+-?[]{}\\/()|"
+        ):  # there remain regex characters in the rest of the pattern
+            continue
+        return True
     return False

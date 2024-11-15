@@ -1,0 +1,149 @@
+{
+  "query": [
+    {
+      "unit": {
+        "layer": "Document",
+        "label": "d",
+        "constraints": [
+          {
+            "comparison": {
+              "left": {
+                "reference": "classCode"
+              },
+              "comparator": "=",
+              "right": {
+                "regex": {
+                  "pattern": "^S"
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "unit": {
+        "layer": "Segment",
+        "partOf": "d",
+        "label": "s"
+      }
+    },
+    {
+      "sequence": {
+        "partOf": "s",
+        "label": "seq",
+        "members": [
+          {
+            "unit": {
+              "layer": "Token",
+              "label": "t1",
+              "constraints": [
+                {
+                  "comparison": {
+                    "left": {
+                      "reference": "xpos2"
+                    },
+                    "comparator": "=",
+                    "right": {
+                      "string": "ART"
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "unit": {
+              "layer": "Token",
+              "label": "t2",
+              "constraints": [
+                {
+                  "comparison": {
+                    "left": {
+                      "reference": "lemma"
+                    },
+                    "comparator": "=",
+                    "right": {
+                      "string": "true"
+                    }
+                  }
+                },
+                {
+                  "comparison": {
+                    "left": {
+                      "reference": "xpos2"
+                    },
+                    "comparator": "=",
+                    "right": {
+                      "string": "ADJ"
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "unit": {
+              "layer": "Token",
+              "label": "t3",
+              "constraints": [
+                {
+                  "comparison": {
+                    "left": {
+                      "reference": "xpos2"
+                    },
+                    "comparator": "=",
+                    "right": {
+                      "string": "SUBST"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "results": [
+    {
+      "label": "kwic",
+      "resultsPlain": {
+        "context": [
+          "s"
+        ],
+        "entities": [
+          "t1",
+          "t2",
+          "t3"
+        ]
+      }
+    },
+    {
+      "label": "nounDist",
+      "resultsAnalysis": {
+        "attributes": [
+          {
+            "attribute": "t3.lemma"
+          }
+        ],
+        "functions": [
+          "frequency"
+        ],
+        "filter": [
+          {
+            "comparison": {
+              "left": {
+                "reference": "frequency"
+              },
+              "comparator": ">",
+              "right": {
+                "math": "1"
+              }
+            }
+          }
+        ]
+      }
+    }
+  ]
+}
