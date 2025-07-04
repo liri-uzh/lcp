@@ -504,6 +504,19 @@ class Constraint:
         left_type = left_info.get("type", "")
         right_type = right_info.get("type", "")
 
+        if self.op.lower().endswith("contain"):
+            assert left_type in ("labels", "array", ""), SyntaxError(
+                f"Cannot use the 'contain' operator on the attribute '{left}'"
+            )
+            if left_type != "labels":
+                assert right_type == "string", NotImplementedError(
+                    f"Cannot test whether the attribute '{left}' contains non-string-like terms"
+                )
+                left_type, right_type = ("", "")
+                formed_condition = f"({left})::jsonb ? ({right})::text"
+                if self.op.startswith(("!", "not", "NOT")):
+                    formed_condition = f"NOT ({formed_condition})"
+
         if "id" in (left_type, right_type):
             assert self.op in ("=", "!="), SyntaxError(
                 f"References can only be compared for equality (invalid operator '{self.op}')"
