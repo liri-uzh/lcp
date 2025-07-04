@@ -4,7 +4,7 @@
 
 To start querying, select the "Query" option from the navigation bar at the top of the page.
 
-Once you are in the query interface, ensure that the corpus you want to query is selected. To write your query you will need to use the [DQD language](dqd.md). 
+Once you are in the query interface, ensure that the corpus you want to query is selected.
 
 ## Languages
 
@@ -21,8 +21,8 @@ LCP is designed to work with corpora containing anywhere from **hundreds to bill
 
 When KWIC queries are run, the LCP engine will query **subsections of the corpus** until a reasonable number of matches are provided (the usual default is currently around 200). Browsing through the pages of KWIC results can cause a paused query to continue, so that more pages are filled. This can be done until a hard maximum (currently around 1000 KWIC results) is reached.
 
-ALternatively, you can click the `Search whole corpus` button to run the query over the entire dataset. If your query requests no KWIC results (i.e. only requests frequency tables and/or collocations), the entire corpus will be searched without pausing.
+Alternatively, you can click the `Search whole corpus` button to run the query over the entire dataset. If your query requests no KWIC results (i.e. only requests frequency tables and/or collocations), the entire corpus will be searched without pausing.
 
-### Query cache
+### Query caching
 
 The LCP system remembers previous queries for a finite amount of time. If you rerun a query that was recently performed, the results can be retrieved from LCP's cache and loaded more quickly.

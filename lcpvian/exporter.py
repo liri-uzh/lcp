@@ -26,7 +26,7 @@ def _token_value(val: str) -> str:
         ret = json.loads(val)
     except:
         ret = val
-    return str(ret)
+    return "" if not ret else str(ret)
 
 
 def _xml_attr(s: str) -> str:
@@ -40,6 +40,26 @@ def _node_to_string(node, prefix: str = "") -> str:
     if prefix:
         ret = re.sub(r"(^|\n)(.)", "\\1  \\2", ret)
     return ret
+
+
+def _get_attributes(attrs: dict) -> tuple[str, str]:
+    """
+    Given a dictionary of attributes, return (simple,complex) attribute strings
+    """
+    attr_str = " ".join(
+        f"{_xml_attr(k)}={quoteattr(str(v))}"
+        for k, v in attrs.items()
+        if not isinstance(v, dict)
+    )
+    comp: list[str] = []
+    for complex_attribute, sub_attributes in attrs.items():
+        if not isinstance(sub_attributes, dict):
+            continue
+        sub_attrs_str = " ".join(
+            f"{_xml_attr(k)}={quoteattr(str(v))}" for k, v in sub_attributes.items()
+        )
+        comp.append(f"<{complex_attribute} {sub_attrs_str}/>")
+    return (attr_str, "".join(comp))
 
 
 def _get_indent(n: int) -> str:
@@ -275,7 +295,7 @@ class Exporter:
                 for a in self._qi.result_sets[k_in_rs]["attributes"]
                 if a["name"] == "entities"
             )
-            for sid, matches in res[k]:
+            for sid, matches, *_ in res[k]:
                 prefix = sid[0:3]
                 seg_path: str = self.get_working_path(prefix)
                 fpath = os.path.join(seg_path, f"{sid}_kwic.xml")
@@ -288,21 +308,30 @@ class Exporter:
                     kwic_output.write(str(matches_line) + "\n")
                     kwic_output.write(f"</hit>\n")
 
-    def format_tokens(self, offset: int, tokens: list) -> Any:
+    def build_token(self, tok_lab: str, n: int, token: list) -> Any:
+        tok = getattr(E, tok_lab)(
+            token[self._form_index],
+            id=str(n),
+            **{
+                _xml_attr(k): _token_value(v)
+                for k, v in zip(self._column_headers, token)
+                if k != "form" and not isinstance(v, dict)
+            },
+        )
+        for complex_attr, sub_attrs in zip(self._column_headers, token):
+            if not isinstance(sub_attrs, dict):
+                continue
+            tok.append(
+                getattr(E, complex_attr)(
+                    **{_xml_attr(k): str(v) for k, v in sub_attrs.items()}
+                )
+            )
+        return tok
+
+    def build_tokens(self, offset: int, tokens: list) -> Any:
         config = self._config
         tok = config["token"]
-        return [
-            getattr(E, tok)(
-                t[self._form_index],
-                id=str(offset + n),
-                **{
-                    _xml_attr(k): quoteattr(_token_value(v))
-                    for k, v in zip(self._column_headers, t)
-                    if k != "form"
-                },
-            )
-            for n, t in enumerate(tokens)
-        ]
+        return [self.build_token(tok, offset + n, t) for n, t in enumerate(tokens)]
 
     def write_containees(
         self,
@@ -318,10 +347,8 @@ class Exporter:
         units = [all_layers[layer][cid] for cid in ids]
         units.sort(key=lambda x: int(x.get("char_range", "[0,0)")[1:].split(",")[0]))
         for unit in units:
-            attr_str = " ".join(
-                f"{_xml_attr(k)}={quoteattr(str(v))}" for k, v in unit.items()
-            )
-            output.write(f"\n<{layer} {attr_str}>")
+            attr_str, complex_attrs = _get_attributes(unit)
+            output.write(f"\n<{layer} {attr_str}>{complex_attrs}")
             if layer not in ordered_containers:
                 continue
             contained_layer, containees_by_cid = ordered_containers[layer]
@@ -419,15 +446,16 @@ class Exporter:
             seg_path = self.get_working_path(prefix)
             fpath = os.path.join(seg_path, f"{sid}.xml")
             with open(fpath, "w") as seg_output:
-                for token in self.format_tokens(offset, tokens):
+                for token in self.build_tokens(offset, tokens):
                     seg_output.write(_node_to_string(token))
         for top_id, attrs in all_layers[top_layer].items():
             fpath = os.path.join(work_path, f"{top_id}.xml")
             with open(fpath, "w") as doc_output:
-                attr_str = " ".join(
-                    f"{_xml_attr(k)}={quoteattr(str(v))}" for k, v in attrs.items()
-                )
-                doc_output.write(f"<{top_layer} {attr_str}>")
+                # attr_str = " ".join(
+                #     f"{_xml_attr(k)}={quoteattr(str(v))}" for k, v in attrs.items()
+                # )
+                attr_str, complex_attrs = _get_attributes(attrs)
+                doc_output.write(f"<{top_layer} {attr_str}>{complex_attrs}")
                 # contained layers (div, segs, etc.)
                 contained_layer, containees_by_top_id = ordered_containers[top_layer]
                 self.write_containees(
@@ -441,11 +469,14 @@ class Exporter:
                 for unordered_layer in unordered_layers_by_top:
                     for ul_id in unordered_layers_by_top[unordered_layer][top_id]:
                         ul_attrs = all_layers[unordered_layer][ul_id]
-                        ul_attr_str = " ".join(
-                            f"{_xml_attr(k)}={quoteattr(str(v))}"
-                            for k, v in ul_attrs.items()
+                        # ul_attr_str = " ".join(
+                        #     f"{_xml_attr(k)}={quoteattr(str(v))}"
+                        #     for k, v in ul_attrs.items()
+                        # )
+                        ul_attr_str, ul_complex_attrs = _get_attributes(ul_attrs)
+                        doc_output.write(
+                            f"\n<{unordered_layer} {ul_attr_str}>{ul_complex_attrs}"
                         )
-                        doc_output.write(f"\n<{unordered_layer} {ul_attr_str}>")
         print(
             f"[Export {self._request.id}] Done processing segments for {batch_hash} (QI {self._request.hash})"
         )

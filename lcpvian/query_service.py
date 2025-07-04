@@ -452,6 +452,40 @@ class QueryService:
         )
         return job
 
+    def update_descriptions(
+        self,
+        corpus_id: int,
+        query_data: JSONObject,
+        lg: str = "en",
+        queue: str = "internal",
+    ) -> Job:
+        """
+        Update the descriptions of the layers and attributes in a corpus
+        """
+        # TODO: check localizableString in corpus_template schema instead?
+        MONOLINGUAL = {"name", "revision", "license", "language"}
+
+        kwargs = {
+            "store": True,
+            "is_main": True,  # query on main.*
+            "has_return": False,
+            "refresh_config": True,
+        }
+        query = f"""CALL main.update_corpus_descriptions(:corpus_id, :descriptions ::jsonb);"""
+        params: dict[str, str | int | None | JSONObject] = {
+            "corpus_id": corpus_id,
+            "descriptions": json.dumps(query_data),
+        }
+        self.app["config"][str(corpus_id)]["meta"] = query_data
+        job: Job = self.app[queue].enqueue(
+            _db_query,
+            result_ttl=self.query_ttl,
+            job_timeout=self.timeout,
+            args=(query, params),
+            kwargs=kwargs,
+        )
+        return job
+
     def update_metadata(
         self,
         corpus_id: int,
@@ -462,7 +496,8 @@ class QueryService:
         """
         Update metadata for a corpus
         """
-        MONOLINGUAL = {"name", "version", "license"}
+        # TODO: check localizableString in corpus_template schema instead?
+        MONOLINGUAL = {"name", "revision", "license", "language"}
 
         kwargs = {
             "store": True,

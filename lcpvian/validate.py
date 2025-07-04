@@ -8,6 +8,62 @@ from .cqp_to_json import full_cqp_to_json
 from .dqd_parser import convert
 from .textsearch_to_json import textsearch_to_json
 from .typed import JSONObject
+from .utils import _get_all_attributes, _get_all_labels
+
+
+def check_layer(
+    conf: dict, obj: list | dict, labels: dict = {}, recent_layer: str = ""
+):
+    if isinstance(obj, list):
+        for x in obj:
+            if not isinstance(x, (dict, list)):
+                continue
+            check_layer(conf, x, labels=labels, recent_layer=recent_layer)
+        return
+    if "unit" in obj:
+        recent_layer = obj["unit"].get("layer", "")
+        assert recent_layer in conf["layer"], ReferenceError(
+            f"Could not find a layer named '{recent_layer}' in this corpus"
+        )
+    if "reference" in obj and recent_layer:
+        ref = obj["reference"]
+        # attrs = conf["layer"].get(recent_layer, {}).get("attributes", {})
+        attrs = _get_all_attributes(recent_layer, conf)
+        if "." in ref:
+            refname, reffield, *_ = ref.split(".")
+            attr = attrs.get(refname, {})
+            glob_attr = attr.get("ref", "")
+            dict_keys = attr.get("keys", {})
+            reflayer = labels.get(refname)
+            assert refname in attrs or reflayer, ReferenceError(
+                f"Invalid reference to '{ref}' under {recent_layer}"
+            )
+            assert not glob_attr or reffield in conf["globalAttributes"].get(
+                glob_attr, {}
+            ).get("keys", {}), ReferenceError(
+                f"No sub-attribute named '{reffield}' on global attribute '{refname}'"
+            )
+            assert not reflayer or reffield in _get_all_attributes(
+                reflayer, conf
+            ), ReferenceError(f"No attribute named '{reffield}' on entity '{refname}'")
+            assert not dict_keys or reffield in dict_keys, ReferenceError(
+                f"No sub-attribute named '{reffield}' on attribute '{refname}' of layer {recent_layer}"
+            )
+        else:
+            assert ref in attrs or ref in labels, ReferenceError(
+                f"Could not find an attribute named '{ref}' on layer {recent_layer}"
+            )
+    if obj.get("attribute", "").count(".") == 1:
+        _, aname = obj["attribute"].split(".")
+        assert any(
+            aname in _get_all_attributes(x, conf) for x in conf["layer"]
+        ), ReferenceError(
+            f"Could not find an attribute named '{aname}' on any layer ({obj['attribute']})"
+        )
+    for x in obj.values():
+        if not isinstance(x, (dict, list)):
+            continue
+        check_layer(conf, x, labels=labels, recent_layer=recent_layer)
 
 
 async def validate(
@@ -27,7 +83,7 @@ async def validate(
     result: JSONObject = {}
     if kind == "json":
         try:
-            json.loads(query)
+            json_query = json.loads(query)
             result = {
                 "kind": "json",
                 "valid": True,
@@ -95,14 +151,15 @@ async def validate(
             }
     elif kind == "cqp":
         try:
+            json_query = full_cqp_to_json(query, conf)
             # plain text search
             result = {
                 "kind": "cqp",
                 "valid": True,
                 "action": "validate",
+                "json": json_query,
                 "status": 200,
             }
-            result["json"] = full_cqp_to_json(query, conf)
         except Exception as e:
             result = {
                 "kind": "cqp",
@@ -114,16 +171,29 @@ async def validate(
     elif kind == "text":
         try:
             # plain text search
+            json_query = textsearch_to_json(query, conf)
             result = {
                 "kind": "text",
                 "valid": True,
                 "action": "validate",
+                "json": json_query,
                 "status": 200,
             }
-            result["json"] = textsearch_to_json(query, conf)
         except Exception as e:
             result = {
                 "kind": "text",
+                "valid": False,
+                "action": "validate",
+                "error": str(e),
+                "status": 400,
+            }
+    if result.get("valid"):
+        try:
+            all_labels = _get_all_labels(json_query)
+            check_layer(conf, json_query, labels=all_labels)
+        except Exception as e:
+            result = {
+                "kind": kind,
                 "valid": False,
                 "action": "validate",
                 "error": str(e),

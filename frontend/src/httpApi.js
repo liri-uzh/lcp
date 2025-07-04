@@ -51,9 +51,16 @@ function newXHR() {
       }
       else {
         useLoadingStore().set(false)
+        let reason = "Something went wrong";
+        try {
+          const responseParsed = JSON.parse(realXHR.responseText);
+          reason = responseParsed.reason;
+        } catch {
+          reason = `Something went wrong (${realXHR.statusText})`;
+        }
         useNotificationStore().add({
           type: "error",
-          text: `Something went wrong (${realXHR.statusText})`
+          text: reason
         })
       }
     }

@@ -1,5 +1,6 @@
 WITH RECURSIVE fixed_parts AS
-  (SELECT s.segment_id AS s,
+  (SELECT d.document_id AS d,
+          s.segment_id AS s,
           t1.token_id AS t1,
           t4.token_id AS t4
    FROM
@@ -35,6 +36,7 @@ WITH RECURSIVE fixed_parts AS
   (SELECT prev_cte.s,
           prev_cte.t1 AS t1,
           prev_cte.t4 AS t4,
+          prev_cte.d,
           token.token_id start_id,
           token.token_id id,
           transition0.dest_state state,
@@ -55,6 +57,7 @@ WITH RECURSIVE fixed_parts AS
    UNION ALL SELECT traversal0.s,
                     traversal0.t1 AS t1,
                     traversal0.t4 AS t4,
+                    traversal0.d,
                     traversal0.start_id,
                     token.token_id id,
                     transition0.dest_state,
@@ -71,7 +74,8 @@ WITH RECURSIVE fixed_parts AS
           AND transition0.label = 't3') ) SEARCH DEPTH FIRST BY id
 SET ordercol ,
     gather AS
-  (SELECT s,
+  (SELECT d,
+          s,
           t1,
           t4,
           traversal0.t1 AS min_seq,
@@ -89,6 +93,7 @@ SET ordercol ,
       FROM bnc1.tokenrest t
       WHERE t.segment_id = gather.s
         AND t.token_id BETWEEN gather.min_seq::bigint AND gather.max_seq::bigint) AS seq,
+          gather.d AS d,
           gather.s AS s,
           gather.t1 AS t1,
           gather.t4 AS t4

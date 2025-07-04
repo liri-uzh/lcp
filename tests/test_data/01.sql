@@ -1,5 +1,6 @@
 WITH RECURSIVE fixed_parts AS
-  (SELECT s.segment_id AS s,
+  (SELECT d.document_id AS d,
+          s.segment_id AS s,
           t1.token_id AS t1,
           t2.token_id AS t2,
           t3.token_id AS t3,
@@ -30,14 +31,16 @@ WITH RECURSIVE fixed_parts AS
      AND t3.token_id - t2.token_id = 1
      AND t3_lemma.lemma_id = t3.lemma_id ),
                gather AS
-  (SELECT s,
+  (SELECT d,
+          s,
           t1,
           t2,
           t3,
           t3_lemma
    FROM fixed_parts) ,
                match_list AS
-  (SELECT gather.s AS s,
+  (SELECT gather.d AS d,
+          gather.s AS s,
           gather.t1 AS t1,
           gather.t2 AS t2,
           gather.t3 AS t3,

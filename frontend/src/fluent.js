@@ -3,7 +3,10 @@ import { createFluentVue } from 'fluent-vue';
 import enMessages from './locales/en.ftl';
 import itMessages from './locales/it.ftl';
 
-export const availableLanguages = [{ name: 'English', value: 'en' }, { name: 'Italiano', value: 'it' }]
+export const availableLanguages = [
+  { name: 'English', value: 'en' },
+  { name: 'Italiano', value: 'it' }
+]
 const defaultLocale = availableLanguages[0]
 
 // Create bundles for locales that will be used
@@ -17,13 +20,13 @@ export function getUserLocale() {
   try {
     const saved = localStorage.getItem('locale');
     if (saved) {
-      console.log('Got previously chosen language', JSON.parse(saved))
+      // console.log('Got previously chosen language', JSON.parse(saved))
       return JSON.parse(saved);
     }
   } catch (e) {
     console.error('Error parsing locale from localStorage:', e);
   }
-  
+
   // Otherwise, check the browser language
   const browserLocale = navigator.language || navigator.userLanguage;
   // If the browser language starts with "it", use Italian; otherwise default to English
@@ -46,12 +49,12 @@ export const fluent = createFluentVue({
 
 export function changeLocale(locale) {
   // localStorage.setItem('locale', locale);
-  console.log('language changed', locale);
+  // console.log('language changed', locale);
   localStorage.setItem('locale', JSON.stringify(locale));
 
-  if(locale.value === 'en'){
+  if (locale.value === 'en') {
     fluent.bundles = [enBundle];
-  } else if (locale.value === 'it'){
+  } else if (locale.value === 'it') {
     fluent.bundles = [itBundle];
   } else {
     fluent.bundles = [enBundle];

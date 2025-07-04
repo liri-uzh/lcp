@@ -392,6 +392,10 @@ def _parse_repetition(repetition: str | dict[str, str]) -> tuple[int, int]:
 
 
 def _flatten_coord(objs: list, operator: str = "OR") -> list:
+    """
+    Lift all the coordination children of the same type as the current coordination
+    and coordinate it at the root level
+    """
     ret: list = []
     for o in objs:
         if not isinstance(o, dict):

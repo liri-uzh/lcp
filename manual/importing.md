@@ -1,6 +1,6 @@
 # Importing
 
-You can import your own corpora to LCP using a tool called `lcpcli`. This page describes how to use it.
+You can import your own corpora into LCP using a tool called `lcpcli`. This page describes how to use it.
 
 ## LCPCLI
 

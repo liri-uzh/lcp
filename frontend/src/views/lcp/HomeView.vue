@@ -571,6 +571,7 @@ export default {
       let retval = await useCorpusStore().updateMeta({
         corpusId: this.corpusModal.corpus_id,
         metadata: this.corpusModal.meta,
+        descriptions: this.corpusModal.layer
       });
       if (retval) {
         if (retval.status == false) {

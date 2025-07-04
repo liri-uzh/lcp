@@ -17,7 +17,7 @@ from typing import cast, Type
 
 from aiohttp import WSCloseCode, web
 from aiohttp.client_exceptions import ClientConnectorError
-from aiohttp.web import HTTPForbidden
+from aiohttp.web import HTTPForbidden, HTTPBadRequest
 from aiohttp_catcher import Catcher, catch
 from redis import Redis
 from redis import asyncio as aioredis
@@ -34,6 +34,7 @@ from .utils import (
     TRUES,
     FALSES,
     LCPApplication,
+    handle_bad_request,
     handle_timeout,
     load_env,
     refresh_config,
@@ -187,6 +188,15 @@ async def create_app(test: bool = False) -> web.Application:
             lambda exc, _: {"reason": exc.reason, "message": exc.text}
         )
         .and_call(handle_lama_error)
+    )
+    await catcher.add_scenario(
+        catch(HTTPBadRequest)
+        .with_status_code(400)
+        .and_stringify()
+        .with_additional_fields(
+            lambda exc, _: {"reason": exc.reason, "message": exc.text}
+        )
+        .and_call(handle_bad_request)
     )
 
     app = LCPApplication(middlewares=[catcher.middleware])

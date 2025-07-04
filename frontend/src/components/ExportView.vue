@@ -39,7 +39,6 @@ export default {
   props: [],
   methods: {
     fetch(info) {
-      console.log("fetching", info);
       useCorpusStore().fetchExport(info);
     },
     onSocketMessage(data) {
@@ -141,7 +140,7 @@ span.download {
 #exportMonitor.warn::after {
   position: absolute;
   top: 0px;
-  left: 2em;
+  left: 1.5em;
   display: block;
   content: '';
   width: 0.75em;

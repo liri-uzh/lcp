@@ -140,6 +140,7 @@ modal-details-count = Conteggio parole
 modal-details-revison = Revisione
 modal-details-url = URL
 modal-details-description = Descrizione
+modal-details-language = Lingua principale
 modal-details-partitions = Partizioni
 modal-details-segments = Segmenti
 modal-details-license = Licenza
@@ -147,6 +148,8 @@ modal-details-user-license = Definita dall'utente
 
 # Modifica dei metadati
 
+modal-meta-metadata = Metadata
+modal-meta-structure = Structure
 modal-meta-name = Nome
 modal-meta-url = URL
 modal-meta-authors = Autori
@@ -154,12 +157,22 @@ modal-meta-provider = Fornitore/Istituzione
 modal-meta-revision = Revisione
 modal-meta-data-type = Tipo di dati
 modal-meta-description = Descrizione
+modal-meta-language = Lingua principale
 modal-meta-license = Licenza
 modal-meta-user-defined = Definito dall'utente
 modal-meta-user-license = Licenza definita dall'utente
 modal-meta-sample = Esempio di query DQD
 modal-meta-warning-before = Stai modificando le proprietà in
 modal-meta-warning-after = . Cambia la lingua dell'interfaccia per modificare le proprietà in un'altra lingua.
+modal-meta-lg-undefined = Non definito
+modal-meta-lg-english = Inglese
+modal-meta-lg-german = Tedesco
+modal-meta-lg-french = Francese
+modal-meta-lg-italian = Italiano
+modal-meta-lg-spanish = Spagnola
+modal-meta-lg-swiss-german = Svizzero Tedesco
+modal-meta-lg-romansh = Romancio
+modal-structure-no-desc = No Description
 
 
 # Nuovo/Modifica progetto

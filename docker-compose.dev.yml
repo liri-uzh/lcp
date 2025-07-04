@@ -41,7 +41,7 @@ services:
       - ./uploads:/app/uploads
     networks:
       - lcp-network
-  
+
   mediasrv:
     image: "nginx:alpine"
     container_name: lcp-mediasrv

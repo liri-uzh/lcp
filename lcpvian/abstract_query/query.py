@@ -432,37 +432,7 @@ class QueryMaker:
         disjunction_ctes.append(unions)
         return disjunction_ctes
 
-    def lift_quantifiers(self, query_obj: dict | list) -> dict | list:
-        ret_obj: dict | list = (
-            {} if isinstance(query_obj, dict) else [None for _ in range(len(query_obj))]
-        )
-        for n, k in enumerate(query_obj):
-            v = query_obj[k] if isinstance(query_obj, dict) else k
-            i = k if isinstance(query_obj, dict) else n
-            if isinstance(v, list):
-                ret_obj[i] = self.lift_quantifiers(v)
-                continue
-            elif not isinstance(v, dict):
-                ret_obj[i] = v
-                continue
-            if "quantification" in v:
-                quan_obj = cast(dict[str, Any], v["quantification"])
-                quantor = quan_obj.get("quantifier", "")
-                if quantor.endswith(("EXISTS", "EXIST")):
-                    if quantor.startswith(("~", "!", "NOT", "¬")):
-                        quantor = "NOT EXISTS"
-                    else:
-                        quantor = "EXISTS"
-                    key_to_lift = next(
-                        (x for x in ("unit", "sequence") if x in quan_obj), None
-                    )
-                    if key_to_lift:
-                        v = {x: y for x, y in quan_obj.items() if x == key_to_lift}
-                        v[key_to_lift]["quantor"] = quantor
-            ret_obj[i] = self.lift_quantifiers(v)
-        return ret_obj
-
-    def query(self, recurse: list | None = None) -> tuple[str, str, str]:
+    def query(self) -> tuple[str, str, str]:
         """
         The main entrypoint: produce query SQL as a single string
         """
@@ -480,16 +450,12 @@ class QueryMaker:
 
         query_json: QueryPart = self.query_json["query"]
 
-        if not recurse:
-            has_segment, main_layer, main_label = self._make_main(query_json)
-            self._has_segment = has_segment
-            self.main_layer = main_layer
-            self.main_label = main_label
+        has_segment, main_layer, main_label = self._make_main(query_json)
+        self._has_segment = has_segment
+        self.main_layer = main_layer
+        self.main_label = main_label
 
-        if recurse is None:
-            to_iter = query_json
-        else:
-            to_iter = recurse
+        to_iter = query_json
 
         batch_suffix: str = "rest"
         if self.conf.batch[-1].isnumeric():
@@ -504,19 +470,20 @@ class QueryMaker:
 
         # build the conditions of the objects in the query list
         obj: dict[str, Any]
-        for obj in self.lift_quantifiers(to_iter):
+        for obj in to_iter:
 
             # Turn any logical expression into a main constraint
-            if "logicalExpression" in obj:
-                obj = {"args": [obj]}
+            # if "logicalExpression" in obj:
+            #     obj = {"args": [obj]}
 
             is_sequence = "sequence" in obj
             is_set = "set" in obj
-            is_constraint = "constraint" in obj and recurse is None
+            is_constraint = "constraint" in obj
             is_group = "group" in obj
 
             if is_constraint:
-                log_exp = obj["constraint"].get("logicalExpression", {})
+                constraint = cast(dict, obj["constraint"])
+                log_exp = constraint.get("logicalExpression", {})
                 log_args = log_exp.get("args", [])
                 is_disj = log_exp.get("naryOperator") == "OR"
                 none_quantified = not any(
@@ -525,7 +492,7 @@ class QueryMaker:
                 if is_disj and none_quantified:
                     disjunctions.append(log_args)
                 else:
-                    self.constraint(obj["constraint"])
+                    self.constraint(constraint)
                 continue
 
             if is_set:
@@ -533,7 +500,7 @@ class QueryMaker:
             elif is_group:
                 lab = ""
                 group: list[str] = []
-                for k, v in obj["group"].items():
+                for k, v in cast(dict, obj["group"]).items():
                     if k == "label":
                         lab = v
                     if k == "members":
@@ -542,9 +509,9 @@ class QueryMaker:
                     groups[lab] = group
                 continue
 
-            if "layer" not in obj.get("unit", {}):
+            if "layer" not in cast(dict, obj.get("unit", {})):
                 continue
-            obj = obj["unit"]
+            obj = cast(dict, obj["unit"])
             layer = cast(str, obj["layer"])
             layer_info = cast(JSONObject, self.config["layer"])
             layer_info = cast(JSONObject, layer_info[layer])
@@ -577,6 +544,13 @@ class QueryMaker:
             if not self._backup_table:  # and (is_document or is_segment or is_token):
                 self._backup_table = (layerlang, llabel)
 
+            if layer_info["layerType"] != "relation" and not layer_info.get(
+                "alignment"
+            ):
+                # make sure we always select all the main units
+                self.selects.add(f"{label}.{layer}_id as {label}".lower())
+                self.r.entities.add(label.lower())
+
             if is_segment or is_document or is_meta or is_above_segment:
                 self.segment_level(obj, label, layer)
                 continue
@@ -605,6 +579,7 @@ class QueryMaker:
 
         # Multiple steps: first SELECT in the fixed_parts table
         selects_in_fixed: set[str] = {s for s in self.selects}
+
         # Last select potentially *from* the fixed_parts table
         self.selects = {
             f"___lasttable___.{self._get_label_as(s)} as {self._get_label_as(s)}"
@@ -1169,8 +1144,9 @@ class QueryMaker:
         layer_info = cast(JSONObject, layer_info[layer])
         contains = cast(str, layer_info.get("contains", ""))
         is_meta = bool(contains) and contains != self.token
+        is_relation = layer_info.get("layerType", "relation")
         is_negative = obj.get("quantor", "") == "NOT EXISTS"
-        if not is_meta and not is_negative:
+        if not is_meta and not is_relation and not is_negative:
             idx = "_id" if not is_meta else ""
             select = f"{label}.{layer}{idx} as {label}"
             self.selects.add(select.lower())

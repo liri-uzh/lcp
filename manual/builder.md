@@ -4,11 +4,12 @@ The tool `lcpcli` ships with a helper python class `Corpus` to prepare LCP corpo
 
 The [tutorial](import_tutorial.md) uses the `Corpus` class to process SRT files and import a video corpus into LCP.
 
-The various [tests in the `lcpcli` repository](https://github.com/liri-uzh/lcpcli/tree/main/tests) give concrete examples of how to use the `Corpus` class.
+The various [tests in the `lcpcli` repository](https://github.com/liri-uzh/lcpcli/tree/main/tests) give concrete examples on how to use the `Corpus` class.
 
 The following repositories also use the `Corpus` class to convert existing data sets:
 
  - [XML-to-LCP conversion of NOAH's Corpus](https://github.com/liri-uzh/lcpimport_noah_corpus)
+ - [TEI-to-LCP conversion of OFROM](https://github.com/liri-uzh/lcpimport_ofrom)
 
 ## `Corpus`
 
@@ -62,6 +63,8 @@ c.make("path/to/output/")
 ```
 
 ### `make`
+
+Writes all the CSV files and the configuration JSON file of the corpus to the passed directory.
 
 The `make` method is the only valid method that starts with a non-capital letter.
 

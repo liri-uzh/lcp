@@ -16,7 +16,7 @@ from .utils import LCPApplication
 FCS_HOST = "catchphrase.linguistik.uzh.ch"
 FCS_PORT = "443"
 FCS_DB = "LCP public corpora"
-PID_PREFIX = f"https://{FCS_HOST}/query/"
+PID_PREFIX = f"https://{FCS_HOST}/"
 DEFAULT_MAX_KWIC_LINES = os.getenv("DEFAULT_MAX_KWIC_LINES", 9999)
 
 
@@ -25,6 +25,20 @@ def _get_cid_from_pid(pid: str) -> str:
     return "".join(
         x for n, x in enumerate(prefix_less, start=1) if "/" not in prefix_less[:n]
     )
+
+
+def _get_lg_from_pid(pid: str) -> str:
+    rpid = [x for x in reversed(pid)]
+    lg = (
+        "".join(
+            y
+            for y in reversed(
+                [x for n, x in enumerate(rpid, start=1) if "/" not in rpid[:n]]
+            )
+        )
+        or "en"
+    )
+    return lg
 
 
 def _get_iso639_3(lang: str) -> str:
@@ -40,50 +54,97 @@ def _get_iso639_3(lang: str) -> str:
         return "roh"
     if lang == "ro":
         return "ron"
+    if lang == "gs":
+        return "gsw"
     return ""
 
 
-def _get_languages_from_partitions(partitions: dict) -> str:
+def _get_languages(partitions: dict, main_language: str = "") -> str:
     lg_template = """          <ed:Languages>
             {languages}
           </ed:Languages>"""
-    languages = "<ed:Language>eng</ed:Language>"
+    languages = "<ed:Language>und</ed:Language>"
     if values := partitions.get("values", []):
         languages = "\n            ".join(
             f"<ed:Language>{_get_iso639_3(lg)}</ed:Language>"
             for lg in values
             if _get_iso639_3(lg)
         )
+    elif main_language:
+        languages = f"<ed:Language>{_get_iso639_3(main_language)}</ed:Language>"
     return lg_template.format(languages=languages)
 
 
-async def _check_request_complete(qi: QueryInfo, request: Request):
+def _get_descriptions(conf: dict) -> str:
+    ret: str = ""
+    descriptions: str | dict = (
+        conf["meta"].get("corpusDescription") or conf["description"]
+    )
+    if isinstance(descriptions, str):
+        ret = f"""<ed:Description xml:lang="en">{escape(descriptions)}</ed:Description>\n          """
+    elif isinstance(descriptions, dict):
+        ret = (
+            "\n          ".join(
+                f"""<ed:Description xml:lang="{lg}">{escape(desc)}</ed:Description>"""
+                for lg, desc in descriptions.items()
+            )
+            + "\n          "
+        )
+    return ret
+
+
+async def _check_request_complete(
+    qi: QueryInfo,
+    request: Request,
+    app: web.Application,
+    request_ids: dict[str, dict],
+    requested: int,
+):
     while 1:
         await asyncio.sleep(0.5)
         if not qi.has_request(request):
+            request_ids[request.id]["done"] = True
+            break
+        n_results = sum(
+            len(app["query_buffers"].get(rid, {}).get("1", []))
+            for rid, rprops in request_ids.items()
+            if rprops.get("done")
+        )
+        if n_results >= requested:
+            qi.stop_request(request)
             break
     return
 
 
 def _make_search_response(
-    buffers, request_ids: dict[str, dict], startRecord: int = 0
+    buffers, request_ids: dict[str, dict], startRecord: int = 0, requested: int = 50
 ) -> str:
     resp = """<?xml version='1.0' encoding='utf-8'?>
 <sru:searchRetrieveResponse xmlns:sru="http://www.loc.gov/zing/srw/">
   <sru:version>2.0</sru:version>"""
     records: list[str] = []
     for rid, corpus in request_ids.items():
+        if not corpus.get("done"):
+            continue
+        if len(records) >= requested:
+            break
         payload = buffers[rid]
         cid = corpus["cid"]
+        lg = corpus["lg"]
         shortname = corpus["conf"]["shortname"]
-        column_names: list[str] = corpus["conf"]["column_names"]
+        column_names: list[str] = (
+            corpus["conf"]["mapping"]["layer"]
+            .get(corpus["conf"]["segment"])
+            .get("prepared", {})
+            .get("columnHeaders", corpus["conf"]["column_names"])
+        )
         space_after_id = (
             column_names.index("spaceAfter") if "spaceAfter" in column_names else -1
         )
         form_id = column_names.index("form")
         if "1" not in payload or "-1" not in payload:
             continue
-        for rp, (sid, hits) in enumerate(payload["1"], start=1):
+        for rp, (sid, hits, *_) in enumerate(payload["1"], start=1):
             offset, tokens, *annotations = payload["-1"][sid]
             prep_seg = ""
             in_hit = False
@@ -106,15 +167,16 @@ def _make_search_response(
             prep_seg = prep_seg.strip()
             if in_hit:
                 prep_seg += "</hits:Hit>"
+            ref = f"{PID_PREFIX}query/{cid}/{shortname}"
             records.append(
                 f"""
     <sru:record>
       <sru:recordSchema>http://clarin.eu/fcs/resource</sru:recordSchema>
       <sru:recordPacking>xml</sru:recordPacking>
       <sru:recordData>
-        <fcs:Resource xmlns:fcs="http://clarin.eu/fcs/resource" pid="{PID_PREFIX}{cid}/{shortname}">
-          <fcs:ResourceFragment>
-            <fcs:DataView type="application/x-clarin-fcs-hits+xml">
+        <fcs:Resource xmlns:fcs="http://clarin.eu/fcs/resource" pid="{PID_PREFIX}{cid}/{lg}" ref="{ref}">
+          <fcs:ResourceFragment ref="{ref}">
+            <fcs:DataView type="application/x-clarin-fcs-hits+xml" ref="{ref}">
               <hits:Result xmlns:hits="http://clarin.eu/fcs/dataview/hits">
                 {prep_seg}
               </hits:Result>
@@ -125,6 +187,8 @@ def _make_search_response(
       <sru:recordPosition>{startRecord+rp}</sru:recordPosition>
     </sru:record>"""
             )
+            if len(records) >= requested:
+                break
     resp += f"""
   <sru:numberOfRecords>{len(records)}</sru:numberOfRecords>
   <sru:records>{''.join(records)}
@@ -146,16 +210,19 @@ async def search_retrieve(
     authenticator = cast(Authentication, app["auth_class"](app))
 
     resources = [
-        _get_cid_from_pid(pid)
+        (_get_cid_from_pid(pid), _get_lg_from_pid(pid))
         for pid in extra_params.get("x-fcs-context", "").split(",")
         if pid
     ]
-    corpora: dict[str, dict] = {
-        cid: conf
+    corpora: list[tuple[str, dict, str]] = [
+        (cid, conf, lg)
         for cid, conf in app["config"].items()
-        if (not resources or cid in resources)
+        for lg in conf.get("partitions", {}).get(
+            "values", [conf.get("meta", {}).get("language", "en")]
+        )
+        if (not resources or ((cid, lg) in resources))
         and authenticator.check_corpus_allowed(cid, conf, {}, "lcp", get_all=False)
-    }
+    ]
     try:
         requested: int = int(maximumRecords)
         requested = min(requested, 50)
@@ -175,16 +242,8 @@ async def search_retrieve(
 
     request_ids: dict[str, dict] = {}
     async with asyncio.TaskGroup() as tg:
-        for cid, conf in corpora.items():
-            langs = ["en"]
-            partitions = conf.get("partitions", {})
-            if (
-                partitions
-                and partitions.get("values")
-                and "en" not in partitions["values"]
-            ):
-                continue  # only do English for now
-                # langs = [next(x for x in partitions["values"])]
+        for cid, conf, lg in corpora:
+            langs = [lg if "partitions" in conf else "en"]
             json_query: str = json.dumps(
                 CqlToJson(
                     segment=conf["firstClass"]["segment"],
@@ -207,9 +266,19 @@ async def search_retrieve(
                 },
             )
             query_buffers[req.id] = {}
-            request_ids[req.id] = {"cid": cid, "conf": conf}
-            tg.create_task(_check_request_complete(qi, req))
-    return _make_search_response(query_buffers, request_ids, startRecord=startRecord)
+            request_ids[req.id] = {
+                "cid": cid,
+                "conf": conf,
+                "lg": lg,
+                "n_results": 0,
+                "done": False,
+            }
+            tg.create_task(
+                _check_request_complete(qi, req, app, request_ids, requested)
+            )
+    return _make_search_response(
+        query_buffers, request_ids, startRecord=startRecord, requested=requested
+    )
 
 
 async def explain(app: LCPApplication, **extra_params) -> str:
@@ -246,14 +315,16 @@ async def explain(app: LCPApplication, **extra_params) -> str:
     if "x-fcs-endpoint-description" in extra_params:
         authenticator = cast(Authentication, app["auth_class"](app))
         resources_list: list[str] = [
-            f"""      <ed:Resource pid="{PID_PREFIX}{cid}/{conf['shortname']}">
-          <ed:Title xml:lang="en">{conf['shortname']}</ed:Title>
-          <ed:Description xml:lang="en">{conf['description']}</ed:Description>
-          <ed:LandingPageURI>{PID_PREFIX}{cid}/{conf['shortname']}</ed:LandingPageURI>
-          {_get_languages_from_partitions(conf.get('partitions', {}))}
+            f"""      <ed:Resource pid="{PID_PREFIX}{cid}/{lg}">
+          <ed:Title xml:lang="en">{conf['shortname']}{ ' ('+lg+')' if 'partitions' in conf else ''}</ed:Title>
+          {_get_descriptions(conf)}<ed:LandingPageURI>{PID_PREFIX}query/{cid}/{conf['shortname']}</ed:LandingPageURI>
+          {_get_languages({}, lg)}
           <ed:AvailableDataViews ref="hits"/>
         </ed:Resource>"""
             for cid, conf in app["config"].items()
+            for lg in conf.get("partitions", {}).get(
+                "values", [conf.get("meta", {}).get("language", "")]
+            )
             if authenticator.check_corpus_allowed(cid, conf, {}, "lcp", get_all=False)
         ]
         resources_str = "\n        ".join(resources_list)

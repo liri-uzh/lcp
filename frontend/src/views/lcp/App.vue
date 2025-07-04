@@ -74,13 +74,13 @@
               </a>
             </li>
             <li class="nav-item">
-              <a
+              <router-link
                 v-if="userData && userData.user && userData.user.displayName"
                 class="nav-link"
-                href="/user"
+                to="/user"
               >
                 <FontAwesomeIcon :icon="['fas', 'user']" class="me-1" />
-              </a>
+              </router-link>
             </li>
           </ul>
         </div>

@@ -1,6 +1,7 @@
 import { defineStore } from "pinia";
 import { getUserLocale } from "@/fluent";
 import httpApi from "@/httpApi";
+import { t } from '@/i18n';
 
 export const useCorpusStore = defineStore("corpusData", {
   state: () => ({
@@ -15,6 +16,16 @@ export const useCorpusStore = defineStore("corpusData", {
       {tag: "cc-by-nc-nd", name: "CC-BY-NC-ND", url: "https://creativecommons.org/licenses/by-nc-nd/4.0/"},
       {tag: "cc-zero", name: "CC-0", url: "https://creativecommons.org/publicdomain/zero/1.0/"},
       {tag: "user-defined", name: "User defined", url: null}
+    ],
+    languages: [
+      { value: "und", name: t('modal-meta-lg-undefined') },
+      { value: "en", name: t('modal-meta-lg-english') },
+      { value: "de", name: t('modal-meta-lg-german') },
+      { value: "fr", name: t('modal-meta-lg-french') },
+      { value: "it", name: t('modal-meta-lg-italian') },
+      { value: "es", name: t('modal-meta-lg-spanish') },
+      { value: "gs", name: t('modal-meta-lg-swiss-german') },
+      { value: "rm", name: t('modal-meta-lg-romansh') },
     ],
   }),
   getters: {
@@ -48,8 +59,8 @@ export const useCorpusStore = defineStore("corpusData", {
     },
     updateMeta(data) {
       const lg = getUserLocale().value;
-      data.metadata._lg = lg;
-      httpApi.put(`/corpora/${data.corpusId}/meta/update`, data.metadata).then((response) => {
+      const toSend = {lg: lg, metadata: data.metadata, descriptions: data.descriptions}
+      httpApi.put(`/corpora/${data.corpusId}/meta/update`, toSend).then((response) => {
         return response.data;
       });
     },

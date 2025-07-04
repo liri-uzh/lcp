@@ -339,7 +339,11 @@ async def post_query(request: web.Request) -> web.Response:
         await push_msg(app["websockets"], room, cast(dict, fail), just=just)
         raise web.HTTPForbidden(text=msg)
 
-    (req, qi, job) = process_query(app, request_data)
+    try:
+        (req, qi, job) = process_query(app, request_data)
+    except Exception as e:
+        raise web.HTTPBadRequest(reason=str(e))
+
     if req.to_export and req.user:
         xpformat = req.to_export.get("format", "xml") or "xml"
         await push_msg(

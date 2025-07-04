@@ -36,9 +36,9 @@
           <i>{{ $t('platform-videoscope') }}</i>
         </a>
       </div>
-      <!-- <p class="author mb-0" v-if="corpusModal.meta.author">
-        {{ corpusModal.meta.author }}
-      </p> -->
+      <p class="authors mb-0" v-if="corpusModal.meta.authors">
+        <em>{{ corpusModal.meta.authors }}</em>
+      </p>
       <p class="description mt-3">
         {{ corpusModal.meta.corpusDescription }}
       </p>
@@ -54,13 +54,16 @@
         {{$t('modal-details-revison')}}: {{ corpusModal.meta.revision }}
       </p>
       <p class="word-count mb-0">
-        {{$t('modal-details-url')}}: 
+        {{$t('modal-details-url')}}:
         <a :href="getURLWithProtocol(corpusModal.meta.url)" target="_blank">{{
           corpusModal.meta.url
         }}</a>
       </p>
       <p class="word-count mb-0">
         {{$t('modal-details-description')}}: {{ corpusModal.description }}
+      </p>
+      <p class ="word-count mb-0" v-if="corpusModal.meta.language && !(corpusModal.partitions)">
+        {{$t('modal-details-language')}}: {{ corpusModal.meta.language }}
       </p>
       <span v-if="corpusModal.partitions">
         <p class="word-count" v-if="corpusModal.partitions">
@@ -69,7 +72,7 @@
         <div class="" v-for="partition in corpusModal.partitions.values" :key="partition">
           <p class="text-bold">{{ partition.toUpperCase() }}</p>
           <p class="word-count">
-            {{$t('modal-details-segments')}}: 
+            {{$t('modal-details-segments')}}:
             {{
               corpusModal.mapping.layer.Segment.partitions[
                 partition
@@ -83,9 +86,10 @@
         </div>
       </span>
       <p class="word-count mb-0 mt-2" v-if="license">
-        {{ $t('modal-details-license') }}: 
+        {{ $t('modal-details-license') }}:
         <span v-if="license.tag == 'user-defined'">
-          {{ $t('modal-details-user-license') }}: {{ corpusModal.meta.userLicense }}
+          <b>{{ $t('modal-details-user-license') }}</b><br>
+          {{ getUserLicense() }}
         </span>
         <span v-else>
           <a :href="license.url" target="_blank">
@@ -103,7 +107,7 @@
   </div>
 </template>
 
-<style>
+<style scoped>
   .description {
     font-size: 90%;
     height: 108px;
@@ -144,6 +148,18 @@
       }
     },
     methods: {
+      getUserLicense() {
+        if (this.corpusModal.meta.userLicense) {
+          let license = "";
+          try {
+            license = atob(this.corpusModal.meta.userLicense);
+          } catch {
+            license = this.corpusModal.meta.userLicense;
+          }
+          return license;
+        }
+        return "";
+      },
       corpusDataType: Utils.corpusDataType,
       getURLWithProtocol: Utils.getURLWithProtocol,
       hasAccessToCorpus: Utils.hasAccessToCorpus,

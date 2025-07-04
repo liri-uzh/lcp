@@ -23,3 +23,74 @@ ALTER PROCEDURE main.update_corpus_meta
 
 REVOKE EXECUTE ON PROCEDURE main.update_corpus_meta FROM public;
 GRANT EXECUTE ON PROCEDURE main.update_corpus_meta TO lcp_production_web_user;
+
+
+CREATE OR REPLACE PROCEDURE main.update_corpus_descriptions(
+   corpus_id         int
+ , descriptions      jsonb
+)
+AS $$
+   DECLARE
+      k        text;
+      val      jsonb;
+      ak       text;
+      avalue   jsonb;
+      mk       text;
+      mvalue   jsonb;
+   BEGIN
+      -- Loop over each key-value pair in the updates JSON object
+      FOR k, val IN
+         SELECT * FROM jsonb_each(descriptions)
+      LOOP
+         IF val ? 'description' THEN
+            UPDATE main.corpus mc
+               SET
+                  corpus_template = jsonb_set(
+                     corpus_template,
+                     format('{layer,%s,description}', k)::text[],
+                     val::jsonb->'description',
+                     TRUE
+                  )
+               WHERE mc.corpus_id = $1;
+         END IF;
+         IF NOT val ? 'attributes' THEN
+            CONTINUE;
+         END IF;
+         FOR ak, avalue IN
+            SELECT * FROM jsonb_each(val->'attributes')
+         LOOP
+            IF ak = 'meta' AND jsonb_typeof(avalue) = 'object' THEN
+               FOR mk, mvalue IN
+                  SELECT * FROM jsonb_each(avalue)
+               LOOP
+                  UPDATE main.corpus mc
+                     SET
+                        corpus_template = jsonb_set(
+                           corpus_template,
+                           format('{layer,%s,attributes,meta,%s,description}', k, mk)::text[],
+                           mvalue::jsonb,
+                           TRUE
+                        )
+                     WHERE mc.corpus_id = $1;
+               END LOOP;
+            ELSE
+               UPDATE main.corpus mc
+                  SET
+                     corpus_template = jsonb_set(
+                        corpus_template,
+                        format('{layer,%s,attributes,%s,description}', k, ak)::text[],
+                        avalue::jsonb,
+                        TRUE
+                     )
+                  WHERE mc.corpus_id = $1;
+            END IF;
+         END LOOP;
+      END LOOP;
+   END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+ALTER PROCEDURE main.update_corpus_descriptions
+  SET search_path = pg_catalog,pg_temp;
+
+REVOKE EXECUTE ON PROCEDURE main.update_corpus_descriptions FROM public;
+GRANT EXECUTE ON PROCEDURE main.update_corpus_descriptions TO lcp_production_owner;

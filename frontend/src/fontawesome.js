@@ -19,6 +19,7 @@ import {
   faCircleQuestion,
   faCopy,
   faDatabase,
+  faDownload,
   faExpand,
   faFileExport,
   faFont,
@@ -26,6 +27,7 @@ import {
   faGear,
   faGlobe,
   faHouse,
+  faImage,
   faLink,
   faMagnifyingGlass,
   faMagnifyingGlassChart,
@@ -71,6 +73,7 @@ library.add(faCirclePlus);
 library.add(faCircleQuestion);
 library.add(faCopy);
 library.add(faDatabase);
+library.add(faDownload);
 library.add(faExpand);
 library.add(faFileExport);
 library.add(faFont);
@@ -78,6 +81,7 @@ library.add(faForward);
 library.add(faGear);
 library.add(faGlobe);
 library.add(faHouse);
+library.add(faImage);
 library.add(faLink);
 library.add(faMagnifyingGlass);
 library.add(faMagnifyingGlassChart);

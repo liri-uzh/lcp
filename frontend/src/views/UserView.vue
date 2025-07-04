@@ -1,16 +1,22 @@
 <template>
-  <div class="query">
-    <div class="container-fluid mt-4 px-4">
-      <div class="row">
+  <div class="home">
+    <div class="container">
+      <div class="row mt-4">
         <div class="col">
-          <Title
-            :title="`User profile${userData && userData.user && userData.user.displayName ? ' - ' + userData.user.displayName : ''}`" />
+          <Title title="User profile" />
         </div>
       </div>
       <div class="row my-5 border-secondary" v-if="userData && userData.user">
         <h4>{{ $t('common-user-info') }}</h4>
-        <p class="my-1" v-if="userData.user.email">{{ $t('common-email') }}: <strong>{{ userData.user.email }}</strong></p>
-        <p class="my-1" v-if="userData.user.homeOrganization">{{ $t('common-organization') }}: <strong>{{ userData.user.homeOrganization }}</strong></p>
+        <p class="my-1" v-if="userData.user.email">
+            {{ $t('common-name') }}: <strong>{{ userData.user.displayName}}</strong>
+        </p>
+        <p class="my-1" v-if="userData.user.email">
+          {{ $t('common-email') }}: <strong>{{ userData.user.email }}</strong>
+        </p>
+        <p class="my-1" v-if="userData.user.homeOrganization">
+          {{ $t('common-organization') }}: <strong>{{ userData.user.homeOrganization }}</strong>
+        </p>
       </div>
       <div class="row my-5">
         <h4>{{ $t('common-saved-queries') }}</h4>
@@ -23,15 +29,20 @@
               <div class="col-lg-6">
                 <div class="m-3">
                   <div class="container-fluid" v-if="userQueryVisible()">
-                    <multiselect v-model="selectedQuery" :options="processedSavedQueries" :searchable="true"
-                      :clear-on-select="false" :close-on-select="true" :placeholder="$t('common-select-saved-queries')"
-                      label="query_name" track-by="idx" @select="handleQuerySelection"></multiselect>
-                    <!-- <p v-if="selectedQuery">
-                          Selected query: {{ selectedQuery.query_name }}
-                        </p> -->
+                    <multiselect
+                      v-model="selectedQuery"
+                      :options="processedSavedQueries"
+                      :searchable="true"
+                      :clear-on-select="false"
+                      :close-on-select="true"
+                      :placeholder="$t('common-select-saved-queries')"
+                      label="query_name"
+                      track-by="idx"
+                      @select="handleQuerySelection"
+                    ></multiselect>
                   </div>
                 </div>
-                <div class="form-floating mb-3">
+                <div class="form-floating mb-3" v-if="selectedQuery">
                   <nav>
                     <div class="nav nav-tabs justify-content-end" id="nav-query-tab" role="tablist">
                       <button class="nav-link" id="nav-plaintext-tab" data-bs-toggle="tab"

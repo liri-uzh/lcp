@@ -16,6 +16,7 @@ from .typed import JSONObject
 from aiohttp import web
 from aiohttp.client_exceptions import ClientOSError
 from rq.job import Job
+from typing import cast
 
 
 @ensure_authorised
@@ -62,19 +63,51 @@ async def corpora_meta_update(request: web.Request) -> web.Response:
     """
     corpora_id: int = int(request.match_info["corpora_id"])
     request_data: JSONObject = await request.json()
-    to_store = dict(
-        name=request_data["name"],
-        source=request_data.get("source", ""),
-        authors=request_data.get("authors", ""),
-        institution=request_data.get("institution", ""),
-        revision=request_data.get("revision", ""),
-        corpusDescription=request_data["corpusDescription"],
-        license=request_data.get("license", ""),
-        userLicense=request_data.get("userLicense", ""),
-        dataType=request_data.get("dataType", ""),
-        sample_query=request_data.get("sample_query", ""),
+    metadata: dict = cast(dict, request_data.get("metadata", {}))
+    descriptions: dict = cast(dict, request_data.get("descriptions", {}))
+    to_store_meta = dict(
+        name=metadata["name"],
+        source=metadata.get("source", ""),
+        authors=metadata.get("authors", ""),
+        institution=metadata.get("institution", ""),
+        revision=metadata.get("revision", ""),
+        corpusDescription=metadata["corpusDescription"],
+        language=metadata.get("language", ""),
+        license=metadata.get("license", ""),
+        userLicense=metadata.get("userLicense", ""),
+        dataType=metadata.get("dataType", ""),
+        sample_query=metadata.get("sample_query", ""),
     )
-    args = (corpora_id, to_store, request_data.get("_lg") or "en")
-    job: Job = request.app["query_service"].update_metadata(*args)
-    info: dict[str, str] = {"status": "1", "job": str(job.id)}
+    args_meta = (corpora_id, to_store_meta, request_data.get("lg") or "en")
+    job_meta: Job = request.app["query_service"].update_metadata(*args_meta)
+    to_store_desc = {
+        k: {
+            vk: (
+                vv
+                if vk == "description"
+                else {
+                    vvk: (
+                        {
+                            vvvk: vvvv["description"]
+                            for vvvk, vvvv in vvv.items()
+                            if "description" in vvvv
+                        }
+                        if vvk == "meta" and isinstance(vvv, dict)
+                        else vvv["description"]
+                    )
+                    for vvk, vvv in vv.items()
+                    if "description" in vvv or vvk == "meta"
+                }
+            )
+            for vk, vv in v.items()
+            if vk in ("description", "attributes")
+        }
+        for k, v in descriptions.items()
+    }
+    args_desc = (corpora_id, to_store_desc, request_data.get("lg") or "en")
+    job_desc: Job = request.app["query_service"].update_descriptions(*args_desc)
+    info: dict[str, str | list[str]] = {
+        "status": "1",
+        "jobs": [str(job_meta.id), str(job_desc.id)],
+    }
     return web.json_response(info)

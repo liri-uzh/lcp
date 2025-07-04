@@ -359,6 +359,13 @@ async def handle_timeout(exc: Exception, request: web.Request) -> None:
     await _general_error_handler("timeout", exc, request)
 
 
+async def handle_bad_request(exc: Exception, request: web.Request) -> None:
+    """
+    If BE raises an HTTPBadRequest error
+    """
+    await _general_error_handler(str(exc), exc, request)
+
+
 def refresh_job_ttl(
     connection: RedisConnection, job_id: str, new_ttl: int = QUERY_TTL
 ) -> None:
@@ -507,37 +514,6 @@ async def gather(
             if name is not None and task.get_name() == name:
                 task.cancel()
         raise err
-
-
-def _handle_large_msg(strung: str, limit: int) -> list[bytes] | list[str]:
-    """
-    Before we publish a message to redis pubsub, check if it's larger
-    than the pubsub limit. If it is, we break it into chunks, wait between
-    each publish, then join them back together on the other side
-
-    strung is a serialised JSON object, return a list str/bytes to send,
-    with a wait time determined by redis config in between each
-    """
-    # just a bit of extra room around our redis hard limit
-    buffer = 100
-
-    if limit == -1:
-        return [strung]
-
-    enc: bytes = strung.encode("utf-8")
-
-    if len(enc) < limit:
-        return [strung]
-    cz = limit - buffer
-    n_chunks = math.ceil(len(enc) / cz)
-    chunks: list[bytes] = [enc[0 + i : cz + i] for i in range(0, len(enc), cz)]
-    out: list[bytes] = []
-    uu = str(uuid4())[:8]
-    for i, chunk in enumerate(chunks, start=1):
-        formed = f"#CHUNK#{uu}#{i}#{n_chunks}#".encode("utf-8")
-        formed += chunk
-        out.append(formed)
-    return out
 
 
 async def push_msg(
@@ -985,18 +961,47 @@ def _get_table(layer: str, config: Any, batch: str, lang: str) -> str:
     return table
 
 
-def _get_first_job(job: Job, connection: "RedisConnection[bytes]") -> Job:
+def _get_all_attributes(layer: str, config: Any, lang: str = "") -> dict:
     """
-    Helper to get the base job from a group of query jobs
+    Look up the config to get all the attributes of a given layer
+    including those of the passed language partition or all partitions
     """
-    first_job = job
-    first_job_id_from_kwargs = cast(dict, job.kwargs).get("first_job")
-    if first_job_id_from_kwargs:
-        try:
-            first_job = Job.fetch(first_job_id_from_kwargs, connection=connection)
-        except NoSuchJobError:
-            pass
-    return first_job
+    if layer not in config["layer"]:
+        return {}
+    main_attrs: dict = config["layer"][layer].get("attributes", {})
+    ret = {
+        k: v for k, v in main_attrs.items() if k != "meta" or not isinstance(v, dict)
+    }
+    if isinstance(main_attrs.get("meta", ""), dict):
+        ret.update({k: v for k, v in main_attrs["meta"].items()})
+    partitions = config["mapping"]["layer"].get(layer, {}).get("partitions", {})
+    if partitions:
+        if lang and lang not in partitions:
+            return ret
+        lkey = f"{layer}@{lang}"
+        if lang and lkey in config["layer"]:
+            ret.update({k: v for k, v in _get_all_attributes(lkey, config).items()})
+        if not lang:
+            ret.update(
+                {
+                    k: v
+                    for lg in partitions
+                    for k, v in _get_all_attributes(f"{layer}@{lg}", config).items()
+                }
+            )
+    return ret
+
+
+def _get_all_labels(json_query: dict | list) -> dict[str, str]:
+    ret = {}
+    is_list = isinstance(json_query, list)
+    for k in json_query:
+        v = k if is_list else json_query[k]
+        if isinstance(v, dict) and "label" in v:
+            ret[v["label"]] = v.get("layer", "")
+        if isinstance(v, (dict, list)):
+            ret.update(_get_all_labels(v))
+    return ret
 
 
 def _time_remaining(status: str, total_duration: float, use: float) -> float:
@@ -1009,24 +1014,6 @@ def _time_remaining(status: str, total_duration: float, use: float) -> float:
         return 0.0
     timed = (total_duration * (100.0 / use)) - total_duration
     return max(0.0, round(timed, 3))
-
-
-def _decide_can_send(
-    status: str, is_full: bool, is_base: bool, from_memory: bool
-) -> bool:
-    """
-    Helper to figure out if we can send query message to the user or not
-
-    We don't exit early if we can't send, because we still need to store the
-    message and potentially trigger a new job
-    """
-    if not is_full or status == "finished":
-        return True
-    elif is_base and from_memory:
-        return True
-    elif not is_base and not from_memory:
-        return True
-    return False
 
 
 def _get_progress(job: Job, query_info: dict, request_info: RequestInfo) -> dict:
@@ -1094,87 +1081,6 @@ def _get_progress(job: Job, query_info: dict, request_info: RequestInfo) -> dict
         "total_results_so_far": total_found,
         "action": "background_job_progress",
     }
-
-
-def _get_total_requested(kwargs: dict[str, Any], job: Job) -> int:
-    """
-    Helper to find the total requested -- remove this after cleanup ideally
-    """
-    total_requested = cast(int, kwargs.get("total_results_requested", -1))
-    if total_requested > 0:
-        return total_requested
-    total_requested = cast(dict, job.kwargs).get("total_results_requested", -1)
-    if total_requested > 0:
-        return total_requested
-    return -1
-
-
-def _get_request_info(connection: RedisConnection, hash: str) -> list[RequestInfo]:
-    qas_json = connection.get(f"request_info_{hash}")
-    qas = json.loads(qas_json) if qas_json else []
-    return qas
-
-
-def _set_request_info(connection: RedisConnection, request_info: RequestInfo) -> None:
-    hash = request_info.get("hash", "")
-    all_request_info: list[RequestInfo] = _get_request_info(connection, hash)
-    if not next((x for x in all_request_info if x == request_info), None):
-        all_request_info.append(request_info)
-    qa_key = f"request_info_{hash}"
-    connection.set(qa_key, json.dumps(all_request_info))
-    timeout = int(os.getenv("QUERY_TIMEOUT", 1000))
-    whole_corpus_timeout = int(os.getenv("QUERY_ENTIRE_CORPUS_CALLBACK_TIMEOUT", 99999))
-    connection.expire(
-        qa_key,
-        (
-            whole_corpus_timeout
-            if any(x.get("full") for x in all_request_info)
-            else timeout
-        ),
-    )
-
-
-def _update_request_info(
-    connection: RedisConnection, request_info: RequestInfo, new_info: RequestInfo
-) -> RequestInfo:
-    forbidden_keys = QueryArgs.__optional_keys__.union(QueryArgs.__required_keys__)
-    all_ris = _get_request_info(connection, request_info["hash"])
-    ret_ri: RequestInfo
-    for ri in all_ris:
-        if ri != request_info:
-            continue
-        ret_ri = ri
-        for k, v in new_info.items():
-            assert (
-                k not in forbidden_keys
-            ), f"Cannot change {k} in a request info after it's been created"
-            ri[k] = v  # type: ignore
-    qa_key = f"request_info_{hash}"
-    connection.set(qa_key, json.dumps(all_ris))
-    timeout = int(os.getenv("QUERY_TIMEOUT", 1000))
-    whole_corpus_timeout = int(os.getenv("QUERY_ENTIRE_CORPUS_CALLBACK_TIMEOUT", 99999))
-    connection.expire(
-        qa_key,
-        (whole_corpus_timeout if any(x.get("full") for x in all_ris) else timeout),
-    )
-    return ret_ri
-
-
-def _delete_request_info(connection: RedisConnection, qi_args: RequestInfo) -> None:
-    hash = qi_args.get("hash", "")
-    all_request_info: list[RequestInfo] = _get_request_info(connection, hash)
-    if not all_request_info:
-        return
-    all_request_info = [x for x in all_request_info if x != qi_args]
-    qa_key = f"request_info_{hash}"
-    if not all_request_info:
-        connection.delete(qa_key)
-        _update_query_info(connection, hash=hash, info={"running": False})
-        return
-    connection.set(qa_key, json.dumps(all_request_info))
-    timeout = int(os.getenv("QUERY_TIMEOUT", 1000))
-    whole_corpus_timeout = int(os.getenv("QUERY_ENTIRE_CORPUS_CALLBACK_TIMEOUT", 99999))
-    connection.expire(qa_key, whole_corpus_timeout if qi_args.get("full") else timeout)
 
 
 def _sign_payload(
@@ -1457,150 +1363,6 @@ SELECT -2::int2 AS rstype, jsonb_build_array({meta_array}) FROM meta;
     """
     print("segment_meta_script", script)
     return script, meta_select_labels
-
-
-def _meta_query(current_batch: Batch, config: CorpusConfig) -> str:
-    if not current_batch:
-        raise ValueError("Need batch")
-    layer_info = config["layer"]
-    schema = current_batch[1]
-    lang = _determine_language(current_batch[2])
-
-    doc: str = config["document"]
-    seg: str = config["segment"]
-    tok: str = config["token"]
-    seg_name = _get_table(seg, config, current_batch[2], lang or "")
-
-    has_media = config.get("meta", config).get("mediaSlots", {})
-
-    parents_of_seg = [k for k in layer_info if _parent_of(config, seg, k)]
-    parents_with_attributes = {
-        k: None for k in parents_of_seg if layer_info[k].get("attributes")
-    }
-    # Make sure to include Document in there, even if it's not a parent of Segment
-    if has_media or layer_info[doc].get("attributes"):
-        parents_with_attributes[doc] = None
-
-    parents_with_attributes[seg] = None  # Also query the segment layer itself
-    selects = [f"s.{seg}_id AS seg_id"]
-    froms = [f"{schema}.{seg_name} s"]
-    wheres = [f"s.{seg}_id = ANY(:ids)"]
-    joins: dict[str, Any] = {}
-    group_by = []
-    for layer in parents_with_attributes:
-        alias = "s" if layer == seg else layer
-        layer_mapping = config["mapping"]["layer"].get(layer, {})
-        mapping_attrs = layer_mapping.get("attributes", {})
-        partitions = None if layer == seg else layer_mapping.get("partitions")
-        alignment = {} if layer == seg else layer_mapping.get("alignment", {})
-        relation = alignment.get("relation", None)
-        if not relation and layer != seg:
-            relation = layer_mapping.get("relation", layer.lower())
-        if not relation and lang and partitions:
-            relation = partitions.get(lang, {}).get("relation")
-        prefix_id: str = layer.lower()
-        if alignment:
-            prefix_id = "alignment"
-        # Select the ID
-        iddotref = f"{alias}.{prefix_id}_id"
-        selects.append(f"{iddotref} AS {layer}_id")
-        group_by.append(iddotref)
-        joins_later: dict[str, Any] = {}
-        attributes: dict[str, Any] = layer_info[layer].get("attributes", {})
-        relational_attributes = {
-            k: v
-            for k, v in attributes.items()
-            if mapping_attrs.get(k, {}).get("type") == "relation"
-        }
-        # Make sure one gets the data in a pure JSON format (not just a string representation of a JSON object)
-        selects += [
-            f"{alias}.\"{attr}\"{'::jsonb' if attr=='meta' else ''} AS {layer}_{attr}"
-            for attr, v in attributes.items()
-            if attr not in relational_attributes and v.get("type") != "vector"
-        ]
-        for attr, v in relational_attributes.items():
-            # Quote attribute name (is arbitrary)
-            attr_mapping = mapping_attrs.get(attr, {})
-            # Mapping is "relation" for dict-like attributes (eg ufeat or agent)
-            attr_table = attr_mapping.get("name", "")
-            alias_attr_table = f"{layer}_{attr}_{attr_table}"
-            attr_table_key = attr_mapping.get("key", attr)
-            attr_name = f'"{attr_table_key}"'
-            on_cond = f"{alias}.{attr}_id = {alias_attr_table}.{attr_table_key}_id"
-            dotref = f"{alias_attr_table}.{attr_name}"
-            sel = f"{dotref} AS {layer}_{attr}"
-            if v.get("type") == "labels":
-                nbit: int = cast(int, attributes[attr].get("nlabels", 1))
-                on_cond = (
-                    f"get_bit({alias}.{attr}, {nbit-1}-{alias_attr_table}.bit) > 0"
-                )
-                sel = f"array_agg({alias_attr_table}.label) AS {layer}_{attr}"
-            else:
-                group_by.append(dotref)
-            # Join the lookup table
-            joins_later[f"{schema}.{attr_table} {alias_attr_table} ON {on_cond}"] = None
-            # Select the attribute from the lookup table
-            selects.append(sel)
-
-        # Will get char_range from the appropriate table
-        char_range_table: str = alias
-        # join tables
-        if lang and partitions:
-            interim_relation = partitions.get(lang, {}).get("relation")
-            if not interim_relation:
-                # This should never happen?
-                continue
-            if alignment and relation:
-                # The partition table is aligned to a main document table
-                joins[
-                    f"{schema}.{interim_relation} {alias}_{lang} ON {alias}_{lang}.char_range @> s.char_range"
-                ] = None
-                joins[
-                    f"{schema}.{relation} {alias} ON {alias}_{lang}.alignment_id = {alias}.alignment_id"
-                ] = None
-                char_range_table = f"{alias}_{lang}"
-            else:
-                # This is the main document table for this partition
-                joins[
-                    f"{schema}.{interim_relation} {layer} ON {alias}.char_range @> s.char_range"
-                ] = None
-        elif relation:
-            joins[
-                f"{schema}.{relation} {alias} ON {layer}.char_range @> s.char_range"
-            ] = None
-        for k in joins_later:
-            joins[k] = None
-        # Get char_range from the main table
-        chardotref = char_range_table + '."char_range"'
-        selects.append(f"{chardotref} AS {layer}_char_range")
-        group_by.append(chardotref)
-        # And frame_range if applicable
-        if _is_time_anchored(cast(dict, layer_info[layer]), cast(dict, config)):
-            selects.append(f'{char_range_table}."frame_range" AS {layer}_frame_range')
-        # And xy_box if applicable
-        if config["layer"].get(layer, {}).get("anchoring", {}).get("location", False):
-            selects.append(f'{char_range_table}."xy_box" AS {layer}_xy_box')
-
-    # Add code here to add "media" if dealing with a multimedia corpus
-    if has_media:
-        selects.append(f"{doc}.media::jsonb AS {doc}_media")
-
-    selects_formed = ", ".join(selects)
-    froms_formed = ", ".join(froms)
-    wheres_formed = " AND ".join(wheres)
-    # left join = include non-empty entities even if other ones are empty
-    joins_formed = f"\n    LEFT JOIN ".join(joins)
-    joins_formed = "" if not joins_formed else f"LEFT JOIN {joins_formed}"
-    group_by_formed = ", ".join(group_by)
-    script = META_QUERY.format(
-        selects_formed=selects_formed,
-        froms_formed=froms_formed,
-        joins_formed=joins_formed,
-        wheres_formed=wheres_formed,
-        group_by_formed=group_by_formed,
-    )
-    print("meta script", script)
-    return script
 
 
 async def copy_to_table(

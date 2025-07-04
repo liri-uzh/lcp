@@ -19,6 +19,7 @@ from .typed import (
 from .utils import (
     Config,
     QueryData,
+    _flatten_coord,
     _get_table,
     _bound_label,
     _label_layer,
@@ -57,15 +58,66 @@ class ResultsMaker:
         self.conf_layer = cast(JSONObject, self.config["layer"])
         self.r = QueryData()
         tmp_label_layer = _label_layer(query_json.get("query", query_json))
-        self.query_json: QueryJSON = cast(
-            QueryJSON, self.r.add_labels(query_json, tmp_label_layer)
-        )
+        new_query_json = cast(dict, self.r.add_labels(query_json, tmp_label_layer))
+        lifted_quants = cast(list, self.lift_quantifiers(new_query_json["query"]))
+        lifted_conjs = self.lift_conjunctions(lifted_quants)
+        # Make sure root logicalExpressions are introduced as constraints
+        query_json["query"] = [
+            {"constraint": x} if "logicalExpression" in x else x for x in lifted_conjs
+        ]
+        self.query_json = query_json
         self.r.label_layer = _label_layer(self.query_json.get("query", self.query_json))
         self._n = 1
         self._underlang = _get_underlang(self.lang, self.config)
         self._label_mapping: dict[str, str] = (
             dict()
         )  # Map entities' labels to potentially internal labels
+
+    def lift_conjunctions(self, query_list: list) -> list:
+        return [  # lift and flatten conjunctions
+            y
+            for x in query_list
+            for y in (
+                _flatten_coord(
+                    x["constraint"]["logicalExpression"]["args"], operator="AND"
+                )
+                if x.get("constraint", {})
+                .get("logicalExpression", {})
+                .get("naryOperator")
+                == "AND"
+                else [x]
+            )
+        ]
+
+    def lift_quantifiers(self, query_obj: dict | list) -> dict | list:
+        ret_obj: dict | list = (
+            {} if isinstance(query_obj, dict) else [None for _ in range(len(query_obj))]
+        )
+        for n, k in enumerate(query_obj):
+            v = query_obj[k] if isinstance(query_obj, dict) else k
+            i = k if isinstance(query_obj, dict) else n
+            if isinstance(v, list):
+                ret_obj[i] = self.lift_quantifiers(v)
+                continue
+            elif not isinstance(v, dict):
+                ret_obj[i] = v
+                continue
+            if "quantification" in v:
+                quan_obj = cast(dict[str, Any], v["quantification"])
+                quantor = quan_obj.get("quantifier", "")
+                if quantor.endswith(("EXISTS", "EXIST")):
+                    if quantor.startswith(("~", "!", "NOT", "¬")):
+                        quantor = "NOT EXISTS"
+                    else:
+                        quantor = "EXISTS"
+                    key_to_lift = next(
+                        (x for x in ("unit", "sequence") if x in quan_obj), None
+                    )
+                    if key_to_lift:
+                        v = {x: y for x, y in quan_obj.items() if x == key_to_lift}
+                        v[key_to_lift]["quantor"] = quantor
+            ret_obj[i] = self.lift_quantifiers(v)
+        return ret_obj
 
     def add_query_entities(self, query_json: dict[str, Any]) -> None:
         """
@@ -396,88 +448,6 @@ class ResultsMaker:
         Process a stats request
         """
         attributes = cast(list[str | dict], result["attributes"])
-        # for att in attributes:
-        #     if not isinstance(att, dict) or "attribute" not in att:
-        #         continue
-        #     att_str = cast(dict, att)["attribute"]
-        #     lab = att_str.replace(".", "_").lower().strip()
-        #     split_att = att_str.split(".")
-        #     shortest = split_att[0]
-        #     shortest = self._label_mapping.get(shortest, shortest)
-        #     field = split_att[1]
-        #     layer, _ = self.r.label_layer[shortest]
-        #     layer_attrs = self.conf.config["layer"][layer].get("attributes", {})
-        #     table = _get_table(layer, self.config, self.batch, self.lang)
-        #     # Join shortest table
-        #     all_layer_names = cast(dict[str, Any], self.config.get("layer", {})).keys()
-        #     shortest_layer = self.r.label_layer.get(shortest, ("", {}))[0]
-        #     shortest_table = f"{self.schema}.{table} {shortest}".lower()
-        #     self.r.joins[shortest_table] = (
-        #         None if shortest_layer in all_layer_names else True
-        #     )
-        #     # Proceed
-        #     is_meta = field not in layer_attrs and field in layer_attrs.get("meta", {})
-        #     is_chained = len(split_att) > 2
-        #     conf_layer_info: dict[str, Any] = cast(
-        #         dict[str, Any], self.conf_layer[layer]
-        #     )
-        #     attrs = conf_layer_info["attributes"]
-        #     mapping: dict[str, Any] = _get_mapping(
-        #         layer, self.config, self.batch, self.lang
-        #     )
-        #     attrib_table = (
-        #         mapping.get("attributes", {}).get(field, {}).get("name", field)
-        #     )
-        #     if is_chained:
-        #         pre_att = f"{shortest}_{field}"
-        #         sub_field = split_att[2]
-        #         if is_meta:
-        #             line = f"{pre_att}.meta -> '{field}' ->> '{sub_field}' AS {lab}"
-        #         else:
-        #             line = f"{pre_att}.{field} ->> '{sub_field}' AS {lab}"
-        #         self.r.selects.add(line)
-        #         field_info = (
-        #             cast(dict[str, Any], self.config["layer"])
-        #             .get(shortest_layer, {})
-        #             .get("attributes", {})
-        #             .get(field, {})
-        #         )
-        #         field_mapping = (
-        #             _get_mapping(
-        #                 shortest_layer, self.config, self.batch, self.lang or ""
-        #             )
-        #             .get("attributes", {})
-        #             .get(field, {})
-        #         )
-        #         field_is_global = "ref" in field_info
-        #         if field_is_global:
-        #             field_key = field_mapping.get("key", field)
-        #             field_table = field_mapping.get(
-        #                 "name", f"global_attributes_{field}"
-        #             )
-        #             field_formed_table = (
-        #                 f"{self.schema}.{field_table.lower()} {pre_att}"
-        #             )
-        #             field_formed_condition = (
-        #                 f"{shortest}.{field_key}_id = {pre_att}.{field_key}_id"
-        #             )
-        #             if field_formed_table not in self.r.joins:
-        #                 self.r.joins[field_formed_table] = True
-        #                 self.r.conditions.add(field_formed_condition)
-        #     elif is_meta:
-        #         line = f"{shortest}.meta ->> '{field}' AS {lab}"
-        #         self.r.selects.add(line)
-        #     elif attrs[field].get("type", "") == "text" or "ref" in attrs[field]:
-        #         formed_join = f"{self.schema}.{attrib_table} {lab}"
-        #         self.r.joins[formed_join.lower()] = True
-        #         formed_join_cond = f"{lab}.{field}_id = {shortest}.{field}_id"
-        #         self.r.conditions.add(formed_join_cond.lower())
-        #         line = f"{lab}.{field} AS {lab}"
-        #         self.r.selects.add(line)
-        #     else:
-        #         line = f"{shortest}.{attrib_table} AS {lab}"
-        #         self.r.selects.add(line)
-        #     self.r.entities.add(lab)
 
         functions = cast(list[str], result["functions"])
         filt = cast(JSONObject, result.get("filter", {}))
@@ -791,7 +761,9 @@ WHERE {entity}.char_range && contained_token.char_range
         """
         Produce a frequency table and its JSON metadata
         """
-        count_entities: list[str] = [x["entity"] for x in attributes if "entity" in x]
+        count_entities: dict[str, str] = {
+            x["entity"]: "" for x in attributes if "entity" in x
+        }
         assert len(count_entities) < 2, RuntimeError(
             f"Cannot reference more than one entity in the attributes of an analysis {', '.join(count_entities)})"
         )
@@ -801,7 +773,7 @@ WHERE {entity}.char_range && contained_token.char_range
                 if not count_entities:
                     counts.append(f"count(*) AS {func.lower()}")
                     continue
-                count_entity = count_entities[0]
+                count_entity = next(ce for ce in count_entities)
                 counts.append(f"count(DISTINCT {count_entity}) AS {func.lower()}")
                 entity_layer, _ = self.r.label_layer[count_entity]
                 conf_map = cast(dict, self.config["mapping"])
@@ -813,28 +785,18 @@ WHERE {entity}.char_range && contained_token.char_range
                     mapping = mapping["partitions"].get(self.lang, {})
                 table = _get_table(entity_layer, self.config, self.batch, self.lang)
                 el = entity_layer.lower()
+                lab_n = 1
+                while (el_lab := f"{el[0]}{lab_n}") in self.r.label_layer:
+                    lab_n += 1
+                count_entities[count_entity] = el_lab
                 count_total = (
-                    f"""(SELECT count({el[0]})
-    FROM {self.schema}.{table} {el[0]}"""
+                    f"""(SELECT count({el_lab})
+    FROM {self.schema}.{table} {el_lab}"""
                     + """
-    CROSS JOIN {joins}
+    {joins}
     WHERE {wheres}) AS {total_label}"""
                 )
-                # TODO: build joins and wheres based on the attributes
-                # for each attribute, determine which anchor is shared with the entity
                 counts.append(count_total)
-                # table = mapping.get("relation", entity_layer.lower())
-                # if (
-                #     "batches" in mapping
-                #     or entity_layer == self.segment
-                #     and "batches" in token_mapping
-                # ):
-                #     if table.endswith("<batch>"):
-                #         table = table[0:-7]
-                #     table = table + "0"
-                # counts.append(
-                #     f"(SELECT count(*) FROM {self.schema}.{table}) AS total_{entity_layer.lower()}"
-                # )
             else:
                 raise NotImplementedError("TODO?")
         if counts:
@@ -844,6 +806,7 @@ WHERE {entity}.char_range && contained_token.char_range
         funcstr = " , ".join(functions)
         jjoins: list[str] = []
         jwheres: list[str] = []
+        jgroups: list[str] = []
         parsed_attributes: list[tuple[str, RefInfo]] = []
         for att in attributes:
             if "entity" in att:
@@ -885,8 +848,8 @@ WHERE {entity}.char_range && contained_token.char_range
                 or "." not in att["attribute"]
             ):
                 continue
-            entity_lab = count_entities[0]
-            entity_layer, _ = self.r.label_layer[entity_lab]
+            entity, entity_lab = next(x for x in count_entities.items())
+            entity_layer, _ = self.r.label_layer[entity]
             prefix, *_ = att["attribute"].split(".")
             prefix_layer, _ = self.r.label_layer[prefix]
             anchorings = [
@@ -898,21 +861,26 @@ WHERE {entity}.char_range && contained_token.char_range
             assert anchorings, RuntimeError(
                 f"Layer {prefix_layer} ({prefix}) does not share an anchoring with layer {entity_layer} ({entity_lab})"
             )
-            prefix_table = _get_table(prefix_layer, self.config, self.batch, self.lang)
-            jjoins.append(f"{self.schema}.{prefix_table} {prefix}")
+            # prefix_table = _get_table(prefix_layer, self.config, self.batch, self.lang)
+            # join_formed = f"{self.schema}.{prefix_table} {prefix}"
+            # if join_formed != f"{self.schema}.{table} {entity_lab}":
+            #     jjoins.append(join_formed)
             where_anchors = " OR ".join(
-                f"{prefix}.{a} && {entity_layer.lower()[0]}.{a}" for a in anchorings
+                f"{prefix}_{a} && {entity_lab}.{a}" for a in anchorings
             )
-            jwheres.append(f"({ref} = {alias} AND ({where_anchors}))")
+            jwheres.append(where_anchors)
+            self.r.selects.update({f"{prefix}.{a} AS {prefix}_{a}" for a in anchorings})
+            self.r.entities.update({f"{prefix}_{a}" for a in anchorings})
+            jgroups = [f"{prefix}_{a}" for a in anchorings]
         assert parsed_attributes, RuntimeError(
             f"Need at least one *attribute* referenced in the analysis"
         )
         if count_entities:
-            count_entity_layer, _ = self.r.label_layer[count_entities[0]]
+            count_entity_layer, _ = self.r.label_layer[next(x for x in count_entities)]
             total_label = f"total_{count_entity_layer.lower()}"
             funcstr += f", {total_label}"
             jcounts = jcounts.format(
-                joins=" CROSS JOIN ".join(jjoins),
+                joins=" CROSS JOIN " + " CROSS JOIN ".join(jjoins) if jjoins else "",
                 wheres=" AND ".join(jwheres),
                 total_label=total_label,
             )
@@ -929,7 +897,7 @@ WHERE {entity}.char_range && contained_token.char_range
                         {jcounts}
                     FROM
                         match_list
-                    GROUP BY {nodes}
+                    GROUP BY {nodes}{', '+','.join(jgroups) if jgroups else ''}
                 ) x {wheres} )
         """
         attribs: Attribs = []
@@ -944,7 +912,7 @@ WHERE {entity}.char_range && contained_token.char_range
         for func in functions:
             attribs.append({"name": func, "type": "aggregate"})
         if count_entities:
-            count_entity_layer, _ = self.r.label_layer[count_entities[0]]
+            count_entity_layer, _ = self.r.label_layer[next(x for x in count_entities)]
             attribs.append(
                 {"name": f"total_{count_entity_layer.lower()}", "type": "aggregate"}
             )

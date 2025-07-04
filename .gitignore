@@ -15,5 +15,5 @@ database/wip/*
 *.so
 *.c
 frontend/public/media/
-
+.env.docker
 examples/*

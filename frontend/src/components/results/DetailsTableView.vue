@@ -19,9 +19,20 @@
             <span
               v-else-if="isJson(token[cIndex])"
               :class="objectClasses(token[cIndex])"
+              @click="token[cIndex]._unfolded = !token[cIndex]._unfolded"
             >
               {{ objectColumn(token[cIndex]) }}
-              <span class="ufeat-info-button tooltips" data-bs-html="true" :title="tooltipText(token[cIndex])">
+              <span
+                v-if="tooltipText(token[cIndex]).length > 0 && token[cIndex]._unfolded"
+                v-html="tooltipText(token[cIndex]).replace(/(<br>)?_unfolded: true/,'')"
+              >
+              </span>
+              <span
+                class="ufeat-info-button tooltips"
+                data-bs-html="true"
+                :title="tooltipText(token[cIndex])"
+                v-if="tooltipText(token[cIndex]).length > 0"
+              >
                 <FontAwesomeIcon :icon="['fas', 'circle-info']" />
               </span>
             </span>
@@ -37,7 +48,7 @@
   </div>
 </template>
 
-<style>
+<style scoped>
 .modal {
   width: unset !important;
   max-width: calc(100vw - 2em);
@@ -174,12 +185,12 @@ export default {
       return classes
     },
     isJson(content) {
-      if (content instanceof Object && Object.keys(content).length > 0)
+      if (content instanceof Object)
         return true;
       let isJson = false;
       try {
         let json = JSON.parse(content);
-        isJson = json instanceof Object && Object.keys(json).length > 0;
+        isJson = json instanceof Object;
       }
       catch {
         return false;
@@ -196,7 +207,7 @@ export default {
       let retval = "";
       if (content) {
         // ufeats
-        const jsonContent = content instanceof Object && Object.keys(content).length ? content : JSON.parse(content);
+        const jsonContent = content instanceof Object ? content : JSON.parse(content);
         let ufeatValues = this.ufeatOrder.filter(key => key in jsonContent).map(key => jsonContent[key]);
         retval = ufeatValues.join(" ");
         // retval = `<button class="btn btn-sm btn-primary" onclick="this.parentNode.classList.toggle('unfolded')"> </button>
@@ -208,13 +219,15 @@ export default {
     tooltipText(content) {
       let retval = "";
       if (content) {
-        const jsonContent = content instanceof Object && Object.keys(content).length ? content : JSON.parse(content);
+        const jsonContent = content instanceof Object ? content : JSON.parse(content);
         let _tmpUfeats = []
         this.ufeatOrder.forEach(key => {
           if (key in jsonContent) {
             _tmpUfeats.push(`${key}: ${jsonContent[key]}`);
           }
         });
+        if (_tmpUfeats.length == 0)
+          _tmpUfeats = Object.entries(jsonContent).map(([k,v])=>`${k}: ${v}`)
         retval = _tmpUfeats.join("<br>");
       }
       return retval

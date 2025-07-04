@@ -5,21 +5,47 @@
         <div class="col-12">
           <nav class="tabsnav">
             <div class="nav nav-tabs tabs-list" id="nav-tab" ref="tabslist" role="tablist">
-              <button class="nav-link" :class="currentTab == 'metadata' ? 'active' : ''" id="nav-edit-metadata-tab"
-                data-bs-toggle="tab" data-bs-target="#nav-edit-metadata" type="button" role="tab"
-                ref="navEditMetadataTab" aria-controls="nav-edit-metadata" aria-selected="true"
-                @click="currentTab = 'metadata'">
-                {{ $t('modal-project-metadata') }}
+              <button
+                class="nav-link"
+                :class="currentTab == 'metadata' ? 'active' : ''"
+                id="nav-edit-metadata-tab"
+                data-bs-toggle="tab"
+                data-bs-target="#nav-edit-metadata"
+                type="button"
+                role="tab"
+                ref="navEditMetadataTab"
+                aria-controls="nav-edit-metadata"
+                aria-selected="true"
+                @click="currentTab = 'metadata'"
+              >
+                {{ $t('modal-project-tab-metadata') }}
               </button>
-              <button class="nav-link" :class="currentTab == 'permissions' ? 'active' : ''"
-                id="nav-edit-permissions-tab" data-bs-toggle="tab" data-bs-target="#nav-edit-permissions" type="button"
-                role="tab" aria-controls="nav-edit-permissions" aria-selected="true"
-                @click="currentTab = 'permissions'">
+              <button
+                class="nav-link"
+                :class="currentTab == 'permissions' ? 'active' : ''"
+                id="nav-edit-permissions-tab"
+                data-bs-toggle="tab"
+                data-bs-target="#nav-edit-permissions"
+                type="button"
+                role="tab"
+                aria-controls="nav-edit-permissions"
+                aria-selected="true"
+                @click="currentTab = 'permissions'"
+              >
                 {{ $t('modal-project-tab-permissions') }}
               </button>
-              <button class="nav-link" :class="currentTab == 'api' ? 'active' : ''" id="nav-edit-api-tab"
-                data-bs-toggle="tab" data-bs-target="#nav-edit-api" type="button" role="tab"
-                aria-controls="nav-edit-api" aria-selected="true" @click="currentTab = 'api'">
+              <button
+                class="nav-link"
+                :class="currentTab == 'api' ? 'active' : ''"
+                id="nav-edit-api-tab"
+                data-bs-toggle="tab"
+                data-bs-target="#nav-edit-api"
+                type="button"
+                role="tab"
+                aria-controls="nav-edit-api"
+                aria-selected="true"
+                @click="currentTab = 'api'"
+              >
                 {{ $t('modal-project-tab-api') }}
               </button>
             </div>

@@ -134,8 +134,13 @@
                           class="badge text-bg-primary me-1 tooltips" :title="$t('common-partition')"
                           v-for="language in corpus.partitions.values"
                           v-html="language.toUpperCase()" :key="`${corpus.id}-${language}`"
-                        />
+                        ></span>
                       </template>
+                      <span
+                        class="badge text-bg-primary me-1 tooltips" :title="$t('common-partition')"
+                        v-if="!(corpus.partitions) && corpus.meta.language"
+                        v-html="corpus.meta.language.toUpperCase()"
+                      ></span>
                       <span class="badge text-bg-primary me-1 tooltips" :title="$t('common-word-count')"
                       >{{
                         nFormatter(
@@ -310,7 +315,7 @@
             </h5>
             <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
           </div>
-          <div class="modal-body text-start" v-if="corpusModal">
+          <div class="modal-body text-start fit-body" v-if="corpusModal">
             <MetadataEdit :corpus="corpusModal" :key="modalIndexKey" />
           </div>
           <div class="modal-footer">
@@ -565,6 +570,7 @@ export default {
       let retval = await useCorpusStore().updateMeta({
         corpusId: this.corpusModal.corpus_id,
         metadata: this.corpusModal.meta,
+        descriptions: this.corpusModal.layer
       });
       if (retval) {
         if (retval.status == false) {
@@ -709,6 +715,11 @@ export default {
   text-align: center;
   cursor: pointer;
   vertical-align: middle;
+}
+
+.fit-body {
+  max-height: 80vh;
+  overflow-y: scroll;
 }
 
 .scroller {
