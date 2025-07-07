@@ -56,6 +56,8 @@ common-details = Details
 common-close = Close
 common-stop = Stop
 common-save = Save
+common-plain-query = Query (e.g. a cat)
+common-cqp-query = Query (e.g. [word="hello"])
 common-save-query = Save query
 common-saved-queries = Saved queries
 common-select-saved-queries = Select a saved query

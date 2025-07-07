@@ -191,6 +191,7 @@
                       class="tooltips icon-x"
                       target="_blank"
                       :title="$t('platform-general-user-license')"
+                      @click.stop="openCorpusDetailsModal(corpus)"
                       v-if="corpus.meta.license == 'user-defined'"
                     >
                       <FontAwesomeIcon :icon="['fas', 'certificate']" />

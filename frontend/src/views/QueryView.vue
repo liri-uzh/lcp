@@ -144,7 +144,7 @@
                       <div class="tab-content" id="nav-query-tabContent">
                         <div class="tab-pane fade show active pt-3" id="nav-plaintext" role="tabpanel"
                           aria-labelledby="nav-plaintext-tab">
-                          <input class="form-control" type="text" placeholder="Query (e.g. a cat)" :class="isQueryValidData == null || isQueryValidData.valid == true
+                          <input class="form-control" type="text" :placeholder="$t('common-plain-query')" :class="isQueryValidData == null || isQueryValidData.valid == true
                             ? 'ok'
                             : 'error'
                             " v-model="textsearch" @keyup="$event.key == 'Enter' && this.submit()" />
@@ -167,7 +167,7 @@
                           </p>
                         </div>
                         <div class="tab-pane fade pt-3" id="nav-cqp" role="tabpanel" aria-labelledby="nav-cqp-tab">
-                          <textarea class="form-control query-field" placeholder="Query (e.g. [word=&quot;hello&quot;])"
+                          <textarea class="form-control query-field" :placeholder="$t('common-cqp-query')"
                             :class="isQueryValidData == null || isQueryValidData.valid == true
                               ? 'ok'
                               : 'error'
@@ -209,7 +209,7 @@
                       </button>
                       <div v-if="userQueryVisible()">
                         <multiselect v-model="selectedQuery" :options="processedSavedQueries" :searchable="true"
-                          :clear-on-select="false" :close-on-select="true" placeholder="Select a saved query"
+                          :clear-on-select="false" :close-on-select="true" :placeholder="$t('common-select-saved-queries')"
                           label="query_name" track-by="idx" @select="handleQuerySelection"></multiselect>
                         <!-- <p v-if="selectedQuery">
                           Selected query: {{ selectedQuery.query_name }}
