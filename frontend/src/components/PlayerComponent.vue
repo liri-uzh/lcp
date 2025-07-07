@@ -2,7 +2,7 @@
   <div class="player">
     <div class="container-fuild">
       <div class="row" v-if="selectedCorpora">
-        <div class="col-6">
+        <div class="col-12 col-md-3">
           <div class="mb-3 mt-3">
             <!-- <label class="form-label">Document</label> -->
             <multiselect
@@ -15,8 +15,8 @@
             ></multiselect>
           </div>
         </div>
-        <div class="col-2">
-          <div class="mb-3 mt-3">
+        <div class="col-12 col-md-4">
+          <div class="mb-3 mt-3 text-center text-md-start">
             <button type="button" class="btn btn-primary" @click="$emit('switchToQueryTab')">{{ $t('common-query-corpus') }}</button>
           </div>
         </div>
@@ -66,152 +66,152 @@
       </div>
 
       <div class="container-fluid mt-4 mb-4">
-        <div class="btn-group" role="group">
-          <button type="button" class="btn btn-sm btn-primary" @click="playerFromStart">
-            <FontAwesomeIcon :icon="['fas', 'backward-step']" />
-          </button>
-          <button type="button" class="btn btn-sm btn-primary">
-            <FontAwesomeIcon :icon="['fas', 'backward']" />
-          </button>
-          <button type="button" class="btn btn-sm btn-primary active" @click="playerStop" v-if="playerIsPlaying">
-            <FontAwesomeIcon :icon="['fas', 'pause']" />
-          </button>
-          <button type="button" class="btn btn-sm btn-primary" @click="playerPlay" v-else>
-            <FontAwesomeIcon :icon="['fas', 'play']" />
-          </button>
-          <button type="button" class="btn btn-sm btn-primary">
-            <FontAwesomeIcon :icon="['fas', 'forward']" />
-          </button>
-        </div>
-        <div class="btn-group ms-1" role="group">
-          <button type="button" class="btn btn-sm btn-primary" @click="playerVolumeMute">
-            <div style="width: 11px; text-align: left">
-              <FontAwesomeIcon v-if="volume == 0" :icon="['fas', 'volume-xmark']" />
-              <FontAwesomeIcon v-else-if="volume > 0.9" :icon="['fas', 'volume-high']" />
-              <FontAwesomeIcon v-else :icon="['fas', 'volume-low']" />
-            </div>
-          </button>
+        <div class="d-flex flex-column flex-md-row gap-2">
+          <div class="btn-group w-auto" role="group">
+            <button type="button" class="btn btn-sm btn-primary" @click="playerFromStart">
+              <FontAwesomeIcon :icon="['fas', 'backward-step']" />
+            </button>
+            <button type="button" class="btn btn-sm btn-primary">
+              <FontAwesomeIcon :icon="['fas', 'backward']" />
+            </button>
+            <button type="button" class="btn btn-sm btn-primary active" @click="playerStop" v-if="playerIsPlaying">
+              <FontAwesomeIcon :icon="['fas', 'pause']" />
+            </button>
+            <button type="button" class="btn btn-sm btn-primary" @click="playerPlay" v-else>
+              <FontAwesomeIcon :icon="['fas', 'play']" />
+            </button>
+            <button type="button" class="btn btn-sm btn-primary">
+              <FontAwesomeIcon :icon="['fas', 'forward']" />
+            </button>
+          </div>
+          <div class="btn-group w-auto" role="group">
+            <button type="button" class="btn btn-sm btn-primary" @click="playerVolumeMute">
+              <div style="width: 11px; text-align: left">
+                <FontAwesomeIcon v-if="volume == 0" :icon="['fas', 'volume-xmark']" />
+                <FontAwesomeIcon v-else-if="volume > 0.9" :icon="['fas', 'volume-high']" />
+                <FontAwesomeIcon v-else :icon="['fas', 'volume-low']" />
+              </div>
+            </button>
 
-          <span class="btn btn-sm btn-primary pt-0 pb-0">
-            <input
-              type="range"
-              class="form-range"
-              v-model="volume"
-              min="0"
-              max="1"
-              step="0.05"
-              style="height: 2px"
-            />
-          </span>
-          <span class="btn btn-sm btn-primary" style="width: 37px">
-            <small>{{ parseInt(volume * 100, 10) }}</small>
-          </span>
-        </div>
-        <div class="btn-group ms-1" role="group">
-          <button type="button" class="btn btn-sm btn-primary btn-text-icon" @click="playerFrameDown(5)">
-            -5
-          </button>
-          <button type="button" class="btn btn-sm btn-primary btn-text-icon" @click="playerFrameDown(1)">
-            -1
-          </button>
-          <button type="button" class="btn btn-sm btn-primary btn-text-icon" @click="playerFrameUp(1)">
-            +1
-          </button>
-          <button type="button" class="btn btn-sm btn-primary btn-text-icon" @click="playerFrameUp(5)">
-            +5
-          </button>
-          <!-- <button type="button" class="btn btn-sm btn-primary" @click="playerFrame100"><div class="icon-number">F100</div></button>
-          <button type="button" class="btn btn-sm btn-primary" @click="playerSetTime"><div class="icon-number">Set time 10</div></button> -->
-        </div>
-        <div class="btn-group ms-1" role="group">
-          <button
-            type="button"
-            class="btn btn-sm btn-primary btn-text-icon"
-            :class="playerSpeed == 0.5 ? 'active' : ''"
-            @click="playerSetSpeed(0.5)"
-          >
-            0.5x
-          </button>
-          <button
-            type="button"
-            class="btn btn-sm btn-primary btn-text-icon"
-            :class="playerSpeed == 1 ? 'active' : ''"
-            @click="playerSetSpeed(1)"
-          >
-            1x
-          </button>
-          <button
-            type="button"
-            class="btn btn-sm btn-primary btn-text-icon"
-            :class="playerSpeed == 1.5 ? 'active' : ''"
-            @click="playerSetSpeed(1.5)"
-          >
-            1.5x
-          </button>
-          <button
-            type="button"
-            class="btn btn-sm btn-primary btn-text-icon"
-            :class="playerSpeed == 2 ? 'active' : ''"
-            @click="playerSetSpeed(2)"
-          >
-            2x
-          </button>
-          <button
-            type="button"
-            class="btn btn-sm btn-primary btn-text-icon"
-            :class="playerSpeed == 3 ? 'active' : ''"
-            @click="playerSetSpeed(3)"
-          >
-            3x
-          </button>
-        </div>
-        <div class="btn-group ms-1" role="group" v-if="appType == 'video'">
-          <button type="button" class="btn btn-sm btn-text-icon"
-            :class="mainVideo == 1 ? 'active btn-primary' : 'btn-secondary'" @click="playerMainVideo(1)">
-            V1
-          </button>
-          <button type="button" class="btn btn-sm btn-text-icon" v-if="currentDocument[2].length > 1"
-            :class="mainVideo == 2 ? 'active btn-primary' : 'btn-secondary'" @click="playerMainVideo(2)">
-            V2
-          </button>
-          <button type="button" class="btn btn-sm btn-text-icon" v-if="currentDocument[2].length > 2"
-            :class="mainVideo == 3 ? 'active btn-primary' : 'btn-secondary'" @click="playerMainVideo(3)">
-            V3
-          </button>
-          <button type="button" class="btn btn-sm btn-text-icon" v-if="currentDocument[2].length > 3"
-            :class="mainVideo == 4 ? 'active btn-primary' : 'btn-secondary'" @click="playerMainVideo(4)">
-            V4
-          </button>
-        </div>
-        <div class="btn-group ms-1" role="group" v-if="appType == 'video'">
-          <button type="button" class="btn btn-sm btn-text-icon"
-            :class="mainAudio == 1 ? 'active btn-primary' : 'btn-light'" @click="playerMainAudio(1)">
-            A1
-          </button>
-          <button type="button" class="btn btn-sm btn-text-icon" v-if="currentDocument[2].length > 1"
-            :class="mainAudio == 2 ? 'active btn-primary' : 'btn-secondary'" @click="playerMainAudio(2)">
-            A2
-          </button>
-          <button type="button" class="btn btn-sm btn-text-icon" v-if="currentDocument[2].length > 2"
-            :class="mainAudio == 3 ? 'active btn-primary' : 'btn-secondary'" @click="playerMainAudio(3)">
-            A3
-          </button>
-          <button type="button" class="btn btn-sm btn-text-icon" v-if="currentDocument[2].length > 3"
-            :class="mainAudio == 4 ? 'active btn-primary' : 'btn-secondary'" @click="playerMainAudio(4)">
-            A4
-          </button>
+            <span class="btn btn-sm btn-primary pt-0 pb-0">
+              <input
+                type="range"
+                class="form-range"
+                v-model="volume"
+                min="0"
+                max="1"
+                step="0.05"
+                style="height: 2px"
+              />
+            </span>
+            <span class="btn btn-sm btn-primary" style="width: 37px">
+              <small>{{ parseInt(volume * 100, 10) }}</small>
+            </span>
+          </div>
+          <div class="btn-group w-auto" role="group">
+            <button type="button" class="btn btn-sm btn-primary btn-text-icon" @click="playerFrameDown(5)">
+              -5
+            </button>
+            <button type="button" class="btn btn-sm btn-primary btn-text-icon" @click="playerFrameDown(1)">
+              -1
+            </button>
+            <button type="button" class="btn btn-sm btn-primary btn-text-icon" @click="playerFrameUp(1)">
+              +1
+            </button>
+            <button type="button" class="btn btn-sm btn-primary btn-text-icon" @click="playerFrameUp(5)">
+              +5
+            </button>
+          </div>
+          <div class="btn-group w-auto" role="group">
+            <button
+              type="button"
+              class="btn btn-sm btn-primary btn-text-icon"
+              :class="playerSpeed == 0.5 ? 'active' : ''"
+              @click="playerSetSpeed(0.5)"
+            >
+              0.5x
+            </button>
+            <button
+              type="button"
+              class="btn btn-sm btn-primary btn-text-icon"
+              :class="playerSpeed == 1 ? 'active' : ''"
+              @click="playerSetSpeed(1)"
+            >
+              1x
+            </button>
+            <button
+              type="button"
+              class="btn btn-sm btn-primary btn-text-icon"
+              :class="playerSpeed == 1.5 ? 'active' : ''"
+              @click="playerSetSpeed(1.5)"
+            >
+              1.5x
+            </button>
+            <button
+              type="button"
+              class="btn btn-sm btn-primary btn-text-icon"
+              :class="playerSpeed == 2 ? 'active' : ''"
+              @click="playerSetSpeed(2)"
+            >
+              2x
+            </button>
+            <button
+              type="button"
+              class="btn btn-sm btn-primary btn-text-icon"
+              :class="playerSpeed == 3 ? 'active' : ''"
+              @click="playerSetSpeed(3)"
+            >
+              3x
+            </button>
+          </div>
+          <div class="btn-group w-auto" role="group" v-if="appType == 'video'">
+            <button type="button" class="btn btn-sm btn-text-icon"
+              :class="mainVideo == 1 ? 'active btn-primary' : 'btn-secondary'" @click="playerMainVideo(1)">
+              V1
+            </button>
+            <button type="button" class="btn btn-sm btn-text-icon" v-if="currentDocument[2].length > 1"
+              :class="mainVideo == 2 ? 'active btn-primary' : 'btn-secondary'" @click="playerMainVideo(2)">
+              V2
+            </button>
+            <button type="button" class="btn btn-sm btn-text-icon" v-if="currentDocument[2].length > 2"
+              :class="mainVideo == 3 ? 'active btn-primary' : 'btn-secondary'" @click="playerMainVideo(3)">
+              V3
+            </button>
+            <button type="button" class="btn btn-sm btn-text-icon" v-if="currentDocument[2].length > 3"
+              :class="mainVideo == 4 ? 'active btn-primary' : 'btn-secondary'" @click="playerMainVideo(4)">
+              V4
+            </button>
+          </div>
+          <div class="btn-group w-auto" role="group" v-if="appType == 'video'">
+            <button type="button" class="btn btn-sm btn-text-icon"
+              :class="mainAudio == 1 ? 'active btn-primary' : 'btn-light'" @click="playerMainAudio(1)">
+              A1
+            </button>
+            <button type="button" class="btn btn-sm btn-text-icon" v-if="currentDocument[2].length > 1"
+              :class="mainAudio == 2 ? 'active btn-primary' : 'btn-secondary'" @click="playerMainAudio(2)">
+              A2
+            </button>
+            <button type="button" class="btn btn-sm btn-text-icon" v-if="currentDocument[2].length > 2"
+              :class="mainAudio == 3 ? 'active btn-primary' : 'btn-secondary'" @click="playerMainAudio(3)">
+              A3
+            </button>
+            <button type="button" class="btn btn-sm btn-text-icon" v-if="currentDocument[2].length > 3"
+              :class="mainAudio == 4 ? 'active btn-primary' : 'btn-secondary'" @click="playerMainAudio(4)">
+              A4
+            </button>
+          </div>
         </div>
       </div>
       <div class="container-fluid mt-4">
         <div class="row mt-2 mb-4">
-          <div class="col col-md-2">
+          <div class="col col-md-3">
             <label for="timePicker">{{ $t('common-go-to-time') }}:</label>
             <div v-if="currentMediaDuration > 0">
-              <VueDatePicker v-model="selectedTime" time-picker enable-seconds format="HH:mm:ss" :min-time="minTime"
+              <VueDatePicker id="timePicker" v-model="selectedTime" time-picker enable-seconds format="HH:mm:ss" :min-time="minTime"
                 :start-time="startTime" @update:model-value="handleDatePickerChange"></VueDatePicker>
             </div>
             <div v-else>
-              <input type="text" disabled :placeholder="`${$t('common-loading-video-duration')}...`" />
+              <input id="timePicker" type="text" disabled :placeholder="`${$t('common-loading-video-duration')}...`" />
             </div>
           </div>
         </div>
@@ -490,8 +490,6 @@ export default {
         newTime.minutes * 60 +
         newTime.seconds;
 
-      console.log(newTime, seconds);
-
       // Clamp to video duration if available
       if (this.$refs.videoPlayer1 && this.$refs.videoPlayer1.duration) {
         seconds = Math.min(seconds, this.$refs.videoPlayer1.duration - 0.1);
@@ -558,6 +556,7 @@ export default {
       let time = this.$refs.videoPlayer1.duration * percent;
       if (this.$refs.videoPlayer1) {
         this.$refs.videoPlayer1.currentTime = time;
+        this.playerCurrentTime = time;
       }
       if (this.$refs.videoPlayer2) {
         this.$refs.videoPlayer2.currentTime = time;
@@ -592,11 +591,11 @@ export default {
       }
       this.volume = _volume
     },
-    _annotationEnter({ x, y, mouseX, mouseY, entry }) {
-      this.timelinePopinY = Number(mouseY);
-      this.timelinePopinX = Number(x);
-      this.timelinePopinY = Number(y);
-      this.timelinePopinX = Number(mouseX);
+    _annotationEnter({ mouseX, mouseY, entry }) {
+      // Set coordinates once, using the mouse coordinates
+      this.timelinePopinX = mouseX;
+      this.timelinePopinY = mouseY;
+      
       this.timelineEntry = [
         ...Object.entries(entry).filter(kv => !(kv[0] in { frame_range: 1, char_range: 1, prepared: 1, meta: 1 })),
         ...Object.entries(entry.meta || {})
@@ -608,6 +607,8 @@ export default {
       this.timelineEntry = null;
     },
     _getTimelinePopinXY() {
+      if(!document.querySelector("#timeline-svg")) return;
+      
       let { x, y } = document.querySelector("#timeline-svg").getBoundingClientRect();
       x += this.timelinePopinX + window.scrollX;
       y += this.timelinePopinY + window.scrollY;
@@ -1072,6 +1073,83 @@ div.active>video {
   height: 450px;
 }
 
+/* Mobile Responsive Styles */
+@media screen and (max-width: 415px) {
+  div.active{
+    display: flex;
+    justify-content: center;
+    align-items: center;
+  }
+}
+
+@media screen and (max-width: 768px) {
+  .video-box {
+    height: auto;
+    min-height: 200px;
+    max-height: 300px;
+  }
+
+  .video-box > div {
+    flex: 1 1 auto;
+    /* width: 100%; */
+  }
+
+  .video-box > div.active {
+    max-width: calc(100vw - 78px);
+    min-height: auto;
+  }
+
+  div.active > video {
+    height: auto;
+    max-height: 300px;
+    max-width: 100vw;
+    width: 100%;
+    object-fit: contain;
+  }
+
+  .video-text {
+    width: 90%;
+    left: 5%;
+    font-size: 90%;
+  }
+
+  .video-play-button {
+    width: 60px;
+    height: 60px;
+    border-radius: 30px;
+    top: calc(50% - 30px);
+    left: calc(50% - 30px);
+  }
+
+  .video-play-button > .button {
+    margin-top: 20px;
+    margin-left: 25px;
+    transform: scale(1.5);
+  }
+
+  .video-play-button > .button.play {
+    margin-left: 27px;
+  }
+
+  .btn-group {
+    width: fit-content !important;
+    margin: 0;
+    align-self: flex-start;
+  }
+}
+
+@media screen and (orientation: landscape) {
+  video {
+    max-width: 100vw !important;
+    height: auto;
+    display: block;
+    width: 100%;
+    height: auto;
+    object-fit: contain;
+    background: black; 
+  }
+}
+
 *>>>.drop {
   cursor: pointer;
 }
@@ -1114,4 +1192,10 @@ div.active>video {
   font-weight: bold;
   background-color: lightgray;
 }
+
+/* @media screen and (max-width: 756px) {
+  video {
+    aspect-ratio: 16 / 9;
+  }
+} */
 </style>

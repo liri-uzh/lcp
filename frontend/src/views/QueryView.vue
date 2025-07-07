@@ -7,7 +7,7 @@
         </div>
       </div>
       <div class="row mt-2">
-        <div class="col-4">
+        <div class="col-12 col-md-4">
           <div class="form-group row">
             <label for="staticEmail" class="col-sm-3 col-form-label">
               {{ $t('common-corpora') }}
@@ -110,7 +110,7 @@
                   </button>
                 </div>
                 <div class="row">
-                  <div class="col-6">
+                  <div class="col-12 col-md-6">
                     <div class="form-floating mb-3">
                       <nav>
                         <div class="nav nav-tabs justify-content-end" id="nav-query-tab" role="tablist">
@@ -217,7 +217,7 @@
                       </div>
                     </div>
                   </div>
-                  <div class="col-6">
+                  <div class="col-12 col-md-6">
                     <div class="corpus-graph mt-3" v-if="selectedCorpora">
                       <FontAwesomeIcon :icon="['fas', 'expand']" @click="openGraphInModal" data-bs-toggle="modal"
                         data-bs-target="#corpusDetailsModal" />
@@ -236,7 +236,7 @@
 
                 <hr>
                 <div class="mt-5 row" v-if="querySubmitted">
-                  <div class="col-6">
+                  <div class="col-12 col-md-6">
                     <h6 class="mb-2">{{ $t('common-query-result') }}</h6>
                     <div class="progress mb-2">
                       <div class="progress-bar" :class="loading ? 'progress-bar-striped progress-bar-animated' : ''
@@ -246,7 +246,7 @@
                       </div>
                     </div>
                   </div>
-                  <div class="col-6">
+                  <div class="col-12 col-md-6">
                     <h6 class="mb-2">{{ $t('common-total-progress') }}</h6>
                     <div class="progress mb-2">
                       <div class="progress-bar" :class="loading ? 'progress-bar-striped progress-bar-animated' : ''

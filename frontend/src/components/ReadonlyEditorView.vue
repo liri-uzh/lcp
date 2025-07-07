@@ -59,7 +59,6 @@ export default {
   props: ["query", "defaultQuery", "invalidError", "errorList"],
   watch: {
     defaultQuery(){
-      console.log('Default changed!');
       editor.getModel().setValue(this.defaultQuery);
     },
     invalidError: {

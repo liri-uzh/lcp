@@ -1,53 +1,73 @@
 <template>
   <div>
-    <div class="button-container">
-      <button class="btn btn-primary btn-sm me-1" :disabled="zoomValue <= 1" @click="zoomOut">
-        <FontAwesomeIcon :icon="['fas', 'magnifying-glass-minus']" class="me-1" />
-        {{ $t('common-zoom-out') }}
+    <div class="button-container" :style="mobileOrientationStyle">
+      <button
+        class="btn btn-primary btn-sm me-1"
+        :disabled="zoomValue <= 1"
+        @click="zoomOut"
+      >
+        <FontAwesomeIcon
+          :icon="['fas', 'magnifying-glass-minus']"
+          class="me-1"
+        />
+        {{ $t("common-zoom-out") }}
       </button>
-      <input type="range" min="1" :max="MAX_ZOOM_LEVEL" class="zoom-slider" v-model="zoomValue" step="1" />
-      <button class="btn btn-primary btn-sm me-1" :disabled="zoomValue >= MAX_ZOOM_LEVEL" @click="zoomIn">
-        <FontAwesomeIcon :icon="['fas', 'magnifying-glass-plus']" class="me-1" />
-        {{ $t('common-zoom-in') }}
+      <input
+        type="range"
+        min="1"
+        :max="MAX_ZOOM_LEVEL"
+        class="zoom-slider me-1"
+        v-model="zoomValue"
+        step="1"
+      />
+      <button
+        class="btn btn-primary btn-sm me-1"
+        :disabled="zoomValue >= MAX_ZOOM_LEVEL"
+        @click="zoomIn"
+      >
+        <FontAwesomeIcon
+          :icon="['fas', 'magnifying-glass-plus']"
+          class="me-1"
+        />
+        {{ $t("common-zoom-in") }}
       </button>
       <button class="btn btn-primary btn-sm me-1" @click="resetZoom">
         <FontAwesomeIcon :icon="['fas', 'rotate-left']" class="me-1" />
-        {{ $t('common-zoom-reset-default') }}
+        {{ $t("common-zoom-reset-default") }}
       </button>
       <button class="btn btn-primary btn-sm me-1" @click="fitZoom">
-        <FontAwesomeIcon :icon="['fas', 'arrows-left-right-to-line']" class="me-1" />
-        {{ $t('common-zoom-fit-content') }}
+        <FontAwesomeIcon
+          :icon="['fas', 'arrows-left-right-to-line']"
+          class="me-1"
+        />
+        {{ $t("common-zoom-fit-content") }}
       </button>
     </div>
     <!--
     <div class="slider-container">
       <input type="range" id="horizontal-slider" min="0" max="156" value="0" step="0.1" />
     </div> -->
-    <svg id="timeline-svg"></svg>
+    <div v-if="!isLandscape && isMobile" class="rotation-instructions">
+      <FontAwesomeIcon
+        :icon="['fas', 'mobile-screen-button']"
+        class="rotation-icon"
+      />
+      <p class="p-0 m-0">{{ $t("common-rotate-device") }}</p>
+    </div>
+    <svg id="timeline-svg" :style="mobileOrientationStyle"></svg>
   </div>
 </template>
 
 <style scoped>
-/* #timeline-svg {
-    margin: 0 10px;
-  } */
 .button-container {
   margin-left: 178px;
 }
 
-/* .zoom-slider {
-    margin-top: 5px;
-  } */
-/*
-  .zoom-button {
-    margin-right: 5px;
-  } */
+.button-container > button, .button-container > input {
+  margin-top: 5px;
+}
 
-/* .slider-container {
-    margin-top: 10px;
-  } */
-
-*>>>.tooltip-rect {
+* >>> .tooltip-rect {
   fill: #fffffff0;
   stroke: #e6e6e6;
   stroke-width: 1px;
@@ -61,6 +81,48 @@ svg#timeline-svg {
 
 .mouse-text {
   background-color: #2c3e50;
+}
+
+.rotation-icon {
+  font-size: 2rem;
+  margin-bottom: 10px;
+  animation: rotate 2s infinite;
+}
+
+.rotation-instructions{
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-direction: column;
+  margin-top: 30px;
+  margin-bottom: 30px;
+}
+
+@keyframes rotate {
+  0% {
+    transform: rotate(0deg);
+  }
+
+  25% {
+    transform: rotate(-90deg);
+  }
+
+  75% {
+    transform: rotate(-90deg);
+  }
+
+  100% {
+    transform: rotate(0deg);
+  }
+}
+
+@media screen and (max-width: 768px) and (orientation: portrait) {
+  .button-container {
+    margin-left: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
 }
 </style>
 
@@ -77,7 +139,7 @@ let linearScale = null;
 let playerState = false;
 let hoveringAnnotation = null;
 const padding = 180;
-const width = document.body.clientWidth - 20;
+let width = document.body.clientWidth - 20;
 const paddingBeforeTimeline = 40;
 const MAX_ZOOM_LEVEL = 100
 const DEFAULT_ZOOM_LEVEL = 20;
@@ -91,6 +153,9 @@ export default {
       currentTime: 0,
       zoomValue: 1,
       MAX_ZOOM_LEVEL: MAX_ZOOM_LEVEL,
+      isMobile: false,
+      isLandscape: false,
+      resizeHandler: null,
     }
   },
   watch: {
@@ -126,6 +191,19 @@ export default {
       svg.transition().call(zoom.scaleBy, scaleRatio, [xPosition, 0]);
     },
   },
+  computed: {
+    mobileOrientationStyle() {
+      // only override on mobile
+      if (!this.isMobile) {
+        return {}
+      }
+      // on mobile, choose between landscape vs. portrait
+      return {
+        visibility:  this.isLandscape ? 'visible' : 'hidden',
+        height:      this.isLandscape ? 'auto'    : '0'
+      }
+    }
+  },
   methods: {
     resetZoom() {
       this.zoomValue = DEFAULT_ZOOM_LEVEL;
@@ -143,7 +221,7 @@ export default {
       this.currentTime = time;
       const newXScale = d3.zoomTransform(svg.node()).rescaleX(linearScale);
       this.updateVerticalLine(newXScale(this.currentTime));
-      if(!this.playerIsPlaying){
+      if (!this.playerIsPlaying) {
         this.center();
       }
     },
@@ -158,7 +236,7 @@ export default {
       domainStart = Math.max(0, domainStart.toFixed(3));
 
       // console.log('Position data:', domainStart, this.currentTime, domainEnd, xPosition);
-      // console.log(`Position data / start: ${domainStart}, current: ${this.currentTime}, end: ${domainEnd}, new position: ${xPosition}`);
+      console.log(`Position data / start: ${domainStart}, current: ${this.currentTime}, end: ${domainEnd}, new position: ${xPosition}`);
 
       // If the global currentTime is in the visible domain, show the line; otherwise hide it
       const inDomain = (this.currentTime >= domainStart && this.currentTime <= domainEnd);
@@ -177,55 +255,55 @@ export default {
     },
     center() {
       // Get the current transform and the current SVG dimensions.
-  const currentTransform = d3.zoomTransform(svg.node());
-  const svgBounds = svg.node().getBoundingClientRect();
-  const svgWidth = svgBounds.width; // use the current rendered width
+      const currentTransform = d3.zoomTransform(svg.node());
+      const svgBounds = svg.node().getBoundingClientRect();
+      const svgWidth = svgBounds.width; // use the current rendered width
 
-  // Create a scale based on the current transform.
-  const newXScale = currentTransform.rescaleX(linearScale);
+      // Create a scale based on the current transform.
+      const newXScale = currentTransform.rescaleX(linearScale);
 
-  // Compute the pixel position (under the current transform) for the current time.
-  const currentX = newXScale(this.currentTime);
+      // Compute the pixel position (under the current transform) for the current time.
+      const currentX = newXScale(this.currentTime);
 
-  // Compute the visible area in pixels.
-  // (Assuming your clip area starts at "padding" and extends to (svgWidth - paddingBeforeTimeline))
-  const visibleWidth = svgWidth - padding - paddingBeforeTimeline;
-  const centerPixel = padding + visibleWidth / 2;
+      // Compute the visible area in pixels.
+      // (Assuming your clip area starts at "padding" and extends to (svgWidth - paddingBeforeTimeline))
+      const visibleWidth = svgWidth - padding - paddingBeforeTimeline;
+      const centerPixel = padding + visibleWidth / 2;
 
-  // Compute how much (in pixels) we want to shift the timeline so that currentX becomes centered.
-  let dx = centerPixel - currentX;
-  let desiredX = currentTransform.x + dx;
+      // Compute how much (in pixels) we want to shift the timeline so that currentX becomes centered.
+      let dx = centerPixel - currentX;
+      let desiredX = currentTransform.x + dx;
 
-  // --- Left Boundary Clamp ---
-  // Under your base linearScale, data value 0 maps to "padding".
-  // With a transform, the left edge appears at: currentTransform.x + currentTransform.k * padding.
-  // We want to keep that ≤ padding.
-  // Rearranging gives:
-  //    currentTransform.x ≤ padding - currentTransform.k * padding = padding * (1 - currentTransform.k)
-  const minAllowedX = padding * (1 - currentTransform.k);
-  desiredX = Math.min(desiredX, minAllowedX);
+      // --- Left Boundary Clamp ---
+      // Under your base linearScale, data value 0 maps to "padding".
+      // With a transform, the left edge appears at: currentTransform.x + currentTransform.k * padding.
+      // We want to keep that ≤ padding.
+      // Rearranging gives:
+      //    currentTransform.x ≤ padding - currentTransform.k * padding = padding * (1 - currentTransform.k)
+      const minAllowedX = padding * (1 - currentTransform.k);
+      desiredX = Math.min(desiredX, minAllowedX);
 
-  // --- Right Boundary Clamp ---
-  // The right edge of your content (data value = this.mediaDuration) maps to:
-  //   linearScale(this.mediaDuration)
-  // With the transform it’s at: currentTransform.x + currentTransform.k * linearScale(this.mediaDuration)
-  // We want that to be exactly at the right visible boundary:
-  //   svgWidth - paddingBeforeTimeline
-  // Solving for the x translation gives:
-  //   desiredX = (svgWidth - paddingBeforeTimeline) - currentTransform.k * linearScale(this.mediaDuration)
-  const maxAllowedX = (svgWidth - paddingBeforeTimeline) - currentTransform.k * linearScale(this.mediaDuration);
-  desiredX = Math.max(desiredX, maxAllowedX);
+      // --- Right Boundary Clamp ---
+      // The right edge of your content (data value = this.mediaDuration) maps to:
+      //   linearScale(this.mediaDuration)
+      // With the transform it’s at: currentTransform.x + currentTransform.k * linearScale(this.mediaDuration)
+      // We want that to be exactly at the right visible boundary:
+      //   svgWidth - paddingBeforeTimeline
+      // Solving for the x translation gives:
+      //   desiredX = (svgWidth - paddingBeforeTimeline) - currentTransform.k * linearScale(this.mediaDuration)
+      const maxAllowedX = (svgWidth - paddingBeforeTimeline) - currentTransform.k * linearScale(this.mediaDuration);
+      desiredX = Math.max(desiredX, maxAllowedX);
 
-  // Build the new transform with the clamped translation.
-  const newTransform = d3.zoomIdentity
-    .translate(desiredX, currentTransform.y)
-    .scale(currentTransform.k);
+      // Build the new transform with the clamped translation.
+      const newTransform = d3.zoomIdentity
+        .translate(desiredX, currentTransform.y)
+        .scale(currentTransform.k);
 
-  // Apply the new transform with a smooth transition.
-  svg.transition().call(zoom.transform, newTransform);
+      // Apply the new transform with a smooth transition.
+      svg.transition().call(zoom.transform, newTransform);
     },
     moveLeft() {
-      console.log('MOVING LEFT');
+
       const currentTransform = d3.zoomTransform(svg.node());
       const newXScale = currentTransform.rescaleX(linearScale);
 
@@ -263,10 +341,26 @@ export default {
 
       // Update the zoom transform with the new translation
       svg.call(zoom.transform, d3.zoomIdentity.translate(newTx, currentTransform.y).scale(currentTransform.k));
-    }
-  },
-  mounted() {
+    },
+    setResizeOrientationListeners() {
+      // kick off initial check and update on resize/orientationchange
+      window.addEventListener('resize', this.resizeHandler);
+      window.addEventListener('orientationchange', this.resizeHandler);
+    },
+    checkMobile(e) {
+      if(e.type !== "resize" && e.type !== "orientationchange") return;
 
+      this.isMobile = window.innerWidth  < 768;
+      this.isLandscape = window.innerWidth  >  window.innerHeight;
+
+      // Set the new screen width
+      width = document.body.clientWidth - 20;
+
+      this.initializeTimeline();
+      this.updateCurrentPosition(this.currentTime);
+    },
+    initializeTimeline() {
+      this.setResizeOrientationListeners();
     // Example
     // const data = [
     //   {
@@ -320,13 +414,14 @@ export default {
     // https://waldyrious.net/viridis-palette-generator/
     const barColors = [
       // "#fde725", "#a0da39", "#4ac16d", "#1fa187", "#277f8e", "#365c8d", "#46327e", "#440154"
-      "#1fa187ff", "#46327eff", "#4ac16dff", "#277f8eff", "#440154ff", "#fde725ff", "#365c8dff", "#a0da39ff"
+      "#1fa187ff", "#46327eff", "#4ac16dff", "#277f8eff", "#440154ff", "#fdaa25ff", "#365c8dff", "#a0da39ff"
     ];
 
     // Set up the SVG container
     // const root = selection.selectAll('#timeline').data(selection.data());
     // root.exit().remove();
     svg = d3.select("#timeline-svg");
+    svg.selectAll("*").remove();
 
     // Create the scaleLinear
     linearScale = d3.scaleLinear().domain([0, this.mediaDuration]).range([padding, width - 1]);
@@ -627,7 +722,21 @@ export default {
 
     this.zoomValue = DEFAULT_ZOOM_LEVEL;
 
-    this.updateCurrentPosition(this.defaultCurrentTime);
+    this.updateCurrentPosition(this.currentTime > 0 ? this.currentTime : this.defaultCurrentTime);
+    }
   },
+  mounted() {
+    // Create a debounced resize handler and save a reference
+    this.resizeHandler = (e) => {
+      clearTimeout(this._resizeTimeout)
+      this._resizeTimeout = setTimeout(() => this.checkMobile(e), 200)
+    }
+    // Initialize the timeline
+    this.initializeTimeline();
+  },
+  beforeUnmount(){
+    window.removeEventListener('resize', this.resizeHandler)
+    window.removeEventListener('orientationchange', this.resizeHandler)
+  }
 };
 </script>

@@ -82,6 +82,8 @@ common-query-result = Risultato query
 common-total-progress = Progresso totale
 common-refresh-progress = Aggiorna barra di avanzamento
 common-show-hide-corpus = Mostra/nascondi struttura del corpus
+common-timeline = Timeline
+common-show-timeline = Visualizza la timeline
 load-example-query = Carica query di esempio
 common-query-corpus = Query corpus
 common-go-to-time = Vai al tempo
@@ -114,6 +116,7 @@ common-plain = Testo semplice
 common-plain-format = Formato semplice
 common-download-preview = Scarica anteprima
 common-text = Testo
+common-rotate-device = Ruota il dispositivo per visualizzare la timeline
 
 common-play-audio = Riproduci audio
 common-play-video = Riproduci video

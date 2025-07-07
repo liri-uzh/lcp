@@ -12,7 +12,7 @@
             </div>
           </div>
         </div>
-        <div class="col-4">
+        <div class="col-12 col-lg-4">
           <div class="mb-3">
             <label for="content" class="form-label">{{ $t('modal-project-start-date') }}</label>
             <DatePicker v-model:value="model.startDate" id="startDate" class="d-block" />
@@ -21,7 +21,7 @@
             </div>
           </div>
         </div>
-        <div class="col-4">
+        <div class="col-12 col-lg-4">
           <div class="mb-3">
             <label for="content" class="form-label">{{ $t('modal-project-end-date') }}</label>
             <DatePicker v-model:value="model.finishDate" id="finishDate" :disabled-date="disabledBeforeToday"
