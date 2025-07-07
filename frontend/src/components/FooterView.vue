@@ -2,8 +2,6 @@
   <footer>
     <div class="logo__container">
       <img class="logo" src="../assets/logos/uzh.svg" alt="UZH">
-      <div class="logo__divider"></div>
-      <img class="logo" src="../assets/logos/usi.svg" alt="USI">
     </div>
     <hr>
     Copyright &copy; 2024 LiRI 
