@@ -22,7 +22,7 @@ ALTER PROCEDURE main.update_corpus_meta
   SET search_path = pg_catalog,pg_temp;
 
 REVOKE EXECUTE ON PROCEDURE main.update_corpus_meta FROM public;
-GRANT EXECUTE ON PROCEDURE main.update_corpus_meta TO lcp_production_web_user;
+GRANT EXECUTE ON PROCEDURE main.update_corpus_meta TO lcp_production_importer;
 
 
 CREATE OR REPLACE PROCEDURE main.update_corpus_descriptions(
@@ -93,4 +93,4 @@ ALTER PROCEDURE main.update_corpus_descriptions
   SET search_path = pg_catalog,pg_temp;
 
 REVOKE EXECUTE ON PROCEDURE main.update_corpus_descriptions FROM public;
-GRANT EXECUTE ON PROCEDURE main.update_corpus_descriptions TO lcp_production_web_user;
+GRANT EXECUTE ON PROCEDURE main.update_corpus_descriptions TO lcp_production_importer;
