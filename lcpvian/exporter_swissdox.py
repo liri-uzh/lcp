@@ -4,14 +4,19 @@ import os
 import pandas
 import shutil
 
+from aiohttp import web
 from redis import Redis as RedisConnection
+from rq import Callback, Queue
 from rq.job import get_current_job, Job
 from typing import Any, cast
+from uuid import uuid4
 
+from .callbacks import _general_failure
 from .jobfuncs import _handle_export, _db_query
 from .query_classes import Request, QueryInfo
-from .utils import _get_mapping, sanitize_filename
+from .utils import _get_mapping, _publish_msg, sanitize_filename
 
+EXPORT_TTL = 5000
 RESULTS_DIR = os.getenv("RESULTS", "results")
 RESULTS_USERS = os.environ.get("RESULTS_USERS", os.path.join("results", "users"))
 RESULTS_SWISSDOX = os.environ.get("RESULTS_SWISSDOX", "results/swissdox")
@@ -63,6 +68,110 @@ class Exporter:
         if filename:
             swissdox_folder = os.path.join(swissdox_folder, "results.db")
         return swissdox_folder
+
+    @staticmethod
+    def finish_immediately(
+        job: Job,
+        connection: RedisConnection,
+        result: Any,
+    ) -> None:
+        should_run: bool = cast(dict, job.kwargs).get("should_run", True)
+        if should_run:
+            return
+        qhash, _, _, offset, requested = job.args
+        full: bool = cast(dict, job.kwargs).get("full", False)
+        Exporter.finish_export_db(connection, qhash, offset, requested, requested, full)
+
+    @classmethod
+    def finish_export_db(
+        cls,
+        connection: RedisConnection,
+        qhash: str,
+        offset: int,
+        requested: int,
+        delivered: int,
+        full: bool,
+    ):
+        """
+        Mark an export in the DB as finished
+        """
+        q = Queue("internal", connection=connection)
+        q.enqueue(
+            _handle_export,  # init_export
+            on_failure=Callback(_general_failure),
+            args=(qhash, "swissdox"),
+            kwargs={
+                "create": False,
+                "offset": offset,
+                "requested": requested,
+                "delivered": delivered,
+                "path": cls.get_dl_path_from_hash(
+                    qhash, offset, requested, full, filename=True
+                ),
+            },
+        )
+        payload: dict[str, Any] = {
+            "action": "export_complete",
+            "hash": qhash,
+        }
+        _publish_msg(
+            connection,
+            payload,
+            msg_id=str(uuid4()),
+        )
+
+    @classmethod
+    def initiate_db(
+        cls,
+        app: web.Application,
+        shash: str,
+        config: dict,
+        request: Request,
+    ) -> bool:
+        """
+        Mark an export in the DB as initiated and return whether a query should be run
+        """
+        should_run: bool = True
+        to_export: dict = cast(dict, request.to_export)
+        xp_format: str = to_export.get("format", "xml") or "xml"
+        epath = app["exporters"][xp_format].get_dl_path_from_hash(
+            shash, request.offset, request.requested, request.full
+        )
+        ext: str = ".db"
+        filename: str = cast(str, to_export.get("filename", ""))
+        cshortname = config.get("shortname")
+        if not filename:
+            filename = f"{cshortname} {datetime.datetime.now().strftime('%Y-%m-%d %I:%M%p')}{ext}"
+        filename = sanitize_filename(filename)
+        corpus_folder = sanitize_filename(cshortname or config.get("project_id", ""))
+        userpath: str = os.path.join(corpus_folder, filename)
+        suffix: int = 0
+        while os.path.exists(os.path.join(RESULTS_USERS, request.user, userpath)):
+            suffix += 1
+            userpath = os.path.join(
+                corpus_folder, f"{os.path.splitext(filename)[0]} ({suffix}){ext}"
+            )
+        should_run = not os.path.exists(
+            os.path.join(RESULTS_SWISSDOX, "exports", f"{shash}.db")
+        )
+        app["internal"].enqueue(
+            _handle_export,  # init_export
+            on_success=Callback(cls.finish_immediately),
+            on_failure=Callback(_general_failure),
+            result_ttl=EXPORT_TTL,
+            job_timeout=EXPORT_TTL,
+            args=(shash, xp_format, True, request.offset, request.requested),
+            kwargs={
+                "user_id": request.user,
+                "userpath": userpath,
+                "corpus_id": request.corpus,
+                "should_run": should_run,
+                "full": request.full,
+            },
+        )
+        if should_run:
+            shutil.rmtree(epath)
+        return should_run
 
     @classmethod
     async def export(cls, request_id: str, qhash: str, payload: dict) -> None:

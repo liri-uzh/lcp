@@ -552,7 +552,10 @@ class QueryInfo:
         Adds a job to the background queue
         Can be called either from the main app or from a worker
         """
-        q = Queue("background", connection=self._connection)
+        queue: str = (
+            "background" if all(r.to_export for r in self.requests) else "query"
+        )
+        q = Queue(queue, connection=self._connection)
         enqueued_job_ids = [jid for jid in self.enqueued_jobs]
         # Clear any job that needs to be cleared
         for jid in enqueued_job_ids:

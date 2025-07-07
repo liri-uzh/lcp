@@ -1,13 +1,9 @@
 import asyncio
 import json
 import logging
-import os
-import shutil
 
 from aiohttp import web
-from datetime import datetime
 from redis import Redis as RedisConnection
-from rq import Callback
 from rq.job import get_current_job, Job
 from typing import cast, Any
 from uuid import uuid4
@@ -15,12 +11,9 @@ from uuid import uuid4
 from .abstract_query.create import json_to_sql
 from .abstract_query.typed import QueryJSON
 from .authenticate import Authentication
-from .callbacks import _general_failure
 from .dqd_parser import convert
-from .jobfuncs import _handle_export
 from .query_classes import QueryInfo, Request
 from .utils import (
-    sanitize_filename,
     _get_query_batches,
     get_segment_meta_script,
     hasher,
@@ -28,9 +21,6 @@ from .utils import (
     CustomEncoder,
     LCPApplication,
 )
-
-EXPORT_TTL = 5000
-RESULTS_USERS = os.environ.get("RESULTS_USERS", os.path.join("results", "users"))
 
 
 def batch_callback(job: Job, connection: RedisConnection, batch_name: str):
@@ -219,7 +209,7 @@ def process_query(
 ) -> tuple[Request, QueryInfo, Any]:
     """
     Determine whether it is necessary to send queries to the DB
-    and return the job info + the asyncio task + QueryInfo instance
+    and return the corresponding Request + QueryInfo + job
     """
     request: Request = Request(app["redis"], request_data)
     print(
@@ -250,46 +240,16 @@ def process_query(
         request.languages,
         config,
     )
-    qi.add_request(request)
+    job: Job | None = None
+    should_run: bool = True
     if request.to_export and request.user:
-        # TODO: move this into the exporter script instead?
-        epath = app["exporters"]["xml"].get_dl_path_from_hash(
-            shash, request.offset, request.requested, request.full
-        )
-        if os.path.exists(epath):
-            shutil.rmtree(epath)
         xp_format: str = request.to_export.get("format", "xml") or "xml"
-        ext: str = ".db" if xp_format == "swissdox" else ".xml"
-        filename: str = cast(str, request.to_export.get("filename", ""))
-        cshortname = config.get("shortname")
-        if not filename:
-            filename = (
-                f"{cshortname} {datetime.now().strftime('%Y-%m-%d %I:%M%p')}{ext}"
-            )
-        filename = sanitize_filename(filename)
-        corpus_folder = sanitize_filename(cshortname or config.get("project_id", ""))
-        userpath: str = os.path.join(corpus_folder, filename)
-        suffix: int = 0
-        while os.path.exists(os.path.join(RESULTS_USERS, request.user, userpath)):
-            suffix += 1
-            userpath = os.path.join(
-                corpus_folder, f"{os.path.splitext(filename)[0]} ({suffix}){ext}"
-            )
-        app["internal"].enqueue(
-            _handle_export,  # init_export
-            on_failure=Callback(
-                _general_failure,
-            ),
-            result_ttl=EXPORT_TTL,
-            job_timeout=EXPORT_TTL,
-            args=(shash, xp_format, True, request.offset, request.requested),
-            kwargs={
-                "user_id": request.user,
-                "userpath": userpath,
-                "corpus_id": request.corpus,
-            },
+        should_run = app["exporters"][xp_format].initiate_db(
+            app, shash, config, request
         )
-    job: Job | None = schedule_next_batch(shash, connection=app["redis"])
+    if should_run:
+        qi.add_request(request)
+        job = schedule_next_batch(shash, connection=app["redis"])
     return (request, qi, job)
 
 
@@ -371,5 +331,7 @@ async def post_query(request: web.Request) -> web.Response:
         serializer = CustomEncoder()
         return web.json_response(serializer.default(res))
     else:
-        job_info = {"status": "started", "job": req.hash, "request": req.id}
+        job_info = (
+            {"status": "started", "job": req.hash, "request": req.id} if job else {}
+        )
         return web.json_response(job_info)

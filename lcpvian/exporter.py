@@ -5,20 +5,27 @@ import os
 import re
 import shutil
 
+from aiohttp import web
 from functools import cmp_to_key
 from io import TextIOWrapper
 from lxml.builder import E
+from redis import Redis as RedisConnection
+from rq import Callback, Queue
 from rq.job import get_current_job, Job
 from typing import Any, cast
+from uuid import uuid4
 
 from xml.sax.saxutils import escape, quoteattr
 
+from .callbacks import _general_failure
 from .jobfuncs import _handle_export
 from .query_classes import Request, QueryInfo
 from .typed import CorpusConfig
-from .utils import _get_mapping
+from .utils import _get_mapping, _publish_msg, sanitize_filename
 
+EXPORT_TTL = 5000
 RESULTS_DIR = os.getenv("RESULTS", "results")
+RESULTS_USERS = os.environ.get("RESULTS_USERS", os.path.join("results", "users"))
 
 
 def _token_value(val: str) -> str:
@@ -30,7 +37,13 @@ def _token_value(val: str) -> str:
 
 
 def _xml_attr(s: str) -> str:
-    return escape(s.replace("(", "").replace(")", "").replace(" ", "_"))
+    return escape(
+        s.replace("(", "")
+        .replace(")", "")
+        .replace("[", "")
+        .replace("]", "")
+        .replace(" ", "_")
+    )
 
 
 def _node_to_string(node, prefix: str = "") -> str:
@@ -167,6 +180,108 @@ class Exporter:
             requested_folder = os.path.join(requested_folder, "results.xml")
         return requested_folder
 
+    @staticmethod
+    def finish_immediately(
+        job: Job,
+        connection: RedisConnection,
+        result: Any,
+    ) -> None:
+        should_run: bool = cast(dict, job.kwargs).get("should_run", True)
+        if should_run:
+            return
+        qhash, _, _, offset, requested = job.args
+        full: bool = cast(dict, job.kwargs).get("full", False)
+        Exporter.finish_export_db(connection, qhash, offset, requested, requested, full)
+
+    @classmethod
+    def finish_export_db(
+        cls,
+        connection: RedisConnection,
+        qhash: str,
+        offset: int,
+        requested: int,
+        delivered: int,
+        full: bool,
+    ):
+        """
+        Mark an export in the DB as finished
+        """
+        q = Queue("internal", connection=connection)
+        q.enqueue(
+            _handle_export,  # init_export
+            on_failure=Callback(_general_failure),
+            args=(qhash, "xml"),
+            kwargs={
+                "create": False,
+                "offset": offset,
+                "requested": requested,
+                "delivered": delivered,
+                "path": cls.get_dl_path_from_hash(
+                    qhash, offset, requested, full, filename=True
+                ),
+            },
+        )
+        payload: dict[str, Any] = {
+            "action": "export_complete",
+            "hash": qhash,
+        }
+        _publish_msg(
+            connection,
+            payload,
+            msg_id=str(uuid4()),
+        )
+
+    @classmethod
+    def initiate_db(
+        cls,
+        app: web.Application,
+        shash: str,
+        config: dict,
+        request: Request,
+    ) -> bool:
+        """
+        Mark an export in the DB as initiated and return whether a query should be run
+        """
+        should_run: bool = True
+        to_export: dict = cast(dict, request.to_export)
+        xp_format: str = to_export.get("format", "xml") or "xml"
+        epath = app["exporters"][xp_format].get_dl_path_from_hash(
+            shash, request.offset, request.requested, request.full
+        )
+        ext: str = ".xml"  # ".db" if xp_format == "swissdox" else ".xml"
+        filename: str = cast(str, to_export.get("filename", ""))
+        cshortname = config.get("shortname")
+        if not filename:
+            filename = f"{cshortname} {datetime.datetime.now().strftime('%Y-%m-%d %I:%M%p')}{ext}"
+        filename = sanitize_filename(filename)
+        corpus_folder = sanitize_filename(cshortname or config.get("project_id", ""))
+        userpath: str = os.path.join(corpus_folder, filename)
+        suffix: int = 0
+        while os.path.exists(os.path.join(RESULTS_USERS, request.user, userpath)):
+            suffix += 1
+            userpath = os.path.join(
+                corpus_folder, f"{os.path.splitext(filename)[0]} ({suffix}){ext}"
+            )
+        should_run = not os.path.exists(os.path.join(epath, "results.xml"))
+        app["internal"].enqueue(
+            _handle_export,  # init_export
+            on_success=Callback(cls.finish_immediately),
+            on_failure=Callback(_general_failure),
+            result_ttl=EXPORT_TTL,
+            job_timeout=EXPORT_TTL,
+            args=(shash, xp_format, True, request.offset, request.requested),
+            kwargs={
+                "user_id": request.user,
+                "userpath": userpath,
+                "corpus_id": request.corpus,
+                "should_run": should_run,
+                "full": request.full,
+            },
+        )
+        if should_run:
+            shutil.rmtree(epath)
+        return should_run
+
     @classmethod
     async def export(cls, request_id: str, qhash: str, payload: dict) -> None:
         """
@@ -208,21 +323,8 @@ class Exporter:
                 f"Exporting complete for request {request.id} (hash: {request.hash}) ; DELETED REQUEST"
             )
             qi.delete_request(request)
-            await _handle_export(  # finish_export
-                qi.hash,
-                "xml",
-                create=False,
-                offset=offset,
-                requested=requested,
-                delivered=delivered,
-                path=cls.get_dl_path_from_hash(
-                    qhash, offset, requested, full, filename=True
-                ),
-            )
-            qi.publish(
-                "placeholder",
-                "export",
-                {"action": "export_complete", "callback_query": None},
+            cls.finish_export_db(
+                qi._connection, qi.hash, offset, requested, delivered, full
             )
         except Exception as e:
             shutil.rmtree(cls.get_dl_path_from_hash(qhash, offset, requested, full))
@@ -322,7 +424,7 @@ class Exporter:
             if not isinstance(sub_attrs, dict):
                 continue
             tok.append(
-                getattr(E, complex_attr)(
+                getattr(E, _xml_attr(complex_attr))(
                     **{_xml_attr(k): str(v) for k, v in sub_attrs.items()}
                 )
             )
@@ -496,7 +598,7 @@ class Exporter:
         )
         wpath = self.get_working_path()
         with open(os.path.join(opath, "results.xml"), "w") as output:
-            output.write('<?xml version="1.0" encoding="utf_8"?>\n')
+            output.write('<?xml version="1.0" encoding="UTF-8"?>\n')
             output.write("<results>\n")
             config = self._config
             last_payload = {}
@@ -525,11 +627,9 @@ class Exporter:
             output.write(_node_to_string(query_node, prefix="  "))
             # STATS
             if self._qi.stats_keys:
-                output.write("  <stats>\n")
                 with open(os.path.join(wpath, "stats.xml"), "r") as stats_input:
                     while line := stats_input.readline():
-                        output.write("    " + line)
-                output.write("  </stats>\n")
+                        output.write("  " + line)
             if not self._qi.kwic_keys:
                 print(f"[Export {self._request.id}] Complete (QI {self._request.hash})")
                 return
