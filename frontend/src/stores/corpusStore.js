@@ -88,6 +88,8 @@ export const useCorpusStore = defineStore("corpusData", {
                     continue;
                   if (lg in mv.description && typeof(mv.description[lg]) == "string")
                     corpus.layer[layer].attributes.meta[mk].description = mv.description[lg];
+                  else if ("en" in mv.description && typeof(mv.description.en) == "string")
+                    corpus.layer[layer].attributes.meta[mk].description = mv.description.en;
                 }
               }
               else {
@@ -95,6 +97,8 @@ export const useCorpusStore = defineStore("corpusData", {
                   continue;
                 if (lg in v.description && typeof(v.description[lg]) == "string")
                   corpus.layer[layer].attributes[k].description = v.description[lg];
+                else if ("en" in v.description && typeof(v.description.en) == "string")
+                  corpus.layer[layer].attributes[k].description = v.description.en;
               }
             }
           }
