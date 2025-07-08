@@ -1345,6 +1345,8 @@ def get_segment_meta_script(
     # Add code here to add "media" if dealing with a multimedia corpus
     if has_media:
         selects.append(f"{doc}.media::jsonb AS {doc}_media")
+        selects = [s for s in selects if not s.endswith(f"AS {doc}_name")]
+        selects.append(f"{doc}.name::text AS {doc}_name")
 
     selects_formed = ", ".join(selects)
     # left join = include non-empty entities even if other ones are empty

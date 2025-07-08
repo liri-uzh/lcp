@@ -498,8 +498,10 @@ export default {
         ];
         if ("meta" in allowedMetaColums)
           delete allowedMetaColums.meta;
+        if (this.corpora.corpus.meta.mediaSlots && layer == this.corpora.corpus.firstClass.document)
+          allowedMetaColums[layer].push("name");
       }
-    })
+    });
 
     return {
       popoverY: 0,
