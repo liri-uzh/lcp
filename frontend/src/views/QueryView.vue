@@ -328,7 +328,22 @@
                 <div class="mt-2">
                   <div class="row">
                     <div class="col-12" v-if="WSDataResults && WSDataResults.result">
-                      <div class="export btn btn-primary me-1 mb-1" :title="$t('common-export-results')">
+                      <div
+                        v-if="queryStatus in {'satisfied':1,'finished':1} && !loading && userData.user.anon != true"
+                        data-bs-toggle="modal"
+                        data-bs-target="#exportModal"
+                        @click="setExportFilename('xml')"
+                        class="export btn btn-primary me-1 mb-1"
+                        :title="$t('common-export')"
+                      >
+                        <FontAwesomeIcon :icon="['fas', 'file-export']" />
+                      </div>
+                      <div
+                        v-else
+                        class="export btn btn-primary me-1 mb-1"
+                        disabled="true"
+                        :title="$t('common-export')"
+                      >
                         <FontAwesomeIcon :icon="['fas', 'file-export']" />
                       </div>
                       <nav>
@@ -630,7 +645,10 @@
 .export {
   float: left;
 }
-
+.export[disabled=true] {
+  opacity: 0.5;
+  cursor: unset;
+}
 .lcp-progress-bar {
   position: fixed;
   width: 100%;
