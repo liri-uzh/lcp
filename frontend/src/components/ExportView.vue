@@ -53,7 +53,7 @@
                     @click="fetch(notif.dl_info)"
                     class="download"
                   >
-                    <a href="_blank">{{ $t('common-ready').toLowerCase() }}</a>
+                    <a href="#">{{ $t('common-ready').toLowerCase() }}</a>
                   </td>
                   <td v-else-if="notif.dl_info">{{ notif.dl_info.status }}</td>
               </tr>
