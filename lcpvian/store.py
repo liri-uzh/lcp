@@ -15,12 +15,15 @@ async def fetch_queries(request: web.Request) -> web.Response:
     User wants to retrieve their stored queries from the DB
     """
     request_data: dict[str, str] = await request.json()
-    user = request_data["user"]
+    user = request_data.get("user")
     room = request_data.get("room")
     query_type = request_data.get("query_type")
+    if not user or not room or not query_type:
+        return web.json_response({})
     job: Job = request.app["query_service"].fetch_queries(user, room, query_type)
     info: dict[str, str] = {"status": "started", "job": job.id}
     return web.json_response(info)
+
 
 @ensure_authorised
 async def store_query(request: web.Request) -> web.Response:
@@ -45,6 +48,7 @@ async def store_query(request: web.Request) -> web.Response:
     job: Job = request.app["query_service"].store_query(*args)
     info: dict[str, str] = {"status": "started", "job": job.id, "query_id": str(idx)}
     return web.json_response(info)
+
 
 @ensure_authorised
 async def delete_query(request: web.Request) -> web.Response:

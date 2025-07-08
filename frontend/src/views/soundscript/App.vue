@@ -65,7 +65,7 @@
                 #{{ appVersion }}
               </span>
             </li>
-            <li class="nav-item export">
+            <li class="nav-item export" :title="$t('common-export')">
               <!-- <FontAwesomeIcon :icon="['fas', 'gauge']" class="me-2" /> -->
                <a class="nav-link">
                 <FontAwesomeIcon :icon="['fas', 'download']" class="me-2" />
@@ -107,6 +107,7 @@
 
 <script>
 import { mapState } from "pinia";
+import { Modal } from "bootstrap";
 import { useUserStore } from "@/stores/userStore";
 import { useCorpusStore } from "@/stores/corpusStore";
 import { useWsStore } from "@/stores/wsStore";
@@ -151,7 +152,15 @@ export default {
         // Otherwise, navigate to the homepage
         this.$router.push('/');
       }
-    }
+    },
+    openExportsModal() {
+      let modal = new Modal(document.getElementById('exportsModal'));
+      modal.show();
+      setTimeout(
+        ()=>document.getElementById("app-content").append(document.getElementById('exportsModal')),
+        50
+      );
+    },
   },
   components: {
     ExportView,
@@ -247,8 +256,5 @@ footer {
 }
 * >>> .page-link {
   color: #0059be !important;
-}
-.export:hover #exportMonitor {
-  visibility: visible !important;
 }
 </style>
