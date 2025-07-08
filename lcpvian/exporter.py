@@ -262,7 +262,10 @@ class Exporter:
             userpath = os.path.join(
                 corpus_folder, f"{os.path.splitext(filename)[0]} ({suffix}){ext}"
             )
-        should_run = not os.path.exists(os.path.join(epath, "results.xml"))
+        filepath = app["exporters"][xp_format].get_dl_path_from_hash(
+            shash, request.offset, request.requested, request.full, filename=True
+        )
+        should_run = not os.path.exists(filepath)
         app["internal"].enqueue(
             _handle_export,  # init_export
             on_success=Callback(cls.finish_immediately),
@@ -280,6 +283,12 @@ class Exporter:
         )
         if should_run:
             shutil.rmtree(epath)
+        else:
+            if not os.path.exists(userpath) and not os.path.islink(userpath):
+                try:
+                    os.symlink(os.path.abspath(filepath), userpath)
+                except Exception as e:
+                    print(f"Problem with creating symlink {filepath}->{userpath}", e)
         return should_run
 
     @classmethod

@@ -75,15 +75,19 @@ class Exporter:
         connection: RedisConnection,
         result: Any,
     ) -> None:
+        """
+        Callback to initiate_db.
+        Immediately mark as finished if no need to run export.
+        """
         should_run: bool = cast(dict, job.kwargs).get("should_run", True)
         if should_run:
             return
         qhash, _, _, offset, requested = job.args
         full: bool = cast(dict, job.kwargs).get("full", False)
-        Exporter.finish_export_db(connection, qhash, offset, requested, requested, full)
+        Exporter.finish_db(connection, qhash, offset, requested, requested, full)
 
     @classmethod
-    def finish_export_db(
+    def finish_db(
         cls,
         connection: RedisConnection,
         qhash: str,
@@ -97,7 +101,7 @@ class Exporter:
         """
         q = Queue("internal", connection=connection)
         q.enqueue(
-            _handle_export,  # init_export
+            _handle_export,  # finish_export
             on_failure=Callback(_general_failure),
             args=(qhash, "swissdox"),
             kwargs={
@@ -208,22 +212,7 @@ class Exporter:
                 f"SWISSDOX Exporting complete for request {request.id} (hash: {request.hash}) ; DELETED REQUEST"
             )
             qi.delete_request(request)
-            await _handle_export(  # finish_export
-                qi.hash,
-                "swissdox",
-                create=False,
-                offset=offset,
-                requested=requested,
-                delivered=delivered,
-                path=cls.get_dl_path_from_hash(
-                    qhash, offset, requested, full, filename=True
-                ),
-            )
-            qi.publish(
-                "placeholder",
-                "export",
-                {"action": "export_complete", "callback_query": None},
-            )
+            cls.finish_db(qi._connection, qi.hash, offset, requested, delivered, full)
         except Exception as e:
             shutil.rmtree(cls.get_dl_path_from_hash(qhash, offset, requested, full))
             print("ERROR", e)
