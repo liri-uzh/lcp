@@ -12,7 +12,12 @@ roomId = Utils.uuidv4()
 
 export const useUserStore = defineStore("userData", {
   state: () => ({
-    userData: null,
+    userData: {
+      publicProfiles: {},
+      subscription: {subscriptions: []},
+      termsOfUse: {},
+      user: {},
+    },
     roomId: roomId,
     projects: [],
     dataFetched: false,
