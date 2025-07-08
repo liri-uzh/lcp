@@ -65,9 +65,9 @@
                 #{{ appVersion }}
               </span>
             </li>
-            <li class="nav-item export" @click="openExportsModal" :title="$t('common-export')">
+            <li class="nav-item export" :title="$t('common-export')">
               <!-- <FontAwesomeIcon :icon="['fas', 'gauge']" class="me-2" /> -->
-               <a class="nav-link">
+               <a class="nav-link" @click="openExportsModal">
                 <FontAwesomeIcon :icon="['fas', 'download']" class="me-2" />
                </a>
               <ExportView />
