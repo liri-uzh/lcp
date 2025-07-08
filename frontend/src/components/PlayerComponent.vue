@@ -770,7 +770,7 @@ export default {
 
           // Preselect first document
           if (!this.currentDocumentSelected) {
-            let document = this.corpusData[0]
+            let document = this.corpusData[0];
             if (document) {
               this.currentDocumentSelected = {
                 name: document[1],
@@ -891,17 +891,16 @@ export default {
   },
   watch: {
     selectedMediaForPlay() {
-      let document = this.corpusData.filter(
+      let document = this.corpusData.find(
         corpus => parseInt(corpus[0], 10) == parseInt(this.selectedMediaForPlay.documentId, 10)
       )
-      if (document.length > 0) {
+      if (document) {
         let [start, end] = [
           this.selectedMediaForPlay.startTime,
           this.selectedMediaForPlay.endTime
         ]
         this.setResultTimes = [start, end];
 
-        document = document[0]
         this.currentDocumentSelected = {
           name: document[1],
           value: document[0],
@@ -935,7 +934,10 @@ export default {
       deep: true,
     },
     currentDocumentSelected() {
-      this.currentDocument = this.currentDocumentSelected.document
+      // Only reset this if different
+      if (this.currentDocument == this.currentDocumentSelected.document)
+        return this.videoPlayer1CanPlay();
+      this.currentDocument = this.currentDocumentSelected.document;
       this.loadDocument();
     },
     volume() {

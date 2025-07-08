@@ -470,7 +470,7 @@ class TokenToDisplay {
 
 export default {
   name: "ResultsPlainTableView",
-  emits: ["updatePage", "hoverResultLine"],
+  emits: ["updatePage", "hoverResultLine", "playMedia"],
   props: [
     "data",
     "sentences",
@@ -756,52 +756,7 @@ export default {
           startTime: startTime,
           endTime: endTime,
           type: "audio"
-        })
-        // console.log(filename, startTime, endTime)
-        // let startTime = meta["Utterance"].start
-        // let endTime = meta[this.corpora.corpus.firstClass.segment].end
-        // if (filename) {
-        //   // TODO: get path from config
-        //   this.$refs.audioplayer.src = this.baseMediaUrl + filename;
-        //   this.$refs.audioplayer.currentTime = startTime;
-        //   this.$refs.audioplayer.ontimeupdate = () => {
-        //     if (this.$refs.audioplayer.currentTime >= endTime) {
-        //       this.$refs.audioplayer.pause();
-        //     }
-        //   };
-        //   this.$refs.audioplayer.play();
-        //   try {
-        //     const wavesurfer = WaveSurfer.create({
-        //       container: `.audioplayer-${resultIndex}`,
-        //       waveColor: '#4F4A85',
-        //       progressColor: '#383351',
-        //       url: this.baseMediaUrl + filename,
-        //       // media: this.$refs.audioplayer, // <- this is the important part
-        //       height: 32
-        //     })
-        //     wavesurfer.on('interaction', () => {
-        //       wavesurfer.play()
-        //     })
-        //     // Initialize the Regions plugin
-        //     const wsRegions = wavesurfer.registerPlugin(RegionsPlugin.create())
-        //     // Create some regions at specific time ranges
-        //     wavesurfer.on('decode', () => {
-        //       // Regions
-        //       wsRegions.addRegion({
-        //         start: startTime,
-        //         end: endTime,
-        //         content: '',
-        //         color: 'rgba(255, 0, 0, 0.1)',
-        //         drag: false,
-        //         resize: false,
-        //       })
-        //     })
-        //   }
-        //   catch (e){
-        //     console.log("Couldn't create the waveform", e);
-        //   }
-        //   this.playIndex = resultIndex;
-        // }
+        });
       }
     },
     showVideo(resultIndex) {
