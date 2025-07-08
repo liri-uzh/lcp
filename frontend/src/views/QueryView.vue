@@ -328,6 +328,9 @@
                 <div class="mt-2">
                   <div class="row">
                     <div class="col-12" v-if="WSDataResults && WSDataResults.result">
+                      <div class="export btn btn-primary me-1 mb-1" :title="$t('common-export-results')">
+                        <FontAwesomeIcon :icon="['fas', 'file-export']" />
+                      </div>
                       <nav>
                         <div class="nav nav-tabs" id="nav-results-tabs" role="tablist">
                           <template
@@ -624,6 +627,10 @@
 </template>
 
 <style scoped>
+.export {
+  float: left;
+}
+
 .lcp-progress-bar {
   position: fixed;
   width: 100%;
