@@ -22,8 +22,10 @@
           v-for="(item, resultIndex) in results"
           :key="`tr-results-${resultIndex}`"
           :data-index="resultIndex"
+          :class="resultIndex == this.selectedLine ? 'selected' : ''"
           @mousemove="hoverResultLine(resultIndex)"
           @mouseleave="hoverResultLine(null)"
+          @click="selectedLine = resultIndex"
         >
           <td scope="row" class="results">
             <span :title="$t('common-copy-clipboard')" @click="copyToClip(item)" class="action-button">
@@ -293,6 +295,9 @@
 </template>
 
 <style scoped>
+tr.selected {
+  outline: solid 2px green;
+}
 td.icons {
   min-width: 100px;
 }
@@ -510,7 +515,8 @@ export default {
       groups: this.data ? this.getGroups(this.data[0], true) : [],
       randInt: Math.floor(Math.random() * 1000),
       playIndex: -1,
-      image: null
+      image: null,
+      selectedLine: -1
     };
   },
   components: {
