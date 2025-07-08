@@ -974,6 +974,12 @@ def _get_all_attributes(layer: str, config: Any, lang: str = "") -> dict:
     }
     if isinstance(main_attrs.get("meta", ""), dict):
         ret.update({k: v for k, v in main_attrs["meta"].items()})
+    if config["layer"][layer].get("layerType") == "relation":
+        for k, v in main_attrs.items():
+            if not v.get("entity", "") in config["layer"]:
+                continue
+            ret.pop(k, None)
+            ret[v.get("name", "")] = v
     partitions = config["mapping"]["layer"].get(layer, {}).get("partitions", {})
     if partitions:
         if lang and lang not in partitions:
