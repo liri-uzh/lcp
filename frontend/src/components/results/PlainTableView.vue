@@ -31,6 +31,13 @@
             <span :title="$t('common-copy-clipboard')" @click="copyToClip(item)" class="action-button">
               <FontAwesomeIcon :icon="['fas', 'copy']" />
             </span>
+            <span
+              v-if="'mediaSlots' in corpora.corpus.meta"
+              class="timetag"
+              :title="meta[data[resultIndex][0]][corpora.corpus.firstClass.document].name"
+            >
+              {{ this.getTimestamps(...this.getFrameRange(resultIndex, this.corpora.corpus.firstClass.segment)).join(" ") }}
+            </span>
             <span :title="$t('common-play-audio')" @click="playAudio(resultIndex)" class="action-button" v-if="showAudio(resultIndex)">
               <FontAwesomeIcon :icon="['fas', 'play']" />
             </span>
@@ -182,7 +189,11 @@
         <template v-for="(meta, layer) in currentMeta" :key="`th-${layer}`">
           <tr v-if="layer in allowedMetaColums">
             <td @click="this.meta_fold(layer, /*flip=*/true)">
-              <span class="text-bold">{{ this.meta_fold(layer) ? "&#9662;" : "&#9656;" }}{{ layer }}</span>
+              <span class="text-bold">{{ this.meta_fold(layer) ? "&#9662;" : "&#9656;" }}{{ layer }}
+                <span v-if="'mediaSlots' in corpora.corpus.meta" class="timetag nowrap">
+                  {{ this.getTimestamps(...meta.frame_range).join(' - ') }}
+                </span>
+              </span>
               <table class="popover-deatils-table mb-2">
                 <template v-for="(meta_value, meta_key) in meta" :key="`${layer}-${meta_key}`">
                   <tr v-if="allowedMetaColums[layer].includes(meta_key) && (meta_value || meta_fold(layer))">
@@ -306,6 +317,23 @@ td.buttons {
 }
 td.results {
   width: 100%;
+}
+span.timetag {
+  display: inline-block;
+  white-space: wrap;
+  width: 5em;
+  text-align: center;
+  font-size: 0.8em;
+  background: beige;
+  box-shadow: 0px 0px 3px black;
+  border-radius: 0.25em;
+  margin-right: 0.5em;
+  transform: translateY(0.25em);
+}
+span.timetag.nowrap {
+  width: unset;
+  white-space: nowrap;
+  transform: translateY(-0.25em);
 }
 span.action-button {
   cursor: pointer;
@@ -746,6 +774,26 @@ export default {
       }
       return retval;
     },
+    getTimestamps(lower_frame, upper_frame) {
+      const lfs = lower_frame / 25.0;
+      const ufs = upper_frame / 25.0;
+      let min_l = Math.floor(lfs / 60);
+      let min_u = Math.floor(ufs / 60);
+      let sec_l = Math.round(100 * (lfs % 60)) / 100;
+      let sec_u = Math.round(100 * (ufs % 60)) / 100;
+      if (min_l < 10) min_l = `0${min_l}`;
+      if (min_u < 10) min_u = `0${min_u}`;
+      if (sec_l < 10) sec_l = `0${sec_l}`;
+      if (sec_u < 10) sec_u = `0${sec_u}`;
+      return [`${min_l}:${sec_l}`, `${min_u}:${sec_u}`];
+    },
+    getFrameRange(resultIndex, layer) {
+      const sentenceId = this.data[resultIndex][0];
+      const meta = this.meta[sentenceId];
+      if (meta && layer in meta)
+        return meta[layer].frame_range;
+      return [0,0]
+    },
     playAudio(resultIndex) {
       this.$refs.audioplayer.pause();
       resultIndex = resultIndex + (this.currentPage - 1) * this.resultsPerPage;
@@ -755,9 +803,10 @@ export default {
         // corpus tamplete,
         let documentId = meta[this.corpora.corpus.firstClass.document].id;
         let filename = this.getAudio(resultIndex); // meta[this.corpora.corpus.firstClass.document].audio
-        let startFrame = meta[this.corpora.corpus.firstClass.document].frame_range[0]
-        let startTime = (meta[this.corpora.corpus.firstClass.segment].frame_range[0] - startFrame)/25.
-        let endTime = (meta[this.corpora.corpus.firstClass.segment].frame_range[1] - startFrame)/25.
+        let startFrameDoc = this.getFrameRange(resultIndex, this.corpora.corpus.firstClass.document)[0];
+        let [startFrameSeg, endFrameSeg] = this.getFrameRange(resultIndex, this.corpora.corpus.firstClass.segment);
+        let startTime = (startFrameSeg - startFrameDoc)/25.0;
+        let endTime = (endFrameSeg - startFrameDoc)/25.0;
 
         this.$emit("playMedia", {
           documentId: documentId,
@@ -787,16 +836,16 @@ export default {
       if (meta) {
         let documentId = meta[this.corpora.corpus.firstClass.document].id;
         let filename = this.getAudio(resultIndex); // meta[this.corpora.corpus.firstClass.document].audio
-        let startFrame = meta[this.corpora.corpus.firstClass.document].frame_range[0]
-        let endFrame = meta[this.corpora.corpus.firstClass.document].frame_range[1]
-        let startTime = (meta[this.corpora.corpus.firstClass.segment].frame_range[0] - startFrame)/25.
-        let endTime = (meta[this.corpora.corpus.firstClass.segment].frame_range[1] - startFrame)/25.
+        let [startFrameDoc, endFrameDoc] = this.getFrameRange(resultIndex, this.corpora.corpus.firstClass.document);
+        let [startFrameSeg, endFrameSeg] = this.getFrameRange(resultIndex, this.corpora.corpus.firstClass.segment);
+        let startTime = (startFrameSeg - startFrameDoc)/25.0;
+        let endTime = (endFrameSeg - startFrameDoc)/25.0;
 
         this.$emit("playMedia", {
           documentId: documentId,
           filename: filename,
-          startFrame: startFrame,
-          endFrame: endFrame,
+          startFrame: startFrameDoc,
+          endFrame: endFrameDoc,
           startTime: startTime,
           endTime: endTime,
           type: "video"
