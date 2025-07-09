@@ -1238,7 +1238,6 @@ export default {
             this.requestId = null;
         } else if (data["action"] === "query_result") {
           useWsStore().addMessageForPlayer(data)
-          console.log("query_result", data);
           this.updateLoading(data.status);
           if (
             this.failedStatus &&
@@ -1303,6 +1302,8 @@ export default {
                 if (ranges)
                   value = [parseInt(ranges[1]),parseInt(ranges[2])];
               }
+              if (typeof(value) == "string")
+                value = value.trim();
               meta_object[layer][attr] = value;
             }
             this.WSDataMeta[segment_id] = meta_object;

@@ -587,7 +587,8 @@ export default {
         delete this.currentMeta[layer].meta;
         for (let k in submeta) {
           if (k in this.currentMeta[layer]) continue;
-          this.currentMeta[layer][k] = submeta[k];
+          this.currentMeta[layer][k] = typeof(submeta[k]) == "string" ? submeta[k].trim() : submeta[k];
+          if (this.currentMeta[layer][k] == "0.0") this.currentMeta[layer][k] = "<span>0.0</span>";
         }
       }
       this.popoverY = event.clientY + 10;
