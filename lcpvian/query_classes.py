@@ -1,3 +1,4 @@
+import asyncio
 import json
 import traceback
 import os
@@ -463,6 +464,10 @@ class Request:
             await self.error(app, qi, payload.get("batch", "unknown"))
             return
         try:
+            # handle redis sync issues (up to 2s to sync)
+            async with asyncio.timeout(2):
+                while batch_name not in qi.query_batches:
+                    await asyncio.sleep(0.1)
             if typ == "main":
                 await self.send_query(app, qi, batch_name)
             elif typ == "segments":
