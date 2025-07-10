@@ -87,15 +87,9 @@ AS $$
       template          jsonb;
    BEGIN
 
-      SELECT max(cv) + 1
-        FROM (
-                SELECT c.current_version AS cv
-                  FROM main.corpus            AS c
-                  JOIN main.inprogress_corpus AS t USING (corpus_id)
-                 WHERE t.schema_path = $1
-             UNION ALL
-                SELECT 0
-             ) AS x
+      SELECT coalesce(max(c.current_version), 0) + 1
+        FROM main.corpus AS c
+       WHERE c.schema_path ~ format('^%s_\d+', $2)
         INTO next_version
            ;
 
