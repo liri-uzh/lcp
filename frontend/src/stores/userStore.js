@@ -23,7 +23,11 @@ export const useUserStore = defineStore("userData", {
     dataFetched: false,
     debug: false,
   }),
-  getters: {},
+  getters: {
+    isSuperAdmin() {
+      return this.userData.user.superAdmin == true;
+    }
+  },
   actions: {
     fetchUserData() {
       return httpApi.get(`/settings`).then((r) => {

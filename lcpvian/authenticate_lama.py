@@ -1,4 +1,5 @@
 from aiohttp import web
+from os import getenv
 from typing import Any, cast
 from yarl import URL
 
@@ -19,6 +20,8 @@ from .lama import (
 from .typed import JSONObject, TypeAlias
 
 subtype: TypeAlias = list[dict[str, str]]
+
+SUPER_ADMINS = getenv("SUPER_ADMINS", "").split(" ")
 
 
 # Authentication class used at LiRI with the Lama system
@@ -112,6 +115,12 @@ class Lama(Authentication):
 
     async def user_details(self, request: web.Request) -> JSONObject:
         user_details_lama = await _lama_user_details(request.headers)
+        # TODO: move this to LAMA directly
+        user_id = cast(dict, user_details_lama.get("user", {})).get("id", "")
+        if user_id in SUPER_ADMINS:
+            cast(dict, user_details_lama["user"])["superAdmin"] = True
+        else:
+            cast(dict, user_details_lama["user"]).pop("superAdmin", "")
         return user_details_lama
 
     async def project_users(self, request: web.Request, project_id: str) -> JSONObject:

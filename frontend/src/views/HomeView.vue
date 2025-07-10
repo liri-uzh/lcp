@@ -612,12 +612,14 @@ export default {
     ...mapState(useCorpusStore, ["queryData", "corpora"]),
     ...mapState(useUserStore, ["projects", "userData"]),
     projectsGroups() {
-      let projects = {}
+      const isSuperAdmin = useUserStore().isSuperAdmin;
+      let projects = {};
       let projectIds = [];
       this.projects.forEach((project) => {
         let isPublic = project.additionalData && project.additionalData.public == true;
         let isSemiPublic = project.additionalData && project.additionalData.semiPublic == true;
         projectIds.push(project.id);
+        if (isSuperAdmin) project.isAdmin = true;
         projects[project.id] = {
           ...project,
           corpora: [],
@@ -625,8 +627,8 @@ export default {
           isSemiPublic: isSemiPublic,
         };
       });
-      let publicProjects = this.projects.filter(project => project.additionalData && project.additionalData.public == true)
-      let publicProjectId = publicProjects.length ? publicProjects[0].id : -1
+      let publicProjects = this.projects.filter(project => project.additionalData && project.additionalData.public == true);
+      let publicProjectId = publicProjects.length ? publicProjects[0].id : -1;
 
       this.corpora.forEach((corpus) => {
         corpus.projects.forEach(projectId => {

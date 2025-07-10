@@ -86,11 +86,8 @@
                       v-model="currentProject.description" id="description" style="height: 100px"></textarea>
                   </div>
                 </div>
-                <div class="col-12">
-                  <button class="btn btn-outline-secondary" type="button" id="publicButton" @click="makeDataPublic">
-                    {{ $t('modal-project-data-public') }}
-                  </button>
-                  <!-- <label class="form-label me-2">Visibility:</label>
+                <div class="col-12" v-if="isSuperAdmin">
+                  <label class="form-label me-2">Visibility (super-admin):</label>
                   <div class="form-check form-check-inline">
                     <input class="form-check-input" type="radio" checked name="inlineRadioOptions"
                       :id="`visibility-private-${currentProject.id}`" value="private" v-model="visibility">
@@ -105,7 +102,12 @@
                     <input class="form-check-input" type="radio" name="inlineRadioOptions"
                       :id="`visibility-public-${currentProject.id}`" value="public" v-model="visibility">
                     <label class="form-check-label" :for="`visibility-public-${currentProject.id}`">Public</label>
-                  </div> -->
+                  </div>
+                </div>
+                <div class="col-12" v-else>
+                  <button class="btn btn-outline-secondary" type="button" id="publicButton" @click="makeDataPublic">
+                    {{ $t('modal-project-data-request-public') }}
+                  </button>
                 </div>
               </div>
             </div>
@@ -276,6 +278,7 @@ export default {
       inviteEmails: '',
       users: [],
       lamaUserId: null,
+      isSuperAdmin: useUserStore().isSuperAdmin
     };
   },
   mounted() {
@@ -288,6 +291,7 @@ export default {
         this.currentProject.additionalData = {}
       }
       this.currentProject.additionalData['visibility'] = this.visibility
+      this.currentProject.additionalData.public = this.visibility == "public";
     }
   },
   methods: {
@@ -314,7 +318,7 @@ export default {
       })
     },
     makeDataPublic() {
-      console.log("makeDataPublic")
+      console.log("makeDataPublic", this.isSuperAdmin);
     },
     formatDate: Utils.formatDate,
     async APIKeyRevoke(projectId, apiKeyId) {
