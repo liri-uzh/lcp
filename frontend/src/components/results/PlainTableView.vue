@@ -621,8 +621,16 @@ export default {
         delete this.currentMeta[layer].meta;
         for (let k in submeta) {
           if (k in this.currentMeta[layer]) continue;
-          this.currentMeta[layer][k] = typeof(submeta[k]) == "string" ? submeta[k].trim() : submeta[k];
-          if (this.currentMeta[layer][k] == "0.0") this.currentMeta[layer][k] = "<span>0.0</span>";
+          this.currentMeta[layer][k] = submeta[k];
+        }
+        for (let k in this.currentMeta[layer]) {
+          const isString = typeof(submeta[k]) == "string";
+          if (isString)
+            this.currentMeta[layer][k] = this.currentMeta[layer][k].trim();
+          if (isString && this.currentMeta[layer][k].match(/^0+(\.0+)?$/))
+            this.currentMeta[layer][k] = "<span>0</span>";
+          if (typeof(this.currentMeta[layer][k]) == "object" && Object.keys(this.currentMeta[layer][k]).length == 0)
+            this.currentMeta[layer][k] = null;
         }
       }
       this.popoverY = event.clientY + 10;
