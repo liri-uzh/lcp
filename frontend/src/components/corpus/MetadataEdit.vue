@@ -17,6 +17,17 @@
       aria-selected="false" @click="activeMainTab = 'structure'">
       {{ $t('modal-meta-structure') }}
     </button>
+    <div class="group-selector" v-if="isSuperAdmin">
+      <span>Group:</span>
+      <multiselect
+        v-model="projects"
+        :options="allProjects"
+        :multiple="true"
+        label="title"
+        placeholder="Choose a project"
+        track-by="id"
+      ></multiselect>
+    </div>
   </div>
   <div class="tab-content" id="nav-main-tabContent">
     <div class="tab-pane fade pt-3"
@@ -200,6 +211,13 @@ a:hover {
 .attribute {
   margin: 0.5em 0em 0.5em 1em
 }
+.group-selector {
+  display: flex;
+  align-items: center;
+  min-width: 15em;
+  position: absolute;
+  right: 1em;
+}
 </style>
 
 <script>
@@ -207,10 +225,11 @@ import { mapState } from "pinia";
 import { useCorpusStore } from "@/stores/corpusStore";
 import { getUserLocale } from "@/fluent";
 import Utils from "@/utils";
+import { useUserStore } from "@/stores/userStore";
 
 export default {
   name: "CorpusMetdataEdit",
-  props: ["corpus"],
+  props: ["corpus","allProjects"],
   data() {
     let corpusData = { ...this.corpus } || {};
     if (corpusData.meta && !corpusData.meta.language) {
@@ -222,10 +241,15 @@ export default {
     } catch {
       userLicense = this.corpus.meta.userLicense || "";
     }
+    if (corpusData.projects.length == 0)
+      corpusData.projects.push(corpusData.project_id);
+    const ownProjects = this.allProjects.filter(p=>corpusData.projects.includes(p.id));
     return {
       activeMainTab: "metadata",
       userLicense: userLicense,
       corpusData: corpusData,
+      isSuperAdmin: useUserStore().isSuperAdmin,
+      projects: ownProjects
     }
   },
   computed: {
@@ -256,6 +280,15 @@ export default {
     userLicense() {
       this.corpusData.meta.userLicense = btoa(this.userLicense);
     },
+    projects() {
+      while (this.corpusData.projects.length)
+        this.corpusData.projects.pop();
+      this.corpusData.projects.push(...this.projects.map(p=>p.id));
+      if (!this.corpusData.project_id || !this.projects.includes(this.corpusData.project_id))
+        this.corpusData.project_id = this.projects[0];
+      if (!this.corpusData.project || !this.projects.includes(this.corpusData.project))
+        this.corpusData.project = this.projects[0];
+    }
   },
 }
 </script>

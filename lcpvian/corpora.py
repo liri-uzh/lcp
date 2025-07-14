@@ -106,6 +106,20 @@ async def corpora_meta_update(request: web.Request) -> web.Response:
     }
     args_desc = (corpora_id, to_store_desc, request_data.get("lg") or "en")
     job_desc: Job = request.app["query_service"].update_descriptions(*args_desc)
+
+    jobs_payload = [str(job_meta.id), str(job_desc.id)]
+    if "projects" in request_data:
+        authenticator = request.app["auth_class"](request.app)
+        user_details: dict = await authenticator.user_details(request)
+        user: dict = user_details.get("user") or {}
+        assert user.get("superAdmin"), PermissionError(
+            "User is not authorized to update the project of this corpus"
+        )
+        pids = request_data["projects"] or ["00000000-0000-0000-0000-000000000000"]
+        job_update_projects: Job = request.app["query_service"].update_projects(
+            corpora_id, pids
+        )
+        jobs_payload.append(str(job_update_projects.id))
     info: dict[str, str | list[str]] = {
         "status": "1",
         "jobs": [str(job_meta.id), str(job_desc.id)],

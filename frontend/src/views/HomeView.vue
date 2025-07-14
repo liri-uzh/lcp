@@ -317,7 +317,11 @@
             <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
           </div>
           <div class="modal-body text-start fit-body" v-if="corpusModal">
-            <MetadataEdit :corpus="corpusModal" :key="modalIndexKey" />
+            <MetadataEdit
+              :corpus="corpusModal"
+              :key="modalIndexKey"
+              :allProjects="projects.filter((p,n)=>!projects.slice(n+1,).find(p2=>p2.id==p.id))"
+            />
           </div>
           <div class="modal-footer">
             <button type="button" class="btn btn-primary" data-bs-dismiss="modal" @click="saveModalCorpus">
@@ -395,8 +399,7 @@ export default {
       inviteEmails: '',
       currentProjectToSubmit: null,
       modalIndexKey: 0,
-
-      corpusStore: useCorpusStore(),
+      corpusStore: useCorpusStore()
     };
   },
   components: {
@@ -576,11 +579,15 @@ export default {
       }
     },
     async saveModalCorpus(){
-      let retval = await useCorpusStore().updateMeta({
+      const meta = {
         corpusId: this.corpusModal.corpus_id,
         metadata: this.corpusModal.meta,
-        descriptions: this.corpusModal.layer
-      });
+        descriptions: this.corpusModal.layer,
+      };
+      const isSuperAdmin = useUserStore().isSuperAdmin;
+      if (isSuperAdmin)
+        meta.projects = this.corpusModal.projects;
+      let retval = await useCorpusStore().updateMeta(meta);
       if (retval) {
         if (retval.status == false) {
           useNotificationStore().add({

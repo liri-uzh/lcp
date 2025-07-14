@@ -538,6 +538,36 @@ class QueryService:
         )
         return job
 
+    def update_projects(
+        self,
+        corpus_id: int,
+        project_ids: list,
+        queue: str = "internal",
+    ) -> Job:
+        """
+        Update which project(s) a corpus belongs to
+        """
+        kwargs = {
+            "store": True,
+            "is_main": True,  # query on main.*
+            "has_return": False,
+            "refresh_config": True,
+        }
+        args = {
+            "corpus_id": corpus_id,
+            "pid": str(project_ids[0]),
+            "pids": "[" + ",".join(f'"{str(pid)}"' for pid in project_ids) + "]",
+        }
+        query = f"""CALL main.update_corpus_projects(:corpus_id, :pid ::uuid, :pids ::text);"""
+        job: Job = self.app[queue].enqueue(
+            _db_query,
+            result_ttl=self.query_ttl,
+            job_timeout=self.timeout,
+            args=(query, args),
+            kwargs=kwargs,
+        )
+        return job
+
     def upload(
         self,
         user: str,
