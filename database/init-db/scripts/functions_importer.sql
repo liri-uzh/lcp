@@ -146,9 +146,20 @@ AS $$
            , $3
            , $4
            , $5
-   RETURNING *
+   RETURNING project_id
+           , created_at
+           , corpus_id
+           , current_version
+           , enabled
+           , corpus_template
+           , description
+           , mapping
+           , name
+           , sample_query
+           , schema_path
+           , token_counts
+           , version_history
            ;
-
    END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
