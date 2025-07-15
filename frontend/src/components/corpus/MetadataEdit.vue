@@ -549,6 +549,9 @@ a:hover {
   color: #ff6600;
   font-size: 6px;
 }
+#nav-group {
+  margin-bottom: 5em;
+}
 </style>
 
 <script>
