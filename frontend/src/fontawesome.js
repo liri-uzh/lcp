@@ -13,6 +13,7 @@ import {
   faCertificate,
   faChartSimple,
   faChartGantt,
+  faCircle,
   faCircleInfo,
   faCircleNodes,
   faCirclePlus,
@@ -67,6 +68,7 @@ library.add(faCaretRight);
 library.add(faChartSimple);
 library.add(faChartGantt);
 library.add(faCertificate);
+library.add(faCircle);
 library.add(faCircleInfo);
 library.add(faCircleNodes);
 library.add(faCirclePlus);

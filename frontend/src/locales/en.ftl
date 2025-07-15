@@ -128,6 +128,10 @@ common-zoom-in = Zoom In
 common-zoom-reset-default = Reset default
 common-zoom-fit-content = Fit content
 
+common-yes = Yes
+common-no = No
+common-mandatory-fields = Mandatory fields
+
 ## --------------- MENU ---------------
 
 menu-home = Home
@@ -153,6 +157,7 @@ modal-details-user-license = User defined
 
 modal-meta-metadata = Metadata
 modal-meta-structure = Structure
+modal-meta-swissubase = SWISSUbase
 modal-meta-name = Name
 modal-meta-url = URL
 modal-meta-authors = Authors
@@ -177,6 +182,33 @@ modal-meta-lg-swiss-german = Swiss German
 modal-meta-lg-romansh = Romansch
 modal-structure-no-desc = No Description
 
+modal-swissubase-header-1 = Publish your data directly to SWISSUbase using this form. To proceed, please provide the required information in the fields below.
+modal-swissubase-header-warning = Once your submission has been transferred from LCP to SWISSUbase, it can no longer be edited in LCP. Please note that the submission process is not yet complete at this stage. Since only the metadata is transferred to SWISSUbase, you still need to log in to the SWISSUbase web interface to finalize and complete the submission manually.
+modal-swissubase-api-access-token = SWISSUbase Access Token
+modal-swissubase-project-id = SWISSUbase Project ID
+modal-swissubase-dataset-title = Dataset Title
+modal-swissubase-dataset-language = Dataset Language
+modal-swissubase-dataset-description = Description
+modal-swissubase-request-doi = Request DOI
+modal-swissubase-dateset-documentation-remarks = Documentation Remarks
+modal-swissubase-dataset-version-note = Version Note
+modal-swissubase-dataset-url = Dataset URL
+modal-swissubase-resource-type = Resource type
+modal-swissubase-resource-description = Resource description
+modal-swissubase-resource-keywords = Keywords
+modal-swissubase-resource-validation-information = Validation information
+modal-swissubase-resource-validation-information = Validation information
+modal-swissubase-tab-project = Project
+modal-swissubase-tab-dataset = Dataset
+modal-swissubase-tab-resource = Resource
+modal-swissubase-tab-usage-license = Usage Licence
+modal-swissubase-confirm-text = Confirm that I have the right to publish this corpus on SWISSUbase
+modal-swissubase-confirm-info = Please complete all required fields and verify the API access token.
+modal-swissubase-submit-button = Send the data to SWISSUbase
+modal-swissubase-already-submitted = The data for this corpus has already been submitted to SWISSUbase on project ID
+modal-swissubase-verify-api-token = Verify API Token and Project ID
+modal-swissubase-invalid-project = The project is not valid
+modal-swissubase-valid-project = The API access token and project are valid
 
 # New/Edit project modal
 

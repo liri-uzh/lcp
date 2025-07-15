@@ -264,3 +264,7 @@ nav a.router-link-exact-active {
     margin-right: 0;
   }
 }
+
+.btn-light {
+  --bs-btn-bg: #e7e7e7;
+}

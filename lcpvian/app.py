@@ -62,6 +62,7 @@ from .query import post_query
 from .query_service import QueryService
 from .sock import listen_to_redis, sock, ws_cleanup
 from .store import fetch_queries, store_query, delete_query
+from .swissubase import swissubase_check_api, swissubase_submit
 from .typed import Endpoint, Task, Websockets
 from .upload import make_schema, upload
 from .lama import handle_lama_error
@@ -257,6 +258,8 @@ async def create_app(test: bool = False) -> web.Application:
         ("/upload", "POST", upload),
         ("/video", "GET", video),
         ("/ws", "GET", sock),
+        ("/swissubase/check_api", "POST", swissubase_check_api),
+        ("/swissubase/submit", "POST", swissubase_submit),
     ]
 
     for url, method, func in endpoints:
