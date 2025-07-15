@@ -644,7 +644,7 @@ export default {
       return !(this.SWISSUbaseSubmissionCheck && this.SWISSUbaseSubmissionFieldsCheck == 1)
     },
     isDisabled (){
-      return true;
+      return this.corpusData && this.corpusData.meta && this.corpusData.meta.swissubase && this.corpusData.meta.swissubase.submittedOn
     },
     canCheckAPISWISSUbaseToken() {
       return this.corpusData.meta.swissubase.apiAccessToken && this.corpusData.meta.swissubase.projectId;
