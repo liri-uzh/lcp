@@ -605,6 +605,23 @@ def _filter_corpora(
     return corpora
 
 
+def _remove_sensitive_fields_from_corpora(corpora: dict) -> dict:
+    """
+    Remove or obfuscate sensitive fields from corpora configuration, such as SWISSUbase tokens.
+    """
+    filtered = {}
+    for name, config in corpora.items():
+        config_copy = config.copy()
+        swissubase = config_copy.get("meta", {}).get("swissubase", {})
+
+        token = swissubase.get("apiAccessToken")
+        if token:
+            swissubase["apiAccessToken"] = f"{token[:3]}...{token[-3:]}"
+
+        filtered[name] = config_copy
+    return filtered
+
+
 def _row_to_value(
     tup: MainCorpus,
     project: str | None = None,
@@ -1367,7 +1384,7 @@ def get_segment_meta_script(
     meta AS ({meta_script})
 SELECT -1::int2 AS rstype, jsonb_build_array(preps.{seg.lower()}_id, preps.id_offset, preps.content{preps_annotations}) FROM preps
 UNION ALL
-SELECT -2::int2 AS rstype, jsonb_build_array({meta_array}) FROM meta;    
+SELECT -2::int2 AS rstype, jsonb_build_array({meta_array}) FROM meta;
     """
     print("segment_meta_script", script)
     return script, meta_select_labels

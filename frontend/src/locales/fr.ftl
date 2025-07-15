@@ -9,7 +9,7 @@ platform-soundscript = soundscript
 platform-videoscope = videoscope
 
 platform-general-description =
- La plateforme de corpus LCP par LiRI est une suite logicielle pour consulter différents types de corpus. 
+ La plateforme de corpus LCP par LiRI est une suite logicielle pour consulter différents types de corpus.
  Elle permet d'effectuer des recherches via un navigateur web, et d'importer des corpus via une interface de commande en ligne (cli).
 platform-general-no-permission = Vous n'êtes pas autorisé·e à explorer ce corpus. Veuillez consulter sa description pour plus d'information sur comment y obtenir accès.
 platform-general-access-restricted = L'accès à ce corpus nécessite de s'identifier.
@@ -128,6 +128,10 @@ common-zoom-in = Zoomer
 common-zoom-reset-default = Restaurer
 common-zoom-fit-content = Adapter au contenu
 
+common-yes = Oui
+common-no = Non
+common-mandatory-fields = Champs obligatoires
+
 ## --------------- MENU ---------------
 
 menu-home = Accueil
@@ -153,6 +157,7 @@ modal-details-user-license = Personnalisée
 
 modal-meta-metadata = Metadonnées
 modal-meta-structure = Structure
+modal-meta-swissubase = SWISSUbase
 modal-meta-name = Nom
 modal-meta-url = URL
 modal-meta-authors = Auteur·ice·s
@@ -165,7 +170,7 @@ modal-meta-license = Licence
 modal-meta-user-defined = Personnalisée
 modal-meta-user-license = Licence personnalisée
 modal-meta-sample = Requête exemple DQD
-modal-meta-warning-before = Vous modifiez les propriétés en 
+modal-meta-warning-before = Vous modifiez les propriétés en
 modal-meta-warning-after = . Changez la langue de l'interface pour éditer les propriétés dans cette langue.
 modal-meta-lg-undefined = Indéfini
 modal-meta-lg-english = Anglais
@@ -176,6 +181,33 @@ modal-meta-lg-spanish = Espagnol
 modal-meta-lg-swiss-german = Suisse allemand
 modal-meta-lg-romansh = Romanche
 modal-structure-no-desc = Pas de description
+
+modal-swissubase-header-1 = Publiez vos données directement sur SWISSUbase en utilisant ce formulaire. Pour continuer, veuillez fournir les informations requises dans les champs ci-dessous.
+modal-swissubase-header-warning = Une fois votre soumission transférée de LCP vers SWISSUbase, elle ne pourra plus être modifiée dans LCP. Veuillez noter que le processus de soumission n’est pas encore terminé à ce stade. Étant donné que seules les métadonnées sont transférées vers SWISSUbase, vous devez encore vous connecter à l’interface web de SWISSUbase pour finaliser manuellement la soumission.
+modal-swissubase-api-access-token = Jeton d’accès SWISSUbase
+modal-swissubase-project-id = ID du projet SWISSUbase
+modal-swissubase-dataset-title = Titre du jeu de données
+modal-swissubase-dataset-language = Langue du jeu de données
+modal-swissubase-dataset-description = Description
+modal-swissubase-request-doi = Demander un DOI
+modal-swissubase-dateset-documentation-remarks = Remarques sur la documentation
+modal-swissubase-dataset-version-note = Note de version
+modal-swissubase-dataset-url = URL du jeu de données
+modal-swissubase-resource-type = Type de ressource
+modal-swissubase-resource-description = Description de la ressource
+modal-swissubase-resource-keywords = Mots-clés
+modal-swissubase-resource-validation-information = Informations de validation
+modal-swissubase-tab-project = Projet
+modal-swissubase-tab-dataset = Jeu de données
+modal-swissubase-tab-resource = Ressource
+modal-swissubase-tab-usage-license = Licence d’utilisation
+modal-swissubase-confirm-text = Je confirme que j’ai le droit de publier ce corpus sur SWISSUbase
+modal-swissubase-confirm-info = Veuillez remplir tous les champs obligatoires !
+modal-swissubase-submit-button = Envoyer les données à SWISSUbase
+modal-swissubase-already-submitted = Les données pour ce corpus ont déjà été soumises à SWISSUbase sous l'identifiant de projet
+modal-swissubase-verify-api-token = Vérifier le jeton d'accès API et l'identifiant du projet
+modal-swissubase-invalid-project = Le projet n'est pas valide
+modal-swissubase-valid-project = Le jeton d'accès API et le projet sont valides
 
 
 # Modal nouveau projet/éditer
@@ -200,7 +232,7 @@ modal-project-invited = Utilisateur·ice·s invité·e·s
 modal-project-invite = Inviter des collaborateur·ice·s
 modal-project-invite-placeholder = Email (liste d'adresses séparées par des virgules)
 modal-project-invite-help = Séparez les adresses emails par des virgules.
-modal-project-issued = Générées le 
+modal-project-issued = Générées le
 modal-project-revoke-key = Révoquer la clé API
 modal-project-create-key = Créer une clé API
 

@@ -497,7 +497,7 @@ class QueryService:
         Update metadata for a corpus
         """
         # TODO: check localizableString in corpus_template schema instead?
-        MONOLINGUAL = {"name", "revision", "license", "language"}
+        MONOLINGUAL = {"name", "revision", "license", "language", "swissubase"}
 
         kwargs = {
             "store": True,

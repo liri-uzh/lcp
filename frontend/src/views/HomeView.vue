@@ -320,8 +320,9 @@
             <MetadataEdit
               :corpus="corpusModal"
               :key="modalIndexKey"
+              @submitSWISSUbase="submitModalSWISSUbase"
               :allProjects="projects.filter((p,n)=>!projects.slice(n+1,).find(p2=>p2.id==p.id))"
-            />
+             />
           </div>
           <div class="modal-footer">
             <button type="button" class="btn btn-primary" data-bs-dismiss="modal" @click="saveModalCorpus">
@@ -365,6 +366,7 @@
 <script>
 import { mapState } from "pinia";
 import { useCorpusStore } from "@/stores/corpusStore";
+import { useSWISSUbaseStore } from "@/stores/swissubaseStore";
 import { useProjectStore } from "@/stores/projectStore";
 import { useUserStore } from "@/stores/userStore";
 import { useNotificationStore } from "@/stores/notificationStore";
@@ -596,6 +598,11 @@ export default {
           });
         }
       }
+    },
+    async submitModalSWISSUbase() {
+      await this.saveModalCorpus();
+      useSWISSUbaseStore().submitSWISSUbase(this.corpusModal.corpus_id)
+      // console.log("Saving SWISSUbase corpus data");
     },
     corpusDataType: Utils.corpusDataType,
     // setTooltips() {
