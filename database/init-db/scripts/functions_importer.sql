@@ -137,7 +137,16 @@ AS $$
 
       RETURN QUERY
       INSERT
-        INTO main.corpus (name, current_version, project_id, corpus_template, schema_path, mapping, token_counts, sample_query)
+        INTO main.corpus AS c (
+               name
+             , current_version
+             , project_id
+             , corpus_template
+             , schema_path
+             , mapping
+             , token_counts
+             , sample_query
+             )
       SELECT corpus_name
            , next_version
            , project_id_in
@@ -146,19 +155,19 @@ AS $$
            , $3
            , $4
            , $5
-   RETURNING project_id
-           , created_at
-           , corpus_id
-           , current_version
-           , enabled
-           , corpus_template
-           , description
-           , mapping
-           , name
-           , sample_query
-           , schema_path
-           , token_counts
-           , version_history
+   RETURNING c.project_id
+           , c.created_at
+           , c.corpus_id
+           , c.current_version
+           , c.enabled
+           , c.corpus_template
+           , c.description
+           , c.mapping
+           , c.name
+           , c.sample_query
+           , c.schema_path
+           , c.token_counts
+           , c.version_history
            ;
    END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
