@@ -311,7 +311,12 @@
             <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
           </div>
           <div class="modal-body text-start" v-if="corpusModal">
-            <MetadataEdit :corpus="corpusModal" :key="modalIndexKey" @submitSWISSUbase="submitModalSWISSUbase" />
+            <MetadataEdit
+              :corpus="corpusModal"
+              :key="modalIndexKey"
+              @submitSWISSUbase="submitModalSWISSUbase"
+              :allProjects="getUniqueProjects"
+            />
           </div>
           <div class="modal-footer">
             <button type="button" class="btn btn-primary" data-bs-dismiss="modal" @click="saveModalCorpus">
@@ -667,7 +672,10 @@ export default {
       //   retval = _retval
       // }
       return sortedProjects;
-    }
+    },
+    getUniqueProjects() {
+      return this.projects.filter((p, n) => !this.projects.slice(n+1, ).find(p2 => p2.id == p.id))
+    },
   },
   mounted() {
     // this.setTooltips();

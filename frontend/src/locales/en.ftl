@@ -158,6 +158,7 @@ modal-details-user-license = User defined
 modal-meta-metadata = Metadata
 modal-meta-structure = Structure
 modal-meta-swissubase = SWISSUbase
+modal-meta-group = Group
 modal-meta-name = Name
 modal-meta-url = URL
 modal-meta-authors = Authors

@@ -22,17 +22,14 @@
       aria-selected="false" @click="activeMainTab = 'swissubase'">
       {{ $t('modal-meta-swissubase') }}
     </button>
-    <div class="group-selector" v-if="isSuperAdmin">
-      <span>Group:</span>
-      <multiselect
-        v-model="projects"
-        :options="allProjects"
-        :multiple="true"
-        label="title"
-        placeholder="Choose a project"
-        track-by="id"
-      ></multiselect>
-    </div>
+    <button
+      class="nav-link ms-auto" :class="{ active: activeMainTab === 'group' }" id="nav-group-tab"
+      data-bs-toggle="tab" data-bs-target="#nav-group" type="button" role="tab" aria-controls="nav-group"
+      aria-selected="false" @click="activeMainTab = 'group'"
+      v-if="isSuperAdmin"
+    >
+      {{ $t('modal-meta-group') }}
+    </button>
   </div>
   <div class="tab-content" id="nav-main-tabContent">
     <div class="tab-pane fade pt-3"
@@ -502,6 +499,27 @@
         </div>
       </div>
     </div>
+    <div
+      class="tab-pane fade pt-3"
+      :class="{ active: activeMainTab === 'group', show: activeMainTab === 'group' }"
+      id="nav-group"
+      role="tabpanel" aria-labelledby="nav-group-tab"
+      v-if="isSuperAdmin"
+    >
+      <div class="row">
+        <div class="col-6">
+          <span>Group:</span>
+          <multiselect
+            v-model="projects"
+            :options="allProjects"
+            :multiple="true"
+            label="title"
+            placeholder="Choose a project"
+            track-by="id"
+          ></multiselect>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -524,13 +542,6 @@ a:hover {
 .attribute {
   margin: 0.5em 0em 0.5em 1em
 }
-.group-selector {
-  display: flex;
-  align-items: center;
-  min-width: 15em;
-  position: absolute;
-  right: 1em;
-}
 .textarea-110 {
   height: 110px;
 }
@@ -550,7 +561,7 @@ import { useUserStore } from "@/stores/userStore";
 
 export default {
   name: "CorpusMetdataEdit",
-  props: ["corpus","allProjects"],
+  props: ["corpus", "allProjects"],
   data() {
     let corpusData = { ...this.corpus } || {};
     if (corpusData.meta && !corpusData.meta.language) {
