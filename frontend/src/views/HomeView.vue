@@ -321,7 +321,7 @@
               :corpus="corpusModal"
               :key="modalIndexKey"
               @submitSWISSUbase="submitModalSWISSUbase"
-              :allProjects="projects.filter((p,n)=>!projects.slice(n+1,).find(p2=>p2.id==p.id))"
+              :allProjects="getUniqueProjects"
              />
           </div>
           <div class="modal-footer">
@@ -686,7 +686,10 @@ export default {
       //   retval = _retval
       // }
       return sortedProjects;
-    }
+    },
+    getUniqueProjects() {
+      return this.projects.filter((p, n) => !this.projects.slice(n+1, ).find(p2 => p2.id == p.id))
+    },
   },
   mounted() {
     // this.setTooltips();
