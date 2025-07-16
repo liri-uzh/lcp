@@ -687,42 +687,53 @@ class QueryInfo:
         Map batch names with (batch_hash, n_kwic_lines)
         """
         query_batches: dict = {}
-        prefix: str = f"{self.hash}::query_batch::*"
-        for redis_key in self._connection.scan_iter(prefix):
-            rk = redis_key.decode("utf-8")
-            query_name = str(rk).split("::query_batch::")[-1]
+        for k in self.qi.get("query_batches", {}):
             try:
-                value = (self._connection.get(rk) or b"").decode("utf-8")
-                query_batches[query_name] = json.loads(value)
+                batch_key: str = f"{self.hash}::query_batch::{k}"
+                value = (self._connection.get(batch_key) or b"").decode("utf-8")
+                query_batches[k] = json.loads(value)
             except:
-                pass
+                print(f"Could not find batch {k} in Redis memory for qi {self.hash}")
         observer = lambda event, value, *_: self.__setattr__("query_batches", value)
         return cast(dict, ObservableDict(observer=observer, **query_batches))
 
     @query_batches.setter
     def query_batches(self, value: dict):
+        query_batches = self.qi.get("query_batches", {})
         for k, v in value.items():
+            if k not in query_batches:
+                query_batches[k] = False
             redis_key: str = f"{self.hash}::query_batch::{k}"
             self._connection.set(redis_key, json.dumps(v, cls=CustomEncoder))
             self._connection.expire(redis_key, MESSAGE_TTL)
+        self.update({"query_batches": query_batches})
 
     @property
     def segments_for_batch(self) -> dict[str, dict[str, dict[str, int]]]:
         """
         batch_hash->{segment_hash->segment_ids, segment_hash->segment_ids}
         """
-        segments_for_batch = self.qi.get("segments_for_batch", {})
-        return cast(
-            dict,
-            ObservableDict(
-                observer=self.get_observer("segments_for_batch"),
-                **segments_for_batch,
-            ),
+        segments_for_batch: dict = {}
+        prefix: str = f"{self.hash}::segments_for_batch::*"
+        for redis_key in self._connection.scan_iter(prefix):
+            rk = redis_key.decode("utf-8")
+            batch_name = str(rk).split("::segments_for_batch::")[-1]
+            try:
+                value = (self._connection.get(rk) or b"").decode("utf-8")
+                segments_for_batch[batch_name] = json.loads(value)
+            except:
+                pass
+        observer = lambda event, value, *_: self.__setattr__(
+            "segments_for_batch", value
         )
+        return cast(dict, ObservableDict(observer=observer, **segments_for_batch))
 
     @segments_for_batch.setter
-    def segments_for_batch(self, value: dict[str, dict[str, dict[str, int]]]):
-        self.update({"segments_for_batch": value})
+    def segments_for_batch(self, value: dict):
+        for k, v in value.items():
+            redis_key: str = f"{self.hash}::segments_for_batch::{k}"
+            self._connection.set(redis_key, json.dumps(v, cls=CustomEncoder))
+            self._connection.expire(redis_key, MESSAGE_TTL)
 
     def has_request(self, request: Request):
         return any(r.id == request.id for r in self.requests)
