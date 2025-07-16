@@ -7,7 +7,7 @@
         </div>
       </div>
       <div class="row mt-2">
-        <div class="col-4">
+        <div class="col-12 col-md-4">
           <div class="form-group row">
             <label for="staticEmail" class="col-sm-3 col-form-label">
               {{ $t('common-corpora') }}
@@ -110,7 +110,7 @@
                   </button>
                 </div>
                 <div class="row">
-                  <div class="col-6">
+                  <div class="col-12 col-md-6">
                     <div class="form-floating mb-3">
                       <nav>
                         <div class="nav nav-tabs justify-content-end" id="nav-query-tab" role="tablist">
@@ -144,7 +144,7 @@
                       <div class="tab-content" id="nav-query-tabContent">
                         <div class="tab-pane fade show active pt-3" id="nav-plaintext" role="tabpanel"
                           aria-labelledby="nav-plaintext-tab">
-                          <input class="form-control" type="text" placeholder="Query (e.g. a cat)" :class="isQueryValidData == null || isQueryValidData.valid == true
+                          <input class="form-control" type="text" :placeholder="$t('common-plain-query')" :class="isQueryValidData == null || isQueryValidData.valid == true
                             ? 'ok'
                             : 'error'
                             " v-model="textsearch" @keyup="$event.key == 'Enter' && this.submit()" />
@@ -167,7 +167,7 @@
                           </p>
                         </div>
                         <div class="tab-pane fade pt-3" id="nav-cqp" role="tabpanel" aria-labelledby="nav-cqp-tab">
-                          <textarea class="form-control query-field" placeholder="Query (e.g. [word=&quot;hello&quot;])"
+                          <textarea class="form-control query-field" :placeholder="$t('common-cqp-query')"
                             :class="isQueryValidData == null || isQueryValidData.valid == true
                               ? 'ok'
                               : 'error'
@@ -209,7 +209,7 @@
                       </button>
                       <div v-if="userQueryVisible()">
                         <multiselect v-model="selectedQuery" :options="processedSavedQueries" :searchable="true"
-                          :clear-on-select="false" :close-on-select="true" placeholder="Select a saved query"
+                          :clear-on-select="false" :close-on-select="true" :placeholder="$t('common-select-saved-queries')"
                           label="query_name" track-by="idx" @select="handleQuerySelection"></multiselect>
                         <!-- <p v-if="selectedQuery">
                           Selected query: {{ selectedQuery.query_name }}
@@ -217,7 +217,7 @@
                       </div>
                     </div>
                   </div>
-                  <div class="col-6">
+                  <div class="col-12 col-md-6">
                     <div class="corpus-graph mt-3" v-if="selectedCorpora">
                       <FontAwesomeIcon :icon="['fas', 'expand']" @click="openGraphInModal" data-bs-toggle="modal"
                         data-bs-target="#corpusDetailsModal" />
@@ -236,7 +236,7 @@
 
                 <hr>
                 <div class="mt-5 row" v-if="querySubmitted">
-                  <div class="col-6">
+                  <div class="col-12 col-md-6">
                     <h6 class="mb-2">{{ $t('common-query-result') }}</h6>
                     <div class="progress mb-2">
                       <div class="progress-bar" :class="loading ? 'progress-bar-striped progress-bar-animated' : ''
@@ -246,7 +246,7 @@
                       </div>
                     </div>
                   </div>
-                  <div class="col-6">
+                  <div class="col-12 col-md-6">
                     <h6 class="mb-2">{{ $t('common-total-progress') }}</h6>
                     <div class="progress mb-2">
                       <div class="progress-bar" :class="loading ? 'progress-bar-striped progress-bar-animated' : ''
@@ -328,6 +328,24 @@
                 <div class="mt-2">
                   <div class="row">
                     <div class="col-12" v-if="WSDataResults && WSDataResults.result">
+                      <div
+                        v-if="queryStatus in {'satisfied':1,'finished':1} && !loading && userData.user.anon != true"
+                        data-bs-toggle="modal"
+                        data-bs-target="#exportModal"
+                        @click="setExportFilename('xml')"
+                        class="export btn btn-primary me-1 mb-1"
+                        :title="$t('common-export')"
+                      >
+                        <FontAwesomeIcon :icon="['fas', 'file-export']" />
+                      </div>
+                      <div
+                        v-else
+                        class="export btn btn-primary me-1 mb-1"
+                        disabled="true"
+                        :title="$t('common-export')"
+                      >
+                        <FontAwesomeIcon :icon="['fas', 'file-export']" />
+                      </div>
                       <nav>
                         <div class="nav nav-tabs" id="nav-results-tabs" role="tablist">
                           <template
@@ -624,6 +642,13 @@
 </template>
 
 <style scoped>
+.export {
+  float: left;
+}
+.export[disabled=true] {
+  opacity: 0.5;
+  cursor: unset;
+}
 .lcp-progress-bar {
   position: fixed;
   width: 100%;
@@ -1213,7 +1238,6 @@ export default {
             this.requestId = null;
         } else if (data["action"] === "query_result") {
           useWsStore().addMessageForPlayer(data)
-          console.log("query_result", data);
           this.updateLoading(data.status);
           if (
             this.failedStatus &&
@@ -1278,6 +1302,8 @@ export default {
                 if (ranges)
                   value = [parseInt(ranges[1]),parseInt(ranges[2])];
               }
+              if (typeof(value) == "string")
+                value = value.trim();
               meta_object[layer][attr] = value;
             }
             this.WSDataMeta[segment_id] = meta_object;

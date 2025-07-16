@@ -87,15 +87,9 @@ AS $$
       template          jsonb;
    BEGIN
 
-      SELECT max(cv) + 1
-        FROM (
-                SELECT c.current_version AS cv
-                  FROM main.corpus            AS c
-                  JOIN main.inprogress_corpus AS t USING (corpus_id)
-                 WHERE t.schema_path = $1
-             UNION ALL
-                SELECT 0
-             ) AS x
+      SELECT coalesce(max(c.current_version), 0) + 1
+        FROM main.corpus AS c
+       WHERE c.schema_path ~ format('^%s_\d+', $2)
         INTO next_version
            ;
 
@@ -143,7 +137,16 @@ AS $$
 
       RETURN QUERY
       INSERT
-        INTO main.corpus (name, current_version, project_id, corpus_template, schema_path, mapping, token_counts, sample_query)
+        INTO main.corpus AS c (
+               name
+             , current_version
+             , project_id
+             , corpus_template
+             , schema_path
+             , mapping
+             , token_counts
+             , sample_query
+             )
       SELECT corpus_name
            , next_version
            , project_id_in
@@ -152,9 +155,20 @@ AS $$
            , $3
            , $4
            , $5
-   RETURNING *
+   RETURNING c.project_id
+           , c.created_at
+           , c.corpus_id
+           , c.current_version
+           , c.enabled
+           , c.corpus_template
+           , c.description
+           , c.mapping
+           , c.name
+           , c.sample_query
+           , c.schema_path
+           , c.token_counts
+           , c.version_history
            ;
-
    END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 

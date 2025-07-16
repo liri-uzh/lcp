@@ -106,6 +106,16 @@
   right: 0px;
   top: 0px;
 }
+
+@media screen and (max-width: 768px) {
+  .modal{
+    min-width: 90vw;
+  }
+
+  .modal-dialog{
+    max-width: 100%;
+  }
+}
 </style>
 
 <script>

@@ -5,20 +5,27 @@ import os
 import re
 import shutil
 
+from aiohttp import web
 from functools import cmp_to_key
 from io import TextIOWrapper
 from lxml.builder import E
+from redis import Redis as RedisConnection
+from rq import Callback, Queue
 from rq.job import get_current_job, Job
 from typing import Any, cast
+from uuid import uuid4
 
 from xml.sax.saxutils import escape, quoteattr
 
+from .callbacks import _general_failure
 from .jobfuncs import _handle_export
 from .query_classes import Request, QueryInfo
 from .typed import CorpusConfig
-from .utils import _get_mapping
+from .utils import _get_mapping, _publish_msg, sanitize_filename
 
+EXPORT_TTL = 5000
 RESULTS_DIR = os.getenv("RESULTS", "results")
+RESULTS_USERS = os.environ.get("RESULTS_USERS", os.path.join("results", "users"))
 
 
 def _token_value(val: str) -> str:
@@ -26,11 +33,17 @@ def _token_value(val: str) -> str:
         ret = json.loads(val)
     except:
         ret = val
-    return str(ret)
+    return "" if not ret else str(ret)
 
 
 def _xml_attr(s: str) -> str:
-    return escape(s.replace("(", "").replace(")", "").replace(" ", "_"))
+    return escape(
+        s.replace("(", "")
+        .replace(")", "")
+        .replace("[", "")
+        .replace("]", "")
+        .replace(" ", "_")
+    )
 
 
 def _node_to_string(node, prefix: str = "") -> str:
@@ -40,6 +53,26 @@ def _node_to_string(node, prefix: str = "") -> str:
     if prefix:
         ret = re.sub(r"(^|\n)(.)", "\\1  \\2", ret)
     return ret
+
+
+def _get_attributes(attrs: dict) -> tuple[str, str]:
+    """
+    Given a dictionary of attributes, return (simple,complex) attribute strings
+    """
+    attr_str = " ".join(
+        f"{_xml_attr(k)}={quoteattr(str(v))}"
+        for k, v in attrs.items()
+        if not isinstance(v, dict)
+    )
+    comp: list[str] = []
+    for complex_attribute, sub_attributes in attrs.items():
+        if not isinstance(sub_attributes, dict):
+            continue
+        sub_attrs_str = " ".join(
+            f"{_xml_attr(k)}={quoteattr(str(v))}" for k, v in sub_attributes.items()
+        )
+        comp.append(f"<{complex_attribute} {sub_attrs_str}/>")
+    return (attr_str, "".join(comp))
 
 
 def _get_indent(n: int) -> str:
@@ -147,6 +180,117 @@ class Exporter:
             requested_folder = os.path.join(requested_folder, "results.xml")
         return requested_folder
 
+    @staticmethod
+    def finish_immediately(
+        job: Job,
+        connection: RedisConnection,
+        result: Any,
+    ) -> None:
+        should_run: bool = cast(dict, job.kwargs).get("should_run", True)
+        if should_run:
+            return
+        qhash, _, _, offset, requested = job.args
+        full: bool = cast(dict, job.kwargs).get("full", False)
+        Exporter.finish_export_db(connection, qhash, offset, requested, requested, full)
+
+    @classmethod
+    def finish_export_db(
+        cls,
+        connection: RedisConnection,
+        qhash: str,
+        offset: int,
+        requested: int,
+        delivered: int,
+        full: bool,
+    ):
+        """
+        Mark an export in the DB as finished
+        """
+        q = Queue("internal", connection=connection)
+        q.enqueue(
+            _handle_export,  # init_export
+            on_failure=Callback(_general_failure),
+            args=(qhash, "xml"),
+            kwargs={
+                "create": False,
+                "offset": offset,
+                "requested": requested,
+                "delivered": delivered,
+                "path": cls.get_dl_path_from_hash(
+                    qhash, offset, requested, full, filename=True
+                ),
+            },
+        )
+        payload: dict[str, Any] = {
+            "action": "export_complete",
+            "hash": qhash,
+        }
+        _publish_msg(
+            connection,
+            payload,
+            msg_id=str(uuid4()),
+        )
+
+    @classmethod
+    def initiate_db(
+        cls,
+        app: web.Application,
+        shash: str,
+        config: dict,
+        request: Request,
+    ) -> bool:
+        """
+        Mark an export in the DB as initiated and return whether a query should be run
+        """
+        should_run: bool = True
+        to_export: dict = cast(dict, request.to_export)
+        xp_format: str = to_export.get("format", "xml") or "xml"
+        epath = app["exporters"][xp_format].get_dl_path_from_hash(
+            shash, request.offset, request.requested, request.full
+        )
+        ext: str = ".xml"  # ".db" if xp_format == "swissdox" else ".xml"
+        filename: str = cast(str, to_export.get("filename", ""))
+        cshortname = config.get("shortname")
+        if not filename:
+            filename = f"{cshortname} {datetime.datetime.now().strftime('%Y-%m-%d %I:%M%p')}{ext}"
+        filename = sanitize_filename(filename)
+        corpus_folder = sanitize_filename(cshortname or config.get("project_id", ""))
+        userpath: str = os.path.join(corpus_folder, filename)
+        suffix: int = 0
+        while os.path.exists(os.path.join(RESULTS_USERS, request.user, userpath)):
+            suffix += 1
+            userpath = os.path.join(
+                corpus_folder, f"{os.path.splitext(filename)[0]} ({suffix}){ext}"
+            )
+        filepath = app["exporters"][xp_format].get_dl_path_from_hash(
+            shash, request.offset, request.requested, request.full, filename=True
+        )
+        should_run = not os.path.exists(filepath)
+        app["internal"].enqueue(
+            _handle_export,  # init_export
+            on_success=Callback(cls.finish_immediately),
+            on_failure=Callback(_general_failure),
+            result_ttl=EXPORT_TTL,
+            job_timeout=EXPORT_TTL,
+            args=(shash, xp_format, True, request.offset, request.requested),
+            kwargs={
+                "user_id": request.user,
+                "userpath": userpath,
+                "corpus_id": request.corpus,
+                "should_run": should_run,
+                "full": request.full,
+            },
+        )
+        if should_run:
+            shutil.rmtree(epath)
+        else:
+            if not os.path.exists(userpath) and not os.path.islink(userpath):
+                try:
+                    os.symlink(os.path.abspath(filepath), userpath)
+                except Exception as e:
+                    print(f"Problem with creating symlink {filepath}->{userpath}", e)
+        return should_run
+
     @classmethod
     async def export(cls, request_id: str, qhash: str, payload: dict) -> None:
         """
@@ -188,21 +332,8 @@ class Exporter:
                 f"Exporting complete for request {request.id} (hash: {request.hash}) ; DELETED REQUEST"
             )
             qi.delete_request(request)
-            await _handle_export(  # finish_export
-                qi.hash,
-                "xml",
-                create=False,
-                offset=offset,
-                requested=requested,
-                delivered=delivered,
-                path=cls.get_dl_path_from_hash(
-                    qhash, offset, requested, full, filename=True
-                ),
-            )
-            qi.publish(
-                "placeholder",
-                "export",
-                {"action": "export_complete", "callback_query": None},
+            cls.finish_export_db(
+                qi._connection, qi.hash, offset, requested, delivered, full
             )
         except Exception as e:
             shutil.rmtree(cls.get_dl_path_from_hash(qhash, offset, requested, full))
@@ -275,7 +406,7 @@ class Exporter:
                 for a in self._qi.result_sets[k_in_rs]["attributes"]
                 if a["name"] == "entities"
             )
-            for sid, matches in res[k]:
+            for sid, matches, *_ in res[k]:
                 prefix = sid[0:3]
                 seg_path: str = self.get_working_path(prefix)
                 fpath = os.path.join(seg_path, f"{sid}_kwic.xml")
@@ -288,21 +419,30 @@ class Exporter:
                     kwic_output.write(str(matches_line) + "\n")
                     kwic_output.write(f"</hit>\n")
 
-    def format_tokens(self, offset: int, tokens: list) -> Any:
+    def build_token(self, tok_lab: str, n: int, token: list) -> Any:
+        tok = getattr(E, tok_lab)(
+            token[self._form_index],
+            id=str(n),
+            **{
+                _xml_attr(k): _token_value(v)
+                for k, v in zip(self._column_headers, token)
+                if k != "form" and not isinstance(v, dict)
+            },
+        )
+        for complex_attr, sub_attrs in zip(self._column_headers, token):
+            if not isinstance(sub_attrs, dict):
+                continue
+            tok.append(
+                getattr(E, _xml_attr(complex_attr))(
+                    **{_xml_attr(k): str(v) for k, v in sub_attrs.items()}
+                )
+            )
+        return tok
+
+    def build_tokens(self, offset: int, tokens: list) -> Any:
         config = self._config
         tok = config["token"]
-        return [
-            getattr(E, tok)(
-                t[self._form_index],
-                id=str(offset + n),
-                **{
-                    _xml_attr(k): quoteattr(_token_value(v))
-                    for k, v in zip(self._column_headers, t)
-                    if k != "form"
-                },
-            )
-            for n, t in enumerate(tokens)
-        ]
+        return [self.build_token(tok, offset + n, t) for n, t in enumerate(tokens)]
 
     def write_containees(
         self,
@@ -318,10 +458,8 @@ class Exporter:
         units = [all_layers[layer][cid] for cid in ids]
         units.sort(key=lambda x: int(x.get("char_range", "[0,0)")[1:].split(",")[0]))
         for unit in units:
-            attr_str = " ".join(
-                f"{_xml_attr(k)}={quoteattr(str(v))}" for k, v in unit.items()
-            )
-            output.write(f"\n<{layer} {attr_str}>")
+            attr_str, complex_attrs = _get_attributes(unit)
+            output.write(f"\n<{layer} {attr_str}>{complex_attrs}")
             if layer not in ordered_containers:
                 continue
             contained_layer, containees_by_cid = ordered_containers[layer]
@@ -419,15 +557,16 @@ class Exporter:
             seg_path = self.get_working_path(prefix)
             fpath = os.path.join(seg_path, f"{sid}.xml")
             with open(fpath, "w") as seg_output:
-                for token in self.format_tokens(offset, tokens):
+                for token in self.build_tokens(offset, tokens):
                     seg_output.write(_node_to_string(token))
         for top_id, attrs in all_layers[top_layer].items():
             fpath = os.path.join(work_path, f"{top_id}.xml")
             with open(fpath, "w") as doc_output:
-                attr_str = " ".join(
-                    f"{_xml_attr(k)}={quoteattr(str(v))}" for k, v in attrs.items()
-                )
-                doc_output.write(f"<{top_layer} {attr_str}>")
+                # attr_str = " ".join(
+                #     f"{_xml_attr(k)}={quoteattr(str(v))}" for k, v in attrs.items()
+                # )
+                attr_str, complex_attrs = _get_attributes(attrs)
+                doc_output.write(f"<{top_layer} {attr_str}>{complex_attrs}")
                 # contained layers (div, segs, etc.)
                 contained_layer, containees_by_top_id = ordered_containers[top_layer]
                 self.write_containees(
@@ -441,11 +580,14 @@ class Exporter:
                 for unordered_layer in unordered_layers_by_top:
                     for ul_id in unordered_layers_by_top[unordered_layer][top_id]:
                         ul_attrs = all_layers[unordered_layer][ul_id]
-                        ul_attr_str = " ".join(
-                            f"{_xml_attr(k)}={quoteattr(str(v))}"
-                            for k, v in ul_attrs.items()
+                        # ul_attr_str = " ".join(
+                        #     f"{_xml_attr(k)}={quoteattr(str(v))}"
+                        #     for k, v in ul_attrs.items()
+                        # )
+                        ul_attr_str, ul_complex_attrs = _get_attributes(ul_attrs)
+                        doc_output.write(
+                            f"\n<{unordered_layer} {ul_attr_str}>{ul_complex_attrs}"
                         )
-                        doc_output.write(f"\n<{unordered_layer} {ul_attr_str}>")
         print(
             f"[Export {self._request.id}] Done processing segments for {batch_hash} (QI {self._request.hash})"
         )
@@ -465,7 +607,7 @@ class Exporter:
         )
         wpath = self.get_working_path()
         with open(os.path.join(opath, "results.xml"), "w") as output:
-            output.write('<?xml version="1.0" encoding="utf_8"?>\n')
+            output.write('<?xml version="1.0" encoding="UTF-8"?>\n')
             output.write("<results>\n")
             config = self._config
             last_payload = {}
@@ -494,11 +636,9 @@ class Exporter:
             output.write(_node_to_string(query_node, prefix="  "))
             # STATS
             if self._qi.stats_keys:
-                output.write("  <stats>\n")
                 with open(os.path.join(wpath, "stats.xml"), "r") as stats_input:
                     while line := stats_input.readline():
-                        output.write("    " + line)
-                output.write("  </stats>\n")
+                        output.write("  " + line)
             if not self._qi.kwic_keys:
                 print(f"[Export {self._request.id}] Complete (QI {self._request.hash})")
                 return

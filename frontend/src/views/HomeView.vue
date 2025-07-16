@@ -131,13 +131,13 @@
                     <p class="word-count">
                       <template v-if="corpus.partitions">
                         <span
-                          class="badge text-bg-primary me-1 tooltips" :title="$t('common-partition')"
+                          class="badge text-bg-primary me-1 tooltips" :title="this.getLanguage(language)"
                           v-for="language in corpus.partitions.values"
                           v-html="language.toUpperCase()" :key="`${corpus.id}-${language}`"
                         ></span>
                       </template>
                       <span
-                        class="badge text-bg-primary me-1 tooltips" :title="$t('common-partition')"
+                        class="badge text-bg-primary me-1 tooltips" :title="this.getLanguage(corpus.meta.language)"
                         v-if="!(corpus.partitions) && corpus.meta.language"
                         v-html="corpus.meta.language.toUpperCase()"
                       ></span>
@@ -191,6 +191,7 @@
                       class="tooltips icon-x"
                       target="_blank"
                       :title="$t('platform-general-user-license')"
+                      @click.stop="openCorpusDetailsModal(corpus)"
                       v-if="corpus.meta.license == 'user-defined'"
                     >
                       <FontAwesomeIcon :icon="['fas', 'certificate']" />
@@ -316,7 +317,12 @@
             <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
           </div>
           <div class="modal-body text-start fit-body" v-if="corpusModal">
-            <MetadataEdit :corpus="corpusModal" :key="modalIndexKey" />
+            <MetadataEdit
+              :corpus="corpusModal"
+              :key="modalIndexKey"
+              @submitSWISSUbase="submitModalSWISSUbase"
+              :allProjects="getUniqueProjects"
+             />
           </div>
           <div class="modal-footer">
             <button type="button" class="btn btn-primary" data-bs-dismiss="modal" @click="saveModalCorpus">
@@ -360,9 +366,11 @@
 <script>
 import { mapState } from "pinia";
 import { useCorpusStore } from "@/stores/corpusStore";
+import { useSWISSUbaseStore } from "@/stores/swissubaseStore";
 import { useProjectStore } from "@/stores/projectStore";
 import { useUserStore } from "@/stores/userStore";
 import { useNotificationStore } from "@/stores/notificationStore";
+import { availableLanguages } from "@/fluent";
 
 import Title from "@/components/TitleComponent.vue";
 import ProjectNewView from "@/components/project/NewView.vue";
@@ -393,8 +401,7 @@ export default {
       inviteEmails: '',
       currentProjectToSubmit: null,
       modalIndexKey: 0,
-
-      corpusStore: useCorpusStore(),
+      corpusStore: useCorpusStore()
     };
   },
   components: {
@@ -406,6 +413,13 @@ export default {
   },
   methods: {
     hasAccessToCorpus: Utils.hasAccessToCorpus,
+    getLanguage(lg) {
+      const avLg = availableLanguages.find(v=>v.value.toLowerCase() == lg.toLowerCase());
+      if (avLg)
+        return avLg.name;
+      else
+        return lg;
+    },
     projectIcons(project) {
       let icons = ['fas']
       if (project.isPublic == true || project.isSemiPublic == true) {
@@ -567,11 +581,15 @@ export default {
       }
     },
     async saveModalCorpus(){
-      let retval = await useCorpusStore().updateMeta({
+      const meta = {
         corpusId: this.corpusModal.corpus_id,
         metadata: this.corpusModal.meta,
-        descriptions: this.corpusModal.layer
-      });
+        descriptions: this.corpusModal.layer,
+      };
+      const isSuperAdmin = useUserStore().isSuperAdmin;
+      if (isSuperAdmin)
+        meta.projects = this.corpusModal.projects;
+      let retval = await useCorpusStore().updateMeta(meta);
       if (retval) {
         if (retval.status == false) {
           useNotificationStore().add({
@@ -580,6 +598,11 @@ export default {
           });
         }
       }
+    },
+    async submitModalSWISSUbase() {
+      await this.saveModalCorpus();
+      useSWISSUbaseStore().submitSWISSUbase(this.corpusModal.corpus_id)
+      // console.log("Saving SWISSUbase corpus data");
     },
     corpusDataType: Utils.corpusDataType,
     // setTooltips() {
@@ -603,12 +626,14 @@ export default {
     ...mapState(useCorpusStore, ["queryData", "corpora"]),
     ...mapState(useUserStore, ["projects", "userData"]),
     projectsGroups() {
-      let projects = {}
+      const isSuperAdmin = useUserStore().isSuperAdmin;
+      let projects = {};
       let projectIds = [];
       this.projects.forEach((project) => {
         let isPublic = project.additionalData && project.additionalData.public == true;
         let isSemiPublic = project.additionalData && project.additionalData.semiPublic == true;
         projectIds.push(project.id);
+        if (isSuperAdmin) project.isAdmin = true;
         projects[project.id] = {
           ...project,
           corpora: [],
@@ -616,8 +641,8 @@ export default {
           isSemiPublic: isSemiPublic,
         };
       });
-      let publicProjects = this.projects.filter(project => project.additionalData && project.additionalData.public == true)
-      let publicProjectId = publicProjects.length ? publicProjects[0].id : -1
+      let publicProjects = this.projects.filter(project => project.additionalData && project.additionalData.public == true);
+      let publicProjectId = publicProjects.length ? publicProjects[0].id : -1;
 
       this.corpora.forEach((corpus) => {
         corpus.projects.forEach(projectId => {
@@ -661,7 +686,10 @@ export default {
       //   retval = _retval
       // }
       return sortedProjects;
-    }
+    },
+    getUniqueProjects() {
+      return this.projects.filter((p, n) => !this.projects.slice(n+1, ).find(p2 => p2.id == p.id))
+    },
   },
   mounted() {
     // this.setTooltips();

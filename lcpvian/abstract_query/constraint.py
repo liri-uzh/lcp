@@ -452,6 +452,7 @@ class Constraint:
         ref_mapping: dict[str, Any],
         value: str,
         value_type: str,
+        case_insensitive: bool = True,
     ) -> tuple[str, str]:
         assert op.lower().endswith("contain"), SyntaxError(
             f"Must use 'contain' on labels (attempted to use {op} instead)"
@@ -460,7 +461,9 @@ class Constraint:
             f"Contained labels can only be tested against strings or regexes"
         )
         lookup_table = ref_mapping.get("name", "")
-        inner_op = "~" if value_type == "regex" else "="
+        inner_op = (
+            f"~{'*' if case_insensitive else ''}" if value_type == "regex" else "="
+        )
         dummy_mask = "".join(["0" for _ in range(nbit)])
         inner_condition = (
             f"(SELECT COALESCE(bit_or(1::bit({nbit})<<bit)::bit({nbit}), b'{dummy_mask}') AS m "
@@ -503,6 +506,19 @@ class Constraint:
 
         left_type = left_info.get("type", "")
         right_type = right_info.get("type", "")
+
+        if self.op.lower().endswith("contain"):
+            assert left_type in ("labels", "array", ""), SyntaxError(
+                f"Cannot use the 'contain' operator on the attribute '{left}'"
+            )
+            if left_type != "labels":
+                assert right_type == "string", NotImplementedError(
+                    f"Cannot test whether the attribute '{left}' contains non-string-like terms"
+                )
+                left_type, right_type = ("", "")
+                formed_condition = f"({left})::jsonb ? ({right})::text"
+                if self.op.startswith(("!", "not", "NOT")):
+                    formed_condition = f"NOT ({formed_condition})"
 
         if "id" in (left_type, right_type):
             assert self.op in ("=", "!="), SyntaxError(
@@ -566,8 +582,18 @@ class Constraint:
             value_type: str = right_type if labels_left else left_type
             labels_meta = (left_info if labels_left else right_info).get("meta")
             nbit = cast(int, (labels_meta or {}).get("nbit", 1))
+            case_insensitive = "caseInsensitive" in cast(
+                dict, (right_info if labels_left else left_info)
+            ).get("meta", {})
             (parsed_op, mask) = self.join_labels_table(
-                ref, ref_layer, nbit, self.op, ref_mapping, value, value_type
+                ref,
+                ref_layer,
+                nbit,
+                self.op,
+                ref_mapping,
+                value,
+                value_type,
+                case_insensitive,
             )
             formed_condition = f"{ref} & {mask}.m {parsed_op} 0::bit({nbit})"
 

@@ -22,12 +22,23 @@
           v-for="(item, resultIndex) in results"
           :key="`tr-results-${resultIndex}`"
           :data-index="resultIndex"
+          :class="resultIndex == this.selectedLine ? 'selected' : ''"
           @mousemove="hoverResultLine(resultIndex)"
           @mouseleave="hoverResultLine(null)"
+          @click="selectedLine = resultIndex"
         >
           <td scope="row" class="results">
             <span :title="$t('common-copy-clipboard')" @click="copyToClip(item)" class="action-button">
               <FontAwesomeIcon :icon="['fas', 'copy']" />
+            </span>
+            <span
+              v-if="'mediaSlots' in corpora.corpus.meta"
+              class="timetag"
+              :title="meta[data[resultIndex][0]][corpora.corpus.firstClass.document].name"
+            >
+              {{
+                this.getTimestamps(...this.getFrameRange(resultIndex, this.corpora.corpus.firstClass.segment)).join(" ")
+              }}
             </span>
             <span :title="$t('common-play-audio')" @click="playAudio(resultIndex)" class="action-button" v-if="showAudio(resultIndex)">
               <FontAwesomeIcon :icon="['fas', 'play']" />
@@ -180,7 +191,15 @@
         <template v-for="(meta, layer) in currentMeta" :key="`th-${layer}`">
           <tr v-if="layer in allowedMetaColums">
             <td @click="this.meta_fold(layer, /*flip=*/true)">
-              <span class="text-bold">{{ this.meta_fold(layer) ? "&#9662;" : "&#9656;" }}{{ layer }}</span>
+              <span class="text-bold">{{ this.meta_fold(layer) ? "&#9662;" : "&#9656;" }}{{ layer }}
+                <span v-if="'mediaSlots' in corpora.corpus.meta" class="timetag nowrap">
+                  {{
+                    this.getTimestamps(...meta.frame_range
+                      .map(fr=>fr-currentMeta[corpora.corpus.firstClass.document].frame_range[0])
+                    ).join(' - ')
+                  }}
+                </span>
+              </span>
               <table class="popover-deatils-table mb-2">
                 <template v-for="(meta_value, meta_key) in meta" :key="`${layer}-${meta_key}`">
                   <tr v-if="allowedMetaColums[layer].includes(meta_key) && (meta_value || meta_fold(layer))">
@@ -293,6 +312,9 @@
 </template>
 
 <style scoped>
+tr.selected {
+  outline: solid 2px green;
+}
 td.icons {
   min-width: 100px;
 }
@@ -301,6 +323,23 @@ td.buttons {
 }
 td.results {
   width: 100%;
+}
+span.timetag {
+  display: inline-block;
+  white-space: wrap;
+  width: 5em;
+  text-align: center;
+  font-size: 0.8em;
+  background: beige;
+  box-shadow: 0px 0px 3px black;
+  border-radius: 0.25em;
+  margin-right: 0.5em;
+  transform: translateY(0.25em);
+}
+span.timetag.nowrap {
+  width: unset;
+  white-space: nowrap;
+  transform: translateY(-0.25em);
 }
 span.action-button {
   cursor: pointer;
@@ -470,7 +509,7 @@ class TokenToDisplay {
 
 export default {
   name: "ResultsPlainTableView",
-  emits: ["updatePage", "hoverResultLine"],
+  emits: ["updatePage", "hoverResultLine", "playMedia"],
   props: [
     "data",
     "sentences",
@@ -493,8 +532,10 @@ export default {
         ];
         if ("meta" in allowedMetaColums)
           delete allowedMetaColums.meta;
+        if (this.corpora.corpus.meta.mediaSlots && layer == this.corpora.corpus.firstClass.document)
+          allowedMetaColums[layer].push("name");
       }
-    })
+    });
 
     return {
       popoverY: 0,
@@ -510,7 +551,8 @@ export default {
       groups: this.data ? this.getGroups(this.data[0], true) : [],
       randInt: Math.floor(Math.random() * 1000),
       playIndex: -1,
-      image: null
+      image: null,
+      selectedLine: -1
     };
   },
   components: {
@@ -580,6 +622,15 @@ export default {
         for (let k in submeta) {
           if (k in this.currentMeta[layer]) continue;
           this.currentMeta[layer][k] = submeta[k];
+        }
+        for (let k in this.currentMeta[layer]) {
+          const isString = typeof(submeta[k]) == "string";
+          if (isString)
+            this.currentMeta[layer][k] = this.currentMeta[layer][k].trim();
+          if (isString && this.currentMeta[layer][k].match(/^0+(\.0+)?$/))
+            this.currentMeta[layer][k] = "<span>0</span>";
+          if (typeof(this.currentMeta[layer][k]) == "object" && Object.keys(this.currentMeta[layer][k]).length == 0)
+            this.currentMeta[layer][k] = null;
         }
       }
       this.popoverY = event.clientY + 10;
@@ -737,6 +788,28 @@ export default {
       }
       return retval;
     },
+    getTimestamps(lower_frame, upper_frame) {
+      const lfs = lower_frame / 25.0;
+      const ufs = upper_frame / 25.0;
+      let min_l = Math.floor(lfs / 60);
+      let min_u = Math.floor(ufs / 60);
+      let sec_l = Math.round(100 * (lfs % 60)) / 100;
+      let sec_u = Math.round(100 * (ufs % 60)) / 100;
+      if (min_l < 10) min_l = `0${min_l}`;
+      if (min_u < 10) min_u = `0${min_u}`;
+      if (sec_l < 10) sec_l = `0${sec_l}`;
+      if (sec_u < 10) sec_u = `0${sec_u}`;
+      return [`${min_l}:${sec_l}`, `${min_u}:${sec_u}`];
+    },
+    getFrameRange(resultIndex, layer) {
+      const sentenceId = this.data[resultIndex][0];
+      const meta = this.meta[sentenceId];
+      const docLayer = this.corpora.corpus.firstClass.document;
+      if (!meta || !(layer in meta) || !(docLayer in meta))
+        return [0,0];
+      const docLower = meta[docLayer].frame_range[0];
+      return meta[layer].frame_range.map(fr=>fr-docLower);
+    },
     playAudio(resultIndex) {
       this.$refs.audioplayer.pause();
       resultIndex = resultIndex + (this.currentPage - 1) * this.resultsPerPage;
@@ -746,9 +819,9 @@ export default {
         // corpus tamplete,
         let documentId = meta[this.corpora.corpus.firstClass.document].id;
         let filename = this.getAudio(resultIndex); // meta[this.corpora.corpus.firstClass.document].audio
-        let startFrame = meta[this.corpora.corpus.firstClass.document].frame_range[0]
-        let startTime = (meta[this.corpora.corpus.firstClass.segment].frame_range[0] - startFrame)/25.
-        let endTime = (meta[this.corpora.corpus.firstClass.segment].frame_range[1] - startFrame)/25.
+        let [startFrameSeg, endFrameSeg] = this.getFrameRange(resultIndex, this.corpora.corpus.firstClass.segment);
+        let startTime = startFrameSeg / 25.0;
+        let endTime = endFrameSeg / 25.0;
 
         this.$emit("playMedia", {
           documentId: documentId,
@@ -756,52 +829,7 @@ export default {
           startTime: startTime,
           endTime: endTime,
           type: "audio"
-        })
-        // console.log(filename, startTime, endTime)
-        // let startTime = meta["Utterance"].start
-        // let endTime = meta[this.corpora.corpus.firstClass.segment].end
-        // if (filename) {
-        //   // TODO: get path from config
-        //   this.$refs.audioplayer.src = this.baseMediaUrl + filename;
-        //   this.$refs.audioplayer.currentTime = startTime;
-        //   this.$refs.audioplayer.ontimeupdate = () => {
-        //     if (this.$refs.audioplayer.currentTime >= endTime) {
-        //       this.$refs.audioplayer.pause();
-        //     }
-        //   };
-        //   this.$refs.audioplayer.play();
-        //   try {
-        //     const wavesurfer = WaveSurfer.create({
-        //       container: `.audioplayer-${resultIndex}`,
-        //       waveColor: '#4F4A85',
-        //       progressColor: '#383351',
-        //       url: this.baseMediaUrl + filename,
-        //       // media: this.$refs.audioplayer, // <- this is the important part
-        //       height: 32
-        //     })
-        //     wavesurfer.on('interaction', () => {
-        //       wavesurfer.play()
-        //     })
-        //     // Initialize the Regions plugin
-        //     const wsRegions = wavesurfer.registerPlugin(RegionsPlugin.create())
-        //     // Create some regions at specific time ranges
-        //     wavesurfer.on('decode', () => {
-        //       // Regions
-        //       wsRegions.addRegion({
-        //         start: startTime,
-        //         end: endTime,
-        //         content: '',
-        //         color: 'rgba(255, 0, 0, 0.1)',
-        //         drag: false,
-        //         resize: false,
-        //       })
-        //     })
-        //   }
-        //   catch (e){
-        //     console.log("Couldn't create the waveform", e);
-        //   }
-        //   this.playIndex = resultIndex;
-        // }
+        });
       }
     },
     showVideo(resultIndex) {
@@ -823,16 +851,16 @@ export default {
       if (meta) {
         let documentId = meta[this.corpora.corpus.firstClass.document].id;
         let filename = this.getAudio(resultIndex); // meta[this.corpora.corpus.firstClass.document].audio
-        let startFrame = meta[this.corpora.corpus.firstClass.document].frame_range[0]
-        let endFrame = meta[this.corpora.corpus.firstClass.document].frame_range[1]
-        let startTime = (meta[this.corpora.corpus.firstClass.segment].frame_range[0] - startFrame)/25.
-        let endTime = (meta[this.corpora.corpus.firstClass.segment].frame_range[1] - startFrame)/25.
+        let [startFrameDoc, endFrameDoc] = this.getFrameRange(resultIndex, this.corpora.corpus.firstClass.document);
+        let [startFrameSeg, endFrameSeg] = this.getFrameRange(resultIndex, this.corpora.corpus.firstClass.segment);
+        let startTime = startFrameSeg / 25.0;
+        let endTime = endFrameSeg / 25.0;
 
         this.$emit("playMedia", {
           documentId: documentId,
           filename: filename,
-          startFrame: startFrame,
-          endFrame: endFrame,
+          startFrame: startFrameDoc,
+          endFrame: endFrameDoc,
           startTime: startTime,
           endTime: endTime,
           type: "video"

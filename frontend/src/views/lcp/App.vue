@@ -49,8 +49,19 @@
           </ul>
           <ul class="navbar-nav ms-auto">
             <li>
-              <multiselect v-model="language" @select="changeLanguage" :options="languageOptions" track-by="name" label="name" :searchable="false" :close-on-select="true" :show-labels="false" :allow-empty="false"
-                 placeholder="English" aria-label="Select a language">
+              <multiselect
+                v-model="language"
+                @select="changeLanguage"
+                :options="languageOptions"
+                track-by="name"
+                label="name"
+                :searchable="false"
+                :close-on-select="true"
+                :show-labels="false"
+                :allow-empty="false"
+                placeholder="English"
+                aria-label="Select a language"
+                >
                 </multiselect>
             </li>
             <li class="nav-item" v-if="debug">
@@ -158,9 +169,13 @@ export default {
 </script>
 
 <style scoped>
-.version-number {
-  font-size: 80% !important;
-  opacity: 0.75;
-  margin-top: 2px;
-}
+  .navbar{
+    max-width: 100vw;
+  }
+
+  .version-number {
+    font-size: 80% !important;
+    opacity: 0.75;
+    margin-top: 2px;
+  }
 </style>

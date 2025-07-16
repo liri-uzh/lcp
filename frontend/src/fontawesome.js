@@ -12,12 +12,15 @@ import {
   faCaretRight,
   faCertificate,
   faChartSimple,
+  faChartGantt,
+  faCircle,
   faCircleInfo,
   faCircleNodes,
   faCirclePlus,
   faCircleQuestion,
   faCopy,
   faDatabase,
+  faDownload,
   faExpand,
   faFileExport,
   faFont,
@@ -31,6 +34,7 @@ import {
   faMagnifyingGlassChart,
   faMagnifyingGlassMinus,
   faMagnifyingGlassPlus,
+  faMobileScreenButton,
   faMusic,
   faPause,
   faPlay,
@@ -62,13 +66,16 @@ library.add(faCaretDown);
 library.add(faCaretLeft);
 library.add(faCaretRight);
 library.add(faChartSimple);
+library.add(faChartGantt);
 library.add(faCertificate);
+library.add(faCircle);
 library.add(faCircleInfo);
 library.add(faCircleNodes);
 library.add(faCirclePlus);
 library.add(faCircleQuestion);
 library.add(faCopy);
 library.add(faDatabase);
+library.add(faDownload);
 library.add(faExpand);
 library.add(faFileExport);
 library.add(faFont);
@@ -82,6 +89,7 @@ library.add(faMagnifyingGlass);
 library.add(faMagnifyingGlassChart);
 library.add(faMagnifyingGlassMinus);
 library.add(faMagnifyingGlassPlus);
+library.add(faMobileScreenButton);
 library.add(faMusic);
 library.add(faPause);
 library.add(faPlay);

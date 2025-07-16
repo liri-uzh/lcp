@@ -22,7 +22,7 @@ ALTER PROCEDURE main.update_corpus_meta
   SET search_path = pg_catalog,pg_temp;
 
 REVOKE EXECUTE ON PROCEDURE main.update_corpus_meta FROM public;
-GRANT EXECUTE ON PROCEDURE main.update_corpus_meta TO lcp_production_web_user;
+GRANT EXECUTE ON PROCEDURE main.update_corpus_meta TO lcp_production_importer;
 
 
 CREATE OR REPLACE PROCEDURE main.update_corpus_descriptions(
@@ -93,4 +93,32 @@ ALTER PROCEDURE main.update_corpus_descriptions
   SET search_path = pg_catalog,pg_temp;
 
 REVOKE EXECUTE ON PROCEDURE main.update_corpus_descriptions FROM public;
-GRANT EXECUTE ON PROCEDURE main.update_corpus_descriptions TO lcp_production_owner;
+GRANT EXECUTE ON PROCEDURE main.update_corpus_descriptions TO lcp_production_importer;
+
+
+CREATE OR REPLACE PROCEDURE main.update_corpus_projects(
+   corpus_id         int
+ , pid               uuid
+ , pids              text
+)
+AS $$
+   BEGIN
+      UPDATE main.corpus mc
+         SET project_id = $2
+         WHERE mc.corpus_id = $1;
+
+      UPDATE main.corpus mc
+         SET corpus_template = jsonb_set(mc.corpus_template, '{project}', ('"' || $2::text || '"')::jsonb)
+         WHERE mc.corpus_id = $1;
+
+      UPDATE main.corpus mc
+         SET corpus_template = jsonb_set(mc.corpus_template, '{projects}', $3::jsonb)
+         WHERE mc.corpus_id = $1;
+   END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+ALTER PROCEDURE main.update_corpus_projects
+  SET search_path = pg_catalog,pg_temp;
+
+REVOKE EXECUTE ON PROCEDURE main.update_corpus_projects FROM public;
+GRANT EXECUTE ON PROCEDURE main.update_corpus_projects TO lcp_production_importer;

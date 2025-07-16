@@ -2,18 +2,21 @@ import { FluentBundle, FluentResource } from '@fluent/bundle';
 import { createFluentVue } from 'fluent-vue';
 import enMessages from './locales/en.ftl';
 import itMessages from './locales/it.ftl';
+import frMessages from './locales/fr.ftl';
 
 export const availableLanguages = [
-  { name: 'English', value: 'en' },
-  { name: 'Italiano', value: 'it' }
+  { name: 'English', value: 'en', messages: enMessages },
+  { name: 'Italiano', value: 'it', messages: itMessages },
+  { name: 'Français', value: 'fr', messages: frMessages }
 ]
 const defaultLocale = availableLanguages[0]
 
 // Create bundles for locales that will be used
-const enBundle = new FluentBundle('en');
-enBundle.addResource(new FluentResource(enMessages));
-const itBundle = new FluentBundle('it');
-itBundle.addResource(new FluentResource(itMessages));
+const bundles = Object.fromEntries(availableLanguages.map(({value, messages})=>{
+  const bundle = new FluentBundle(value);
+  bundle.addResource(new FluentResource(messages));
+  return [value, bundle];
+}));
 
 // Function to get the user’s preferred locale
 export function getUserLocale() {
@@ -30,11 +33,9 @@ export function getUserLocale() {
   // Otherwise, check the browser language
   const browserLocale = navigator.language || navigator.userLanguage;
   // If the browser language starts with "it", use Italian; otherwise default to English
-  if (browserLocale && browserLocale.toLowerCase().startsWith('en')) {
-    return { name: 'English', value: 'en' };
-  } else if (browserLocale && browserLocale.toLowerCase().startsWith('it')) {
-    return { name: 'Italiano', value: 'it' };
-  }
+  const locale = availableLanguages.find(({value})=>browserLocale && browserLocale.toLowerCase().startsWith(value));
+  if (locale)
+    return locale;
 
   return defaultLocale;
 }
@@ -44,7 +45,7 @@ const initialLocale = getUserLocale();
 // Create plugin istance
 // bundles - The current negotiated fallback chain of languages
 export const fluent = createFluentVue({
-  bundles: [initialLocale.value === 'en' ? enBundle : itBundle]
+  bundles: [initialLocale.value in bundles ? bundles[initialLocale.value] : bundles.en]
 });
 
 export function changeLocale(locale) {
@@ -52,11 +53,8 @@ export function changeLocale(locale) {
   // console.log('language changed', locale);
   localStorage.setItem('locale', JSON.stringify(locale));
 
-  if (locale.value === 'en') {
-    fluent.bundles = [enBundle];
-  } else if (locale.value === 'it') {
-    fluent.bundles = [itBundle];
-  } else {
-    fluent.bundles = [enBundle];
-  }
+  if (locale.value in bundles)
+    fluent.bundles = [bundles[locale.value]];
+  else
+    fluent.bundles = [bundles.en];
 }

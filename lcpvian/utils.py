@@ -605,6 +605,23 @@ def _filter_corpora(
     return corpora
 
 
+def _remove_sensitive_fields_from_corpora(corpora: dict) -> dict:
+    """
+    Remove or obfuscate sensitive fields from corpora configuration, such as SWISSUbase tokens.
+    """
+    filtered = {}
+    for name, config in corpora.items():
+        config_copy = config.copy()
+        swissubase = config_copy.get("meta", {}).get("swissubase", {})
+
+        token = swissubase.get("apiAccessToken")
+        if token:
+            swissubase["apiAccessToken"] = f"{token[:3]}...{token[-3:]}"
+
+        filtered[name] = config_copy
+    return filtered
+
+
 def _row_to_value(
     tup: MainCorpus,
     project: str | None = None,
@@ -974,6 +991,12 @@ def _get_all_attributes(layer: str, config: Any, lang: str = "") -> dict:
     }
     if isinstance(main_attrs.get("meta", ""), dict):
         ret.update({k: v for k, v in main_attrs["meta"].items()})
+    if config["layer"][layer].get("layerType") == "relation":
+        for k, v in main_attrs.items():
+            if not v.get("entity", "") in config["layer"]:
+                continue
+            ret.pop(k, None)
+            ret[v.get("name", "")] = v
     partitions = config["mapping"]["layer"].get(layer, {}).get("partitions", {})
     if partitions:
         if lang and lang not in partitions:
@@ -1339,6 +1362,8 @@ def get_segment_meta_script(
     # Add code here to add "media" if dealing with a multimedia corpus
     if has_media:
         selects.append(f"{doc}.media::jsonb AS {doc}_media")
+        selects = [s for s in selects if not s.endswith(f"AS {doc}_name")]
+        selects.append(f"{doc}.name::text AS {doc}_name")
 
     selects_formed = ", ".join(selects)
     # left join = include non-empty entities even if other ones are empty
@@ -1359,7 +1384,7 @@ def get_segment_meta_script(
     meta AS ({meta_script})
 SELECT -1::int2 AS rstype, jsonb_build_array(preps.{seg.lower()}_id, preps.id_offset, preps.content{preps_annotations}) FROM preps
 UNION ALL
-SELECT -2::int2 AS rstype, jsonb_build_array({meta_array}) FROM meta;    
+SELECT -2::int2 AS rstype, jsonb_build_array({meta_array}) FROM meta;
     """
     print("segment_meta_script", script)
     return script, meta_select_labels

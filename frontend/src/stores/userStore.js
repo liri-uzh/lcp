@@ -12,13 +12,22 @@ roomId = Utils.uuidv4()
 
 export const useUserStore = defineStore("userData", {
   state: () => ({
-    userData: null,
+    userData: {
+      publicProfiles: {},
+      subscription: {subscriptions: []},
+      termsOfUse: {},
+      user: {},
+    },
     roomId: roomId,
     projects: [],
     dataFetched: false,
     debug: false,
   }),
-  getters: {},
+  getters: {
+    isSuperAdmin() {
+      return this.userData.user.superAdmin == true;
+    }
+  },
   actions: {
     fetchUserData() {
       return httpApi.get(`/settings`).then((r) => {

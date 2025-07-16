@@ -8,7 +8,7 @@ platform-catchphrase = catchphrase
 platform-soundscript = soundscript
 platform-videoscope = videoscope
 
-platform-general-description = 
+platform-general-description =
  La LiRI Corpus Platform (LCP) è un sistema software per gestire e interrogare corpora di vario tipo. Gli utenti possono interrogare i corpora direttamente dal loro browser e caricare i propri corpora utilizzando un'interfaccia a riga di comando.
 platform-general-no-permission = Attualmente non hai i permessi per interrogare questo corpus. Consulta la descrizione del corpus per sapere come ottenere l'accesso.
 platform-general-access-restricted = L'accesso a questo corpus è ristretto. Devi effettuare il login per verificare i tuoi permessi.
@@ -55,6 +55,8 @@ common-details = Dettagli
 common-close = Chiudi
 common-stop = Ferma
 common-save = Salva
+common-plain-query = Query (e.g. un gatto)
+common-cqp-query = Query (e.g. [word="ciao"])
 common-save-query = Salva query
 common-saved-queries = Query salvate
 common-select-saved-queries = Seleziona una delle query salvate
@@ -82,6 +84,8 @@ common-query-result = Risultato query
 common-total-progress = Progresso totale
 common-refresh-progress = Aggiorna barra di avanzamento
 common-show-hide-corpus = Mostra/nascondi struttura del corpus
+common-timeline = Timeline
+common-show-timeline = Visualizza la timeline
 load-example-query = Carica query di esempio
 common-query-corpus = Query corpus
 common-go-to-time = Vai al tempo
@@ -114,6 +118,7 @@ common-plain = Testo semplice
 common-plain-format = Formato semplice
 common-download-preview = Scarica anteprima
 common-text = Testo
+common-rotate-device = Ruota il dispositivo per visualizzare la timeline
 
 common-play-audio = Riproduci audio
 common-play-video = Riproduci video
@@ -121,6 +126,10 @@ common-zoom-out = Riduci zoom
 common-zoom-in = Aumenta zoom
 common-zoom-reset-default = Reimposta predefinito
 common-zoom-fit-content = Adatta al contenuto
+
+common-yes = Sì
+common-no = No
+common-mandatory-fields = Campi obbligatori
 
 ## --------------- MENU ---------------
 
@@ -147,6 +156,8 @@ modal-details-user-license = Definita dall'utente
 
 modal-meta-metadata = Metadata
 modal-meta-structure = Structure
+modal-meta-swissubase = SWISSUbase
+modal-meta-group = Group
 modal-meta-name = Nome
 modal-meta-url = URL
 modal-meta-authors = Autori
@@ -171,12 +182,39 @@ modal-meta-lg-swiss-german = Svizzero Tedesco
 modal-meta-lg-romansh = Romancio
 modal-structure-no-desc = No Description
 
+modal-swissubase-header-1 = Pubblica i tuoi dati direttamente su SWISSUbase utilizzando questo modulo. Per procedere, fornisci le informazioni richieste nei campi sottostanti.
+modal-swissubase-header-warning = Una volta che la tua sottomissione è stata trasferita da LCP a SWISSUbase, non potrà più essere modificata in LCP. Nota bene: il processo di sottomissione non è ancora completato a questo stadio. Poiché solo i metadati vengono trasferiti a SWISSUbase, devi accedere all’interfaccia web di SWISSUbase per finalizzare e completare manualmente la sottomissione.
+modal-swissubase-api-access-token = Token di accesso SWISSUbase
+modal-swissubase-project-id = ID del progetto SWISSUbase
+modal-swissubase-dataset-title = Titolo del dataset
+modal-swissubase-dataset-language = Lingua del dataset
+modal-swissubase-dataset-description = Descrizione
+modal-swissubase-request-doi = Richiedi un DOI
+modal-swissubase-dateset-documentation-remarks = Osservazioni sulla documentazione
+modal-swissubase-dataset-version-note = Nota di versione
+modal-swissubase-dataset-url = URL del dataset
+modal-swissubase-resource-type = Tipo di risorsa
+modal-swissubase-resource-description = Descrizione della risorsa
+modal-swissubase-resource-keywords = Parole chiave
+modal-swissubase-resource-validation-information = Informazioni sulla validazione
+modal-swissubase-tab-project = Progetto
+modal-swissubase-tab-dataset = Dataset
+modal-swissubase-tab-resource = Risorsa
+modal-swissubase-tab-usage-license = Licenza d’uso
+modal-swissubase-confirm-text = Confermo di avere il diritto di pubblicare questo corpus su SWISSUbase
+modal-swissubase-confirm-info = Compila tutti i campi obbligatori!
+modal-swissubase-submit-button = Invia i dati a SWISSUbase
+modal-swissubase-already-submitted = I dati per questo corpus sono già stati inviati a SWISSUbase con l'ID del progetto
+modal-swissubase-verify-api-token = Vérifier le jeton d'accès API et l'identifiant du projet
+modal-swissubase-invalid-project = Le projet n'est pas valide
+modal-swissubase-valid-project = Le jeton d'accès API et le projet sont valides
+
 
 # Nuovo/Modifica progetto
 
 modal-project-new = Nuovo Gruppo
 modal-project-title = Titolo
-modal-project-title-error = 
+modal-project-title-error =
  Il titolo è obbligatorio (lunghezza minima di sette lettere).
  Il titolo verrà verificato manualmente. Cerca di essere conciso e informativo.
 modal-project-start-date = Data di inizio
@@ -188,7 +226,7 @@ modal-project-description-placeholder = Descrivi lo scopo del tuo gruppo
 modal-project-tab-metadata = Metadati
 modal-project-tab-permissions = Permessi
 modal-project-tab-api = API
-modal-project-data-public = Richiesta di rendere i dati pubblici
+modal-project-data-request-public = Richiesta di rendere i dati pubblici
 modal-project-invitation = (invito inviato a { $email })
 modal-project-invited = Utenti invitati
 modal-project-invite = Invita persone

@@ -56,6 +56,8 @@ common-details = Details
 common-close = Close
 common-stop = Stop
 common-save = Save
+common-plain-query = Query (e.g. a cat)
+common-cqp-query = Query (e.g. [word="hello"])
 common-save-query = Save query
 common-saved-queries = Saved queries
 common-select-saved-queries = Select a saved query
@@ -83,6 +85,8 @@ common-query-result = Query result
 common-total-progress = Total progress
 common-refresh-progress = Refresh progress bar
 common-show-hide-corpus = Show/hide corpus structure
+common-timeline = Timeline
+common-show-timeline = View timeline
 load-example-query = Load example query
 common-query-corpus = Query corpus
 common-go-to-time = Go to time
@@ -115,6 +119,7 @@ common-plain = Plain
 common-plain-format = Plain format
 common-download-preview = Download preview
 common-text = Text
+common-rotate-device = Please rotate your device to view the timeline
 
 common-play-audio = Play audio
 common-play-video = Play video
@@ -122,6 +127,10 @@ common-zoom-out = Zoom Out
 common-zoom-in = Zoom In
 common-zoom-reset-default = Reset default
 common-zoom-fit-content = Fit content
+
+common-yes = Yes
+common-no = No
+common-mandatory-fields = Mandatory fields
 
 ## --------------- MENU ---------------
 
@@ -148,6 +157,8 @@ modal-details-user-license = User defined
 
 modal-meta-metadata = Metadata
 modal-meta-structure = Structure
+modal-meta-swissubase = SWISSUbase
+modal-meta-group = Group
 modal-meta-name = Name
 modal-meta-url = URL
 modal-meta-authors = Authors
@@ -172,6 +183,33 @@ modal-meta-lg-swiss-german = Swiss German
 modal-meta-lg-romansh = Romansch
 modal-structure-no-desc = No Description
 
+modal-swissubase-header-1 = Publish your data directly to SWISSUbase using this form. To proceed, please provide the required information in the fields below.
+modal-swissubase-header-warning = Once your submission has been transferred from LCP to SWISSUbase, it can no longer be edited in LCP. Please note that the submission process is not yet complete at this stage. Since only the metadata is transferred to SWISSUbase, you still need to log in to the SWISSUbase web interface to finalize and complete the submission manually.
+modal-swissubase-api-access-token = SWISSUbase Access Token
+modal-swissubase-project-id = SWISSUbase Project ID
+modal-swissubase-dataset-title = Dataset Title
+modal-swissubase-dataset-language = Dataset Language
+modal-swissubase-dataset-description = Description
+modal-swissubase-request-doi = Request DOI
+modal-swissubase-dateset-documentation-remarks = Documentation Remarks
+modal-swissubase-dataset-version-note = Version Note
+modal-swissubase-dataset-url = Dataset URL
+modal-swissubase-resource-type = Resource type
+modal-swissubase-resource-description = Resource description
+modal-swissubase-resource-keywords = Keywords
+modal-swissubase-resource-validation-information = Validation information
+modal-swissubase-resource-validation-information = Validation information
+modal-swissubase-tab-project = Project
+modal-swissubase-tab-dataset = Dataset
+modal-swissubase-tab-resource = Resource
+modal-swissubase-tab-usage-license = Usage Licence
+modal-swissubase-confirm-text = Confirm that I have the right to publish this corpus on SWISSUbase
+modal-swissubase-confirm-info = Please complete all required fields and verify the API access token.
+modal-swissubase-submit-button = Send the data to SWISSUbase
+modal-swissubase-already-submitted = The data for this corpus has already been submitted to SWISSUbase on project ID
+modal-swissubase-verify-api-token = Verify API Token and Project ID
+modal-swissubase-invalid-project = The project is not valid
+modal-swissubase-valid-project = The API access token and project are valid
 
 # New/Edit project modal
 
@@ -189,7 +227,7 @@ modal-project-description-placeholder = Please describe the purpose of your grou
 modal-project-tab-metadata = Metadata
 modal-project-tab-permissions = Permissions
 modal-project-tab-api = API
-modal-project-data-public = Request to Make Data Public
+modal-project-data-request-public = Request to Make Data Public
 modal-project-invitation = (invitation sent to { $email })
 modal-project-invited = Invited users
 modal-project-invite = Invite people

@@ -2,7 +2,14 @@
   <div id="app-content">
     <nav class="navbar navbar-expand-lg bg-liri mb-3 fixed-top">
       <div class="container">
-        <a class="navbar-brand" href="/"><i>{{ $t('platform-catchphrase') }}</i></a>
+        <a class="navbar-brand" href="/">
+          <FontAwesomeIcon :icon="['fas', 'house']" class="me-1" />
+          {{ $t('platform-catchphrase') }}
+        </a>
+        <ul>
+          <li><a :href="appLinks['soundscript']" class="nav-link">{{ $t('platform-soundscript') }}</a></li>
+          <li><a :href="appLinks['videoscope']" class="nav-link">{{ $t('platform-videoscope') }}</a></li>
+        </ul>
         <button
           class="navbar-toggler"
           type="button"
@@ -16,12 +23,12 @@
         </button>
         <div class="collapse navbar-collapse" id="navbarNav">
           <ul class="navbar-nav">
-            <li class="nav-item">
+            <!-- <li class="nav-item">
               <router-link class="nav-link" to="/">
                 <FontAwesomeIcon :icon="['fas', 'house']" class="me-1" />
                 {{ $t('menu-home') }}
               </router-link>
-            </li>
+            </li> -->
             <li class="nav-item">
               <router-link class="nav-link" to="/query">
                 <FontAwesomeIcon
@@ -58,17 +65,19 @@
                 #{{ appVersion }}
               </span>
             </li>
-            <li class="nav-item export">
+            <li class="nav-item export" :title="$t('common-export')">
               <!-- <FontAwesomeIcon :icon="['fas', 'gauge']" class="me-2" /> -->
-               <a class="nav-link">(XP)</a>
+               <a class="nav-link" @click="openExportsModal">
+                <FontAwesomeIcon :icon="['fas', 'download']" class="me-2" />
+               </a>
               <ExportView />
             </li>
-            <li class="nav-item">
+            <!-- <li class="nav-item">
               <a :href="appLinks['lcphome']" target="_blank" class="nav-link">
                 <FontAwesomeIcon :icon="['fas', 'database']" class="me-2" />
                 {{`${$t('platform-general-short')} ${$t('menu-home')}`}}
               </a>
-            </li>
+            </li> -->
             <li class="nav-item">
               <a
                 v-if="userData && userData.user && userData.user.displayName"
@@ -98,6 +107,7 @@
 
 <script>
 import { mapState } from "pinia";
+import { Modal } from "bootstrap";
 import { useUserStore } from "@/stores/userStore";
 import { useCorpusStore } from "@/stores/corpusStore";
 import { useWsStore } from "@/stores/wsStore";
@@ -142,7 +152,15 @@ export default {
         // Otherwise, navigate to the homepage
         this.$router.push('/');
       }
-    }
+    },
+    openExportsModal() {
+      let modal = new Modal(document.getElementById('exportsModal'));
+      modal.show();
+      setTimeout(
+        ()=>document.getElementById("app-content").append(document.getElementById('exportsModal')),
+        50
+      );
+    },
   },
   components: {
     ExportView,
@@ -165,12 +183,28 @@ export default {
 .navbar-brand {
   font-style: italic;
 }
+a.navbar-brand + ul {
+  display: none;
+  position: absolute;
+  padding: 0.5em;
+  transform: translate(0.5em, 3em);
+  color: white;
+  background-color: #2a7f62;
+  list-style: none;
+}
+a.navbar-brand:hover + ul, a.navbar-brand + ul:hover {
+  display: block;
+}
+a.navbar-brand + ul li a {
+  color: white;
+  text-decoration: none;
+}
+a.navbar-brand + ul li a:hover {
+  font-weight: bold;
+}
 .version-number {
   font-size: 80% !important;
   opacity: 0.75;
   margin-top: 2px;
-}
-.export:hover #exportMonitor {
-  visibility: visible !important;
 }
 </style>

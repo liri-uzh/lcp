@@ -63,7 +63,7 @@
                   <div class="tab-content" id="nav-query-tabContent">
                     <div class="tab-pane fade pt-3" id="nav-plaintext" role="tabpanel"
                       aria-labelledby="nav-plaintext-tab">
-                      <input readonly class="form-control" type="text" placeholder="Query (e.g. a cat)" :class="isQueryValidData == null || isQueryValidData.valid == true
+                      <input readonly class="form-control" type="text" :placeholder="$t('common-plain-query')" :class="isQueryValidData == null || isQueryValidData.valid == true
                         ? 'ok'
                         : 'error'
                         " v-model="textsearch" />

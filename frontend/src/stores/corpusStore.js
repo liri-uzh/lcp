@@ -60,6 +60,8 @@ export const useCorpusStore = defineStore("corpusData", {
     updateMeta(data) {
       const lg = getUserLocale().value;
       const toSend = {lg: lg, metadata: data.metadata, descriptions: data.descriptions}
+      if ("projects" in data)
+        toSend.projects = data.projects;
       httpApi.put(`/corpora/${data.corpusId}/meta/update`, toSend).then((response) => {
         return response.data;
       });
@@ -88,6 +90,8 @@ export const useCorpusStore = defineStore("corpusData", {
                     continue;
                   if (lg in mv.description && typeof(mv.description[lg]) == "string")
                     corpus.layer[layer].attributes.meta[mk].description = mv.description[lg];
+                  else if ("en" in mv.description && typeof(mv.description.en) == "string")
+                    corpus.layer[layer].attributes.meta[mk].description = mv.description.en;
                 }
               }
               else {
@@ -95,6 +99,8 @@ export const useCorpusStore = defineStore("corpusData", {
                   continue;
                 if (lg in v.description && typeof(v.description[lg]) == "string")
                   corpus.layer[layer].attributes[k].description = v.description[lg];
+                else if ("en" in v.description && typeof(v.description.en) == "string")
+                  corpus.layer[layer].attributes[k].description = v.description.en;
               }
             }
           }

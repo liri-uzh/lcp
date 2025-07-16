@@ -8,4 +8,4 @@ The diagram in the figure below shows the structure of a corpus created from the
 
 ![alt](images/lcp-open-subtitles-segments.png)
 
-A [simple command-line interface](lcp_cli.md) allows users to submit corpora to LCP as standard TSV tables along with JSON metadata (for private or public use). This data is converted and stored in a high-performance PostgreSQL database, making it possible to quickly query and obtain example sentences and statistical results from corpora containing billions of words.
+A [simple command-line interface](lcp_cli.md) allows users to submit corpora to LCP as standard CSV tables along with JSON metadata (for private or public use). This data is converted and stored in a high-performance PostgreSQL database, making it possible to quickly query and obtain example sentences and statistical results from corpora containing billions of words.

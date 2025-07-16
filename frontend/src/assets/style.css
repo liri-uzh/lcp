@@ -257,3 +257,14 @@ nav a.router-link-exact-active {
 .pre-line {
   white-space: pre-line;
 }
+
+@media screen and (max-width: 768px) {
+  .modal-full {
+    margin-left: 0;
+    margin-right: 0;
+  }
+}
+
+.btn-light {
+  --bs-btn-bg: #e7e7e7;
+}

@@ -1,6 +1,6 @@
 <template>
   <div class="row" id="corpus-details-modal">
-    <div class="col-5">
+    <div class="col-12 col-lg-5">
       <div class="title mb-0" v-if="hasAccessToCorpus(corpusModal, userData)">
         <span>{{ corpusModal.meta.name }}</span>
         <br>
@@ -100,7 +100,7 @@
         </span>
       </p>
     </div>
-    <div class="col-7">
+    <div class="col-12 col-lg-7">
       <!-- <CorpusGraphViewNew :corpus="corpusModal" /> -->
       <CorpusGraphView :corpus="corpusModal" v-if="showGraph" />
     </div>

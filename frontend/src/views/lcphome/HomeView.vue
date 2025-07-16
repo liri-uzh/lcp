@@ -2,21 +2,21 @@
   <div class="home">
     <div class="container">
       <div class="row mt-4">
-        <div class="col-8">
+        <div class="col-12 col-md-8">
           <Title :title="$t('platform-general')" />
           <p>
-            {{ $t('plaftorm-general-description') }}
+            {{ $t('platform-general-description') }}
           </p>
-          <p>
-            <a :href="appLinks['catchphrase']" target="_blank" class="btn btn-primary me-1 btn-catchphrase">
+          <p class="d-flex flex-wrap" style="gap: 10px;">
+            <a :href="appLinks['catchphrase']" target="_blank" class="btn btn-primary btn-catchphrase">
               <FontAwesomeIcon :icon="['fas', 'font']" class="me-2" />
               <i>{{ $t('platform-catchphrase') }}</i>
             </a>
-            <a :href="appLinks['soundscript']" target="_blank" class="btn btn-primary me-1 btn-soundscript">
+            <a :href="appLinks['soundscript']" target="_blank" class="btn btn-primary btn-soundscript">
               <FontAwesomeIcon :icon="['fas', 'music']" class="me-2" />
               <i>{{ $t('platform-soundscript') }}</i>
             </a>
-            <a :href="appLinks['videoscope']" target="_blank" class="btn btn-primary me-1 btn-videoscope">
+            <a :href="appLinks['videoscope']" target="_blank" class="btn btn-primary btn-videoscope">
               <FontAwesomeIcon :icon="['fas', 'video']" class="me-2" />
               <i>{{ $t('platform-videoscope') }}</i>
             </a>
@@ -114,7 +114,7 @@
                 v-for="corpus in filterCorpora(project.corpora)"
                 :key="corpus.id"
                 @click.stop="openAppLink(corpus)"
-                class="col-4 mb-3"
+                class="col-md-4 mb-3"
               >
                 <div
                   class="corpus-block"
@@ -310,7 +310,7 @@
             <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
           </div>
           <div class="modal-body text-start" v-if="corpusModal">
-            <MetadataEdit :corpus="corpusModal" :key="modalIndexKey" />
+            <MetadataEdit :corpus="corpusModal" :key="modalIndexKey" @submitSWISSUbase="submitModalSWISSUbase" />
           </div>
           <div class="modal-footer">
             <button type="button" class="btn btn-primary" data-bs-dismiss="modal" @click="saveModalCorpus">
@@ -354,6 +354,7 @@
 <script>
 import { mapState } from "pinia";
 import { useCorpusStore } from "@/stores/corpusStore";
+import { useSWISSUbaseStore } from "@/stores/swissubaseStore";
 import { useProjectStore } from "@/stores/projectStore";
 import { useUserStore } from "@/stores/userStore";
 import { useNotificationStore } from "@/stores/notificationStore";
@@ -585,6 +586,11 @@ export default {
           });
         }
       }
+    },
+    async submitModalSWISSUbase() {
+      await this.saveModalCorpus();
+      useSWISSUbaseStore().submitSWISSUbase(this.corpusModal.corpus_id)
+      // console.log("Saving SWISSUbase corpus data");
     },
     // setTooltips() {
     //   this.removeTooltips();tooltip

@@ -2,13 +2,13 @@
   <div class="home">
     <div class="container">
       <div class="row mt-4">
-        <div class="col-8">
+        <div class="col-12 col-md-8">
           <Title :title="$t('platform-general')" />
           <p>
             {{ $t('platform-general-description') }}
           </p>
         </div>
-        <div class="col mt-1 text-end" v-if="userData && userData.user && userData.user.displayName">
+        <div class="col mt-1 text-center text-md-end" v-if="userData && userData.user && userData.user.displayName">
           <button
             type="button"
             class="btn btn-secondary btn-sm"
@@ -119,7 +119,7 @@
                 v-for="corpus in filterCorpora(project.corpora)"
                 :key="corpus.id"
                 @click.stop="openQueryWithCorpus(corpus, 'catchphrase')"
-                class="col-4 mb-3"
+                class="col-md-4 mb-3"
               >
                 <div
                   class="corpus-block"
@@ -311,7 +311,12 @@
             <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
           </div>
           <div class="modal-body text-start" v-if="corpusModal">
-            <MetadataEdit :corpus="corpusModal" :key="modalIndexKey" />
+            <MetadataEdit
+              :corpus="corpusModal"
+              :key="modalIndexKey"
+              @submitSWISSUbase="submitModalSWISSUbase"
+              :allProjects="getUniqueProjects"
+            />
           </div>
           <div class="modal-footer">
             <button type="button" class="btn btn-primary" data-bs-dismiss="modal" @click="saveModalCorpus">
@@ -355,6 +360,7 @@
 <script>
 import { mapState } from "pinia";
 import { useCorpusStore } from "@/stores/corpusStore";
+import { useSWISSUbaseStore } from "@/stores/swissubaseStore";
 import { useProjectStore } from "@/stores/projectStore";
 import { useUserStore } from "@/stores/userStore";
 import { useNotificationStore } from "@/stores/notificationStore";
@@ -582,6 +588,11 @@ export default {
         }
       }
     },
+    async submitModalSWISSUbase() {
+      await this.saveModalCorpus();
+      useSWISSUbaseStore().submitSWISSUbase(this.corpusModal.corpus_id)
+      // console.log("Saving SWISSUbase corpus data");
+    },
     // setTooltips() {
     //   this.removeTooltips();tooltip
     //   const tooltipTriggerList = Array.from(
@@ -661,7 +672,10 @@ export default {
       //   retval = _retval
       // }
       return sortedProjects;
-    }
+    },
+    getUniqueProjects() {
+      return this.projects.filter((p, n) => !this.projects.slice(n+1, ).find(p2 => p2.id == p.id))
+    },
   },
   mounted() {
     // this.setTooltips();
