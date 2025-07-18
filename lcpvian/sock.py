@@ -325,27 +325,6 @@ async def _handle_message(
     return None
 
 
-def _print_status_message(payload: JSONObject, status: str) -> None:
-    """
-    Helper to print query status to console
-    """
-    total: int | str | None
-    total = cast(int, payload.get("total_results_requested", -1))
-    if not total or total == -1:
-        total = "all"
-    so_far = cast(int, payload.get("total_results_so_far", -1))
-    done_batch = len(cast(Sized, payload["done_batches"]))
-    tot_batch = len(cast(Sized, payload["all_batches"]))
-    explain = "done" if not payload.get("search_all") else "time used"
-    pred = cast(int, payload.get("projected_results", -1))
-    print(
-        f"{payload['batch_matches']} results found -- {so_far}/{total} total, projected: {pred}\n"
-        + f"Status: {status} -- done {done_batch}/{tot_batch} batches ({payload['percentage_done']}% {explain})\n"
-        + cast(str, payload["duration_string"])
-    )
-    return None
-
-
 async def sock(request: web.Request) -> web.WebSocketResponse:
     """
     Socket has to handle incoming messages, but also send a message when
