@@ -612,22 +612,46 @@ class Exporter:
             output.write("<results>\n")
             config = self._config
             meta = {
-                k: v for k, v in config["meta"].items() if k not in ("sample_query",)
+                k: v
+                for k, v in config["meta"].items()
+                if k not in ("sample_query", "swissubase")
             }
             try:
                 meta["userLicense"] = btoa(meta["userLicense"]).decode("utf-8")  # type: ignore
             except:
                 pass
+            partitions = config.get("partitions", {}).get("values", [])
+            tok = config["token"].lower()
+            tok_map = config["mapping"]["layer"][config["token"]]
+            tok_counts = config["token_counts"]
+            if len(partitions) > 1:
+                tok_map = tok_map.get("partitions", {})
+                meta["total_tokens"] = {
+                    lg: tok_counts.get(
+                        tok_map.get(lg, {})
+                        .get("relation", f"{tok}_{lg}")
+                        .replace("<batch>", "")
+                        + "0",
+                        "-1",
+                    )
+                    for lg in partitions
+                }
+            else:
+                tok0 = tok_map.get("relation", tok).replace("<batch>", "") + "0"
+                meta["total_tokens"] = tok_counts.get(tok0, "-1")
             corpus_node = E.corpus(
                 *[
                     x
                     for k, v in meta.items()
                     for x in (
                         # multilingual field
-                        [getattr(E, k)(str(vv), lang=vk) for vk, vv in v.items()]
+                        [
+                            getattr(E, k)(escape(str(vv)), lang=vk)
+                            for vk, vv in v.items()
+                        ]
                         if (isinstance(v, dict) and all(_get_iso639_3(vk) for vk in v))
                         # monolingual field
-                        else [getattr(E, k)(str(v))]
+                        else [getattr(E, k)(escape(str(v)))]
                     )
                 ]
             )
