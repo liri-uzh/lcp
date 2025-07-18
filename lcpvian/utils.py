@@ -5,7 +5,6 @@ utils.py: all miscellaneous helpers and tools used by backend
 import asyncio
 import json
 import logging
-import math
 import numpy as np
 import os
 import re
@@ -21,8 +20,7 @@ from datetime import date, datetime
 from hashlib import md5
 from io import BytesIO
 from typing import Any, cast, TypeAlias
-from uuid import uuid4, UUID
-from rq.exceptions import NoSuchJobError
+from uuid import UUID
 from rq.registry import FinishedJobRegistry
 
 from aiohttp import web
@@ -52,7 +50,6 @@ from .authenticate import Authentication
 # from .callbacks import _general_failure
 from .configure import CorpusConfig, CorpusTemplate
 from .typed import (
-    Batch,
     Config,
     JSON,
     JSONObject,
@@ -61,8 +58,6 @@ from .typed import (
     ObservableList,
     _serialize_observable,
     SentJob,
-    QueryArgs,
-    RequestInfo,
     Websockets,
 )
 
@@ -364,54 +359,6 @@ async def handle_bad_request(exc: Exception, request: web.Request) -> None:
     If BE raises an HTTPBadRequest error
     """
     await _general_error_handler(str(exc), exc, request)
-
-
-def refresh_job_ttl(
-    connection: RedisConnection, job_id: str, new_ttl: int = QUERY_TTL
-) -> None:
-    connection.expire(job_id, new_ttl)
-    connection.expire(f"rq:job:{job_id}", new_ttl)
-    connection.expire(f"rq:resluts:{job_id}", new_ttl)
-
-
-def _get_status(
-    query_info: dict,
-    request_info: RequestInfo,
-    # n_results: int,
-    # total_results_requested: int,
-    # done_batches: list[Batch],
-    # all_batches: list[Batch],
-    search_all: bool = False,
-    # time_so_far: float = 0.0,
-) -> str:
-    """
-    Is a query finished, or do we need to do another iteration?
-
-        finished: no more batches available
-        overtime: query with time limitation ran out of time
-        partial: currently fewer than total_results_requested
-        satisfied: >= total_results_requested
-    """
-    n_results = query_info.get("total_results_so_far", 0)
-    done_batches = query_info.get("done_batches", [])
-    all_batches = query_info.get("all_batches", [])
-    time_so_far = query_info.get("total_duration", 0.0)
-    total_results_requested = request_info.get("total_results_requested", 0)
-    full = request_info.get("full", False)
-
-    if len(done_batches) == len(all_batches):
-        return "finished"
-    allowed_time = float(os.getenv("QUERY_ALLOWED_JOB_TIME", 0.0))
-    too_long: bool = time_so_far > allowed_time
-    if allowed_time > 0.0 and search_all and too_long and not full:
-        return "overtime"
-    if search_all:
-        return "partial"
-    if total_results_requested in {-1, False, None}:
-        return "partial"
-    if n_results >= total_results_requested and not full:
-        return "satisfied"
-    return "partial"
 
 
 def _get_redis_obj(connection: RedisConnection, key: str) -> dict[str, Any]:
@@ -1039,76 +986,9 @@ def _time_remaining(status: str, total_duration: float, use: float) -> float:
     return max(0.0, round(timed, 3))
 
 
-def _get_progress(job: Job, query_info: dict, request_info: RequestInfo) -> dict:
-    allowed_time = float(os.getenv("QUERY_ALLOWED_JOB_TIME", 0.0))
-    do_full = request_info.get("full", False)
-    status = _get_status(query_info, request_info)
-    total_requested = request_info["total_results_requested"]
-    total_found = query_info["total_results_so_far"]
-    done_batches = query_info["done_batches"]
-    total_words_processed_so_far = sum([x[-1] for x in query_info["done_batches"]]) or 1
-    use = total_words_processed_so_far * 100.0 / query_info["word_count"]
-    total_duration = query_info.get("total_duration", 0.0)
-    time_remaining = _time_remaining(status, total_duration, use)
-    ended_at = cast(datetime, job.ended_at)
-    started_at = cast(datetime, job.started_at)
-    duration: float = round((ended_at - started_at).total_seconds(), 3)
-    time_perc = 0.0
-    if allowed_time > 0.0 and do_full:
-        time_perc = total_duration * 100.0 / allowed_time
-    batches_done_string = f"{len(done_batches)}/{len(query_info['all_batches'])}"
-    total_words_processed_so_far = sum([x[-1] for x in done_batches]) or 1
-    proportion_that_matches = total_found / total_words_processed_so_far
-    projected_results = int(query_info["word_count"] * proportion_that_matches)
-    if status == "finished":
-        projected_results = total_found if do_full else -1
-        perc_words = 100.0
-        perc_matches = 100.0
-        if do_full:
-            perc_matches = time_perc
-        query_info["percentage_done"] = 100.0
-    elif status in {"partial", "satisfied", "overtime"}:
-        done_batches = query_info["done_batches"]
-        total_words_processed_so_far = sum([x[-1] for x in done_batches]) or 1
-        proportion_that_matches = total_found / total_words_processed_so_far
-        projected_results = int(query_info["word_count"] * proportion_that_matches)
-        if not do_full:
-            projected_results = -1
-        perc_words = total_words_processed_so_far * 100.0 / query_info["word_count"]
-        perc_matches = (
-            min(total_found, total_requested) * 100.0 / (total_requested or total_found)
-        )
-        if do_full:
-            perc_matches = time_perc
-        query_info["percentage_done"] = round(perc_matches, 3)
-    if request_info.get("from_memory"):
-        projected_results = query_info["projected_results"]
-        perc_matches = query_info["percentage_done"]
-        perc_words = query_info["percentage_words_done"]
-        total_found = query_info["total_results_so_far"]
-        batches_done_string = query_info["batches_done_string"]
-        status = query_info["status"]
-        total_duration = query_info["total_duration"]
-    return {
-        "remaining": time_remaining,
-        "job": job.id,
-        "first_job": query_info.get("hash", ""),
-        "user": request_info.get("user", ""),
-        "room": request_info.get("room", ""),
-        "duration": duration,
-        "batches_done": batches_done_string,
-        "total_duration": total_duration,
-        "projected_results": projected_results,
-        "percentage_done": round(perc_matches, 3),
-        "percentage_words_done": round(perc_words, 3),
-        "total_results_so_far": total_found,
-        "action": "background_job_progress",
-    }
-
-
 def _sign_payload(
     payload: dict[str, Any] | JSONObject | SentJob,
-    kwargs: dict[str, Any] | RequestInfo | SentJob,
+    kwargs: dict[str, Any] | SentJob,
 ) -> None:
     to_export = kwargs.get("to_export")
     kwargs_to_payload_keys = (
