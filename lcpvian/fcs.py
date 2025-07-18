@@ -11,7 +11,7 @@ from .cql_to_json import CqlToJson
 from .textsearch_to_json import textsearch_to_json
 from .query_classes import QueryInfo, Request
 from .query import process_query
-from .utils import LCPApplication
+from .utils import _get_iso639_3, LCPApplication
 
 FCS_HOST = "catchphrase.linguistik.uzh.ch"
 FCS_PORT = "443"
@@ -39,24 +39,6 @@ def _get_lg_from_pid(pid: str) -> str:
         or "en"
     )
     return lg
-
-
-def _get_iso639_3(lang: str) -> str:
-    if lang == "en":
-        return "eng"
-    if lang == "de":
-        return "deu"
-    if lang == "fr":
-        return "fra"
-    if lang == "it":
-        return "ita"
-    if lang == "rm":
-        return "roh"
-    if lang == "ro":
-        return "ron"
-    if lang == "gs":
-        return "gsw"
-    return ""
 
 
 def _get_languages(partitions: dict, main_language: str = "") -> str:

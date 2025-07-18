@@ -6,6 +6,7 @@ import re
 import shutil
 
 from aiohttp import web
+from base64 import b64decode as btoa
 from functools import cmp_to_key
 from io import TextIOWrapper
 from lxml.builder import E
@@ -21,7 +22,7 @@ from .callbacks import _general_failure
 from .jobfuncs import _handle_export
 from .query_classes import Request, QueryInfo
 from .typed import CorpusConfig
-from .utils import _get_mapping, _publish_msg, sanitize_filename
+from .utils import _get_iso639_3, _get_mapping, _publish_msg, sanitize_filename
 
 EXPORT_TTL = 5000
 RESULTS_DIR = os.getenv("RESULTS", "results")
@@ -610,22 +611,36 @@ class Exporter:
             output.write('<?xml version="1.0" encoding="UTF-8"?>\n')
             output.write("<results>\n")
             config = self._config
+            meta = {
+                k: v for k, v in config["meta"].items() if k not in ("sample_query",)
+            }
+            try:
+                meta["userLicense"] = btoa(meta["userLicense"]).decode("utf-8")  # type: ignore
+            except:
+                pass
+            corpus_node = E.corpus(
+                *[
+                    x
+                    for k, v in meta.items()
+                    for x in (
+                        # multilingual field
+                        [getattr(E, k)(str(vv), lang=vk) for vk, vv in v.items()]
+                        if (isinstance(v, dict) and all(_get_iso639_3(vk) for vk in v))
+                        # monolingual field
+                        else [getattr(E, k)(str(v))]
+                    )
+                ]
+            )
+            output.write(_node_to_string(corpus_node, prefix="  "))
             last_payload = {}
             for batch_hash in req.lines_batch:
                 batch_name = self._qi.get_batch_from_hash(batch_hash)
                 last_payload = req.get_payload(self._qi, batch_name)
                 if last_payload["status"] == "finished":
                     break
-            corpus_node = E.corpus(
-                *[
-                    getattr(E, k)(str(v))
-                    for k, v in config["meta"].items()
-                    if k not in ("sample_query",)
-                ]
-            )
-            output.write(_node_to_string(corpus_node, prefix="  "))
             query_node = E.query(
                 E.date(str(datetime.datetime.now(datetime.UTC))),
+                E.languages(*[E.language(lg) for lg in req.languages]),
                 E.offset(str(req.offset)),
                 E.requested(str(req.requested)),
                 E.full(str(req.full)),

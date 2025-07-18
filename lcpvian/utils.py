@@ -879,6 +879,24 @@ def _layer_contains(config: CorpusConfig, parent: str, child: str) -> bool:
     return False
 
 
+def _get_iso639_3(lang: str) -> str:
+    if lang == "en":
+        return "eng"
+    if lang == "de":
+        return "deu"
+    if lang == "fr":
+        return "fra"
+    if lang == "it":
+        return "ita"
+    if lang == "rm":
+        return "roh"
+    if lang == "ro":
+        return "ron"
+    if lang == "gs":
+        return "gsw"
+    return ""
+
+
 def _determine_language(batch: str) -> str | None:
     """
     Helper to find language from batch
