@@ -656,12 +656,11 @@ class Exporter:
                 ]
             )
             output.write(_node_to_string(corpus_node, prefix="  "))
-            last_payload = {}
-            for batch_hash in req.lines_batch:
-                batch_name = self._qi.get_batch_from_hash(batch_hash)
-                last_payload = req.get_payload(self._qi, batch_name)
-                if last_payload["status"] == "finished":
-                    break
+            batch_names = [self._qi.get_batch_from_hash(bh) for bh in req.lines_batch]
+            percentage_words_done = max(
+                req.get_payload(self._qi, bn)["percentage_words_done"]
+                for bn in batch_names
+            )
             query_node = E.query(
                 E.date(str(datetime.datetime.now(datetime.UTC))),
                 E.languages(*[E.language(lg) for lg in req.languages]),
@@ -669,7 +668,7 @@ class Exporter:
                 E.requested(str(req.requested)),
                 E.full(str(req.full)),
                 E.delivered(str(req.lines_sent_so_far)),
-                E.coverage(str(last_payload["percentage_done"])),
+                E.coverage(str(percentage_words_done)),
                 E.json("\n" + json.dumps(self._qi.json_query, indent=2) + "\n  "),
             )
             output.write(_node_to_string(query_node, prefix="  "))
