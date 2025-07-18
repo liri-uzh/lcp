@@ -52,7 +52,6 @@ class Authentication:
     def check_corpus_allowed(
         self,
         corpus_id: str,
-        corpus: CorpusConfig,
         user_data: JSONObject | None,
         app_type: str = "",
         get_all: bool = False,

@@ -343,14 +343,14 @@ class QueryService:
             params["query_type"] = query_type
 
             query = (
-                """SELECT * FROM lcp_user.queries
-                WHERE "user" = :user AND query_type = :query_type
+                """SELECT * FROM lcp_user.queries q
+                WHERE q."user" = :user AND q.query_type = :query_type
                 ORDER BY created_at DESC LIMIT {limit};"""
             ).format(limit=limit)
         else:
             query = (
-                """SELECT * FROM lcp_user.queries
-                WHERE "user" = :user
+                """SELECT * FROM lcp_user.queries q
+                WHERE q."user" = :user
                 ORDER BY created_at DESC LIMIT {limit};"""
             ).format(limit=limit)
 

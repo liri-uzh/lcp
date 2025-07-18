@@ -547,7 +547,7 @@ def _filter_corpora(
     corpora: dict[str, CorpusConfig] = {
         idx: corpus
         for idx, corpus in config.items()
-        if authenticator.check_corpus_allowed(idx, corpus, user_data, app_type, get_all)
+        if authenticator.check_corpus_allowed(idx, user_data, app_type, get_all)
     }
     return corpora
 

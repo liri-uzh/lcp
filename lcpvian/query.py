@@ -280,7 +280,7 @@ async def post_query(request: web.Request) -> web.Response:
         else app_type
     )
     allowed = authenticator.check_corpus_allowed(
-        str(corpus), app["config"][str(corpus)], user_data, app_type, get_all=False
+        str(corpus), user_data, app_type, get_all=False
     )
     if not allowed:
         fail: dict[str, str] = {

@@ -34,7 +34,9 @@ async def project_update(request: web.Request) -> web.Response:
     project_data["unit"] = "----"  # leave it for now, need to be changed in LAMa
     user_details: dict = await authenticator.user_details(request)
     user: dict = user_details.get("user") or {}
-    if "additionalData" in project_data and not user.get("superAdmin"):
+    if isinstance(project_data.get("additionalData"), dict) and not user.get(
+        "superAdmin"
+    ):
         project_data["additionalData"].pop("public", "")  # type: ignore
         project_data["additionalData"].pop("visibility", "")  # type: ignore
     res = await authenticator.project_update(request, request_data, project_data)

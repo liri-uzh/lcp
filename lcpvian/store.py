@@ -6,10 +6,8 @@ from aiohttp import web
 from rq.job import Job
 
 from .typed import JSONObject
-from .utils import ensure_authorised
 
 
-@ensure_authorised
 async def fetch_queries(request: web.Request) -> web.Response:
     """
     User wants to retrieve their stored queries from the DB
@@ -17,15 +15,20 @@ async def fetch_queries(request: web.Request) -> web.Response:
     request_data: dict[str, str] = await request.json()
     user = request_data.get("user")
     room = request_data.get("room")
-    query_type = request_data.get("query_type")
-    if not user or not room or not query_type:
+
+    authenticator = request.app["auth_class"](request.app)
+    user_data: dict = await authenticator.user_details(request)
+    if not user_data.get("user", {}).get("id") == user:
+        raise PermissionError("Could not verify the identity of the user")
+
+    query_type = request_data.get("query_type", "")
+    if not user or not room:
         return web.json_response({})
     job: Job = request.app["query_service"].fetch_queries(user, room, query_type)
     info: dict[str, str] = {"status": "started", "job": job.id}
     return web.json_response(info)
 
 
-@ensure_authorised
 async def store_query(request: web.Request) -> web.Response:
     """
     User wants to store one or more queries in the DB
@@ -33,6 +36,12 @@ async def store_query(request: web.Request) -> web.Response:
     request_data: JSONObject = await request.json()
     user = cast(str, request_data["user"])
     room = cast(str | None, request_data["room"])
+
+    authenticator = request.app["auth_class"](request.app)
+    user_data: dict = await authenticator.user_details(request)
+    if not user_data.get("user", {}).get("id") == user:
+        raise PermissionError("Could not verify the identity of the user")
+
     query = cast(JSONObject, request_data["query"])
     to_store = dict(
         corpora=request_data["corpora"],
@@ -50,7 +59,6 @@ async def store_query(request: web.Request) -> web.Response:
     return web.json_response(info)
 
 
-@ensure_authorised
 async def delete_query(request: web.Request) -> web.Response:
     """
     User wants to delete their stored query from the DB.
@@ -59,6 +67,11 @@ async def delete_query(request: web.Request) -> web.Response:
     user_id: str = request.match_info["user_id"]
     room_id: str = request.match_info["room_id"]
     query_id: str = request.match_info["query_id"]
+
+    authenticator = request.app["auth_class"](request.app)
+    user_data: dict = await authenticator.user_details(request)
+    if not user_data.get("user", {}).get("id") == user_id:
+        raise PermissionError("Could not verify the identity of the user")
 
     job: Job = request.app["query_service"].delete_query(user_id, room_id, query_id)
     info: dict[str, str] = {"status": "started", "job": job.id}

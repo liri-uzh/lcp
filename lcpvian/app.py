@@ -182,6 +182,15 @@ async def create_app(test: bool = False) -> web.Application:
         .and_call(handle_lama_error)
     )
     await catcher.add_scenario(
+        catch(PermissionError)
+        .with_status_code(403)
+        .and_stringify()
+        .with_additional_fields(
+            lambda exc, _: {"reason": str(exc), "message": str(exc)}
+        )
+        .and_call(handle_lama_error)
+    )
+    await catcher.add_scenario(
         catch(HTTPForbidden)
         .with_status_code(403)
         .and_stringify()

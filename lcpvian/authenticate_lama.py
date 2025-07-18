@@ -67,14 +67,19 @@ class Lama(Authentication):
     def check_corpus_allowed(
         self,
         corpus_id: str,
-        corpus: CorpusConfig,
         user_data: JSONObject | None,
         app_type: str = "",
         get_all: bool = False,
     ) -> bool:
 
+        corpus: CorpusConfig = self.app["config"][corpus_id]
+
         ids: set[str] = set()
         if isinstance(user_data, dict):
+            user_id = cast(dict, user_data.get("user", {})).get("id", "")
+            if user_id in SUPER_ADMINS:
+                return True
+
             subs = cast(dict[str, subtype], user_data.get("subscription", {}))
             sub = subs.get("subscriptions", [])
             for s in sub:
