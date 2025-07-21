@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import traceback
 
 from aiohttp import web
 from redis import Redis as RedisConnection
@@ -302,6 +303,8 @@ async def post_query(request: web.Request) -> web.Response:
     try:
         (req, qi, job) = process_query(app, request_data)
     except Exception as e:
+        print("Could not process query", e)
+        traceback.print_exc()
         raise web.HTTPBadRequest(reason=str(e))
 
     if req.to_export and req.user:

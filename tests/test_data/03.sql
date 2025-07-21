@@ -48,10 +48,12 @@ WITH RECURSIVE fixed_parts AS
    LEFT JOIN bnc1.form token_form ON token_form.form_id = token.form_id
    WHERE (token.token_id = prev_cte.t1 + 1)
      AND ((transition0.dest_state = 2
+           AND s = token.segment_id
            AND (token_form.form)::text = ('cat')::text
            AND token_form.form_id = token.form_id
            AND transition0.label = 't2')
           OR (transition0.dest_state = 3
+              AND s = token.segment_id
               AND (token.xpos2)::text = ('ADJ')::text
               AND transition0.label = 'tadj'))
    UNION ALL SELECT traversal0.s,
@@ -69,6 +71,7 @@ WITH RECURSIVE fixed_parts AS
    LEFT JOIN bnc1.form token_form ON token_form.form_id = token.form_id
    WHERE (transition0.source_state = 3
           AND transition0.dest_state = 1
+          AND s = token.segment_id
           AND (token_form.form)::text = ('dog')::text
           AND token_form.form_id = token.form_id
           AND transition0.label = 't3') ) SEARCH DEPTH FIRST BY id

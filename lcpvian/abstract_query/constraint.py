@@ -680,12 +680,12 @@ class Constraint:
             ref = f"{ref_label}.{ref}"
             ref_info["type"] = "id"
         # Attribute-related refs like 'xpos', 'year', 'agent', 'agent.region' or 'ufeat.Degree'
-        elif ref in attributes or ref in meta or ref in mapping:
+        elif ref in attributes or ref in meta or ref in mapping.get("attributes", {}):
             in_meta = ref not in attributes and ref in meta
             in_mapping = (
                 ref not in attributes
                 and (not in_meta or "meta" not in attributes)
-                and ref in mapping
+                and ref in mapping.get("attributes", {})
             )
             # partition-specific attributes are listed in mapping only
             # Handle any necessary mapping first
@@ -813,12 +813,16 @@ class Constraint:
         # Entity reference like t3
         elif ref in lab_lay:
             ref_layer = lab_lay[ref][0]
+            ref_attributes = self.config["layer"][ref_layer].get("attributes", {})
             ref_mapping = _get_mapping(
                 ref_layer, self.config, self.batch, self.lang or ""
             )
             if post_dots:
                 return self.get_sql_expr(
-                    {"reference": sub_ref}, prefix=ref, mapping=ref_mapping
+                    {"reference": sub_ref},
+                    prefix=ref,
+                    attributes=ref_attributes,
+                    mapping=ref_mapping,
                 )
             else:
                 ref_info = RefInfo(type="entity", layer=ref_layer, mapping=ref_mapping)

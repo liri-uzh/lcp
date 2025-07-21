@@ -135,7 +135,10 @@ class Cte:
         # effectivelty create indices (n) to refer to states
         state_map: dict[State, tuple[str, bool]] = {}
         for n, state in enumerate(self.states):
-            state_map[state] = (str(n), not state.constraints)
+            part_of = (
+                state.unit.obj.get("unit", {}).get("partOf") if state.unit else None
+            )
+            state_map[state] = (str(n), not state.constraints and not part_of)
         delta: dict[str, dict[str, set[str]]] = {}
         for state, (i, epsilon) in state_map.items():
             entry: dict[str, Any] = {}
@@ -325,12 +328,35 @@ class Cte:
                 for k, v in self.sequence._internal_references.items():
                     override_references[k] = f"{from_table}.{v}"
                 override_references[state.label] = "token"
+                current_depth = int(
+                    state.unit.obj.get("_depth", 0) if state.unit else 0
+                )
+                for ll_label, (ll_layer, ll_obj) in self.sequence.label_layer.items():
+                    if cast(int, ll_obj.get("_depth", 1)) < current_depth:
+                        continue
+                    for po in ll_obj.get("partOf", []):
+                        if "partOfStream" in po:
+                            override_references[f"{ll_label}.char_range"] = (
+                                f"{ll_label}_char_range"
+                            )
+                        if "partOfTime" in po:
+                            override_references[f"{ll_label}.frame_range"] = (
+                                f"{ll_label}_frame_range"
+                            )
+                        if "partOfLocation" in po:
+                            override_references[f"{ll_label}.xy_box"] = (
+                                f"{ll_label}_xy_box"
+                            )
                 where_conditions, ljs, _ = self.sequence.get_constraints(
                     label="token",
                     constraints=[c for c in state.constraints if isinstance(c, dict)],
                     entities={"token"},
                     override=override_references,
-                    part_of=state.unit.obj.get("partOf", []) if state.unit else [],
+                    part_of=(
+                        state.unit.obj.get("unit", {}).get("partOf", [])
+                        if state.unit
+                        else []
+                    ),
                 )
                 constraints = f"{' AND '.join(where_conditions)} AND transition{self.n}.label = '{state.label}'"
                 state_left_joins = state_left_joins.union({ls for ls in ljs})
@@ -362,9 +388,22 @@ class Cte:
                 {big_disjunction}
             )"""
 
-        big_disjunction = big_disjunction.lstrip().rstrip()
-
-        return (big_disjunction, state_left_joins)
+        # Hack to replace references to s.segment_id with just s
+        seg_lay = self.sequence.config.config["firstClass"]["segment"]
+        seg_labs = "|".join(
+            lb for lb, (ll, _) in self.sequence.label_layer.items() if ll == seg_lay
+        )
+        seg_regx = rf"\b({seg_labs})\.{seg_lay}_id\b"
+        big_disjunction = re.sub(
+            seg_regx, "\\1", big_disjunction.lstrip().rstrip(), flags=re.IGNORECASE
+        )
+        return (
+            big_disjunction,
+            {
+                re.sub(seg_regx, "\\1", slj, flags=re.IGNORECASE)
+                for slj in state_left_joins
+            },
+        )
 
     def transition(self) -> str:
         automaton, states = self.optimal_graph
