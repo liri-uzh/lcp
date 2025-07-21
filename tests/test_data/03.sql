@@ -1,8 +1,15 @@
 WITH RECURSIVE fixed_parts AS
-  (SELECT d.document_id AS d,
+  (SELECT d.char_range AS d_char_range,
+          d.document_id AS d,
+          d.meta->'classcode' AS d_classcode,
+          s.char_range AS s_char_range,
           s.segment_id AS s,
+          t1.char_range AS t1_char_range,
           t1.token_id AS t1,
-          t4.token_id AS t4
+          t1.xpos2 AS t1_xpos2,
+          t4.char_range AS t4_char_range,
+          t4.token_id AS t4,
+          t4.xpos2 AS t4_xpos2
    FROM
      (SELECT Segment_id
       FROM bnc1.fts_vectorrest vec
@@ -37,6 +44,13 @@ WITH RECURSIVE fixed_parts AS
           prev_cte.t1 AS t1,
           prev_cte.t4 AS t4,
           prev_cte.d,
+          prev_cte.d_char_range,
+          prev_cte.d_classcode,
+          prev_cte.s_char_range,
+          prev_cte.t1_char_range,
+          prev_cte.t1_xpos2,
+          prev_cte.t4_char_range,
+          prev_cte.t4_xpos2,
           token.token_id start_id,
           token.token_id id,
           transition0.dest_state state,
@@ -60,6 +74,13 @@ WITH RECURSIVE fixed_parts AS
                     traversal0.t1 AS t1,
                     traversal0.t4 AS t4,
                     traversal0.d,
+                    traversal0.d_char_range,
+                    traversal0.d_classcode,
+                    traversal0.s_char_range,
+                    traversal0.t1_char_range,
+                    traversal0.t1_xpos2,
+                    traversal0.t4_char_range,
+                    traversal0.t4_xpos2,
                     traversal0.start_id,
                     token.token_id id,
                     transition0.dest_state,
@@ -78,9 +99,16 @@ WITH RECURSIVE fixed_parts AS
 SET ordercol ,
     gather AS
   (SELECT d,
+          d_char_range,
+          d_classcode,
           s,
+          s_char_range,
           t1,
+          t1_char_range,
+          t1_xpos2,
           t4,
+          t4_char_range,
+          t4_xpos2,
           traversal0.t1 AS min_seq,
           traversal0.t4 AS max_seq
    FROM
@@ -97,9 +125,16 @@ SET ordercol ,
       WHERE t.segment_id = gather.s
         AND t.token_id BETWEEN gather.min_seq::bigint AND gather.max_seq::bigint) AS seq,
           gather.d AS d,
+          gather.d_char_range AS d_char_range,
+          gather.d_classcode AS d_classcode,
           gather.s AS s,
+          gather.s_char_range AS s_char_range,
           gather.t1 AS t1,
-          gather.t4 AS t4
+          gather.t1_char_range AS t1_char_range,
+          gather.t1_xpos2 AS t1_xpos2,
+          gather.t4 AS t4,
+          gather.t4_char_range AS t4_char_range,
+          gather.t4_xpos2 AS t4_xpos2
    FROM gather),
     res1 AS
   (SELECT DISTINCT 1::int2 AS rstype,

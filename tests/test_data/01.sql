@@ -1,9 +1,19 @@
 WITH RECURSIVE fixed_parts AS
-  (SELECT d.document_id AS d,
+  (SELECT d.char_range AS d_char_range,
+          d.document_id AS d,
+          d.meta->'classcode' AS d_classcode,
+          s.char_range AS s_char_range,
           s.segment_id AS s,
+          t1.char_range AS t1_char_range,
           t1.token_id AS t1,
+          t1.xpos2 AS t1_xpos2,
+          t2.char_range AS t2_char_range,
           t2.token_id AS t2,
+          t2.xpos2 AS t2_xpos2,
+          t2_lemma.lemma AS t2_lemma,
+          t3.char_range AS t3_char_range,
           t3.token_id AS t3,
+          t3.xpos2 AS t3_xpos2,
           t3_lemma.lemma AS t3_lemma
    FROM
      (SELECT Segment_id
@@ -32,19 +42,39 @@ WITH RECURSIVE fixed_parts AS
      AND t3_lemma.lemma_id = t3.lemma_id ),
                gather AS
   (SELECT d,
+          d_char_range,
+          d_classcode,
           s,
+          s_char_range,
           t1,
+          t1_char_range,
+          t1_xpos2,
           t2,
+          t2_char_range,
+          t2_lemma,
+          t2_xpos2,
           t3,
-          t3_lemma
+          t3_char_range,
+          t3_lemma,
+          t3_xpos2
    FROM fixed_parts) ,
                match_list AS
   (SELECT gather.d AS d,
+          gather.d_char_range AS d_char_range,
+          gather.d_classcode AS d_classcode,
           gather.s AS s,
+          gather.s_char_range AS s_char_range,
           gather.t1 AS t1,
+          gather.t1_char_range AS t1_char_range,
+          gather.t1_xpos2 AS t1_xpos2,
           gather.t2 AS t2,
+          gather.t2_char_range AS t2_char_range,
+          gather.t2_lemma AS t2_lemma,
+          gather.t2_xpos2 AS t2_xpos2,
           gather.t3 AS t3,
-          gather.t3_lemma AS t3_lemma
+          gather.t3_char_range AS t3_char_range,
+          gather.t3_lemma AS t3_lemma,
+          gather.t3_xpos2 AS t3_xpos2
    FROM gather),
                res1 AS
   (SELECT DISTINCT 1::int2 AS rstype,

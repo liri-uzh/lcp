@@ -36,6 +36,8 @@ class QueryData:
     set_objects: set[str] = field(default_factory=set)
     # the main sequences in the query; note that these aren't hashable, so QueryData cannot be shared across threads
     sqlsequences: list[Any] = field(default_factory=list)
+    # all the entity-label-to-attribute references in the query
+    all_refs: dict[str, list[str]] = field(default_factory=dict)
 
     def unique_label(
         self,

@@ -1,7 +1,9 @@
 WITH RECURSIVE fixed_parts AS
   (SELECT s.char_range AS s_char_range,
           s.segment_id AS s,
-          tv.token_id AS tv
+          tv.char_range AS tv_char_range,
+          tv.token_id AS tv,
+          tv.xpos2 AS tv_xpos2
    FROM
      (SELECT Segment_id
       FROM bnc1.fts_vectorrest vec
@@ -18,6 +20,8 @@ WITH RECURSIVE fixed_parts AS
   (SELECT fixed_parts.s AS s,
           fixed_parts.s_char_range AS s_char_range,
           fixed_parts.tv AS tv,
+          fixed_parts.tv_char_range AS tv_char_range,
+          fixed_parts.tv_xpos2 AS tv_xpos2,
           jsonb_build_array(anonymous.Token_id) AS disjunction_matches
    FROM fixed_parts
    CROSS JOIN bnc1.tokenrest anonymous
@@ -28,6 +32,8 @@ WITH RECURSIVE fixed_parts AS
    UNION ALL SELECT fixed_parts.s AS s,
                     fixed_parts.s_char_range AS s_char_range,
                     fixed_parts.tv AS tv,
+                    fixed_parts.tv_char_range AS tv_char_range,
+                    fixed_parts.tv_xpos2 AS tv_xpos2,
                     jsonb_build_array(anonymous3.Token_id, anonymous4.Token_id) AS disjunction_matches
    FROM fixed_parts
    CROSS JOIN bnc1.tokenrest anonymous3
@@ -45,7 +51,9 @@ WITH RECURSIVE fixed_parts AS
   (SELECT disjunction0.disjunction_matches AS disjunction_matches,
           disjunction0.s AS s,
           disjunction0.s_char_range AS s_char_range,
-          disjunction0.tv AS tv
+          disjunction0.tv AS tv,
+          disjunction0.tv_char_range AS tv_char_range,
+          disjunction0.tv_xpos2 AS tv_xpos2
    FROM disjunction0),
                res1 AS
   (SELECT DISTINCT 1::int2 AS rstype,

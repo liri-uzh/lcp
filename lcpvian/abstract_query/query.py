@@ -1,4 +1,3 @@
-import json
 import re
 
 from typing import Any, cast
@@ -16,6 +15,7 @@ from .utils import (
     _get_mapping,
     _get_batch_suffix,
     _get_underlang,
+    _is_anchored,
     _joinstring,
     _layer_contains,
     _bound_label,
@@ -440,6 +440,52 @@ class QueryMaker:
         self.joins = self.r.joins
         self.conditions = self.r.conditions
 
+        for ref_lab, ref_attrs in self.r.all_refs.items():
+            if _bound_label(ref_lab, self.query_json):
+                continue
+            ref_lay, _ = self.r.label_layer.get(ref_lab, (None, None))
+            if not ref_lay:
+                continue
+            ref_lay_info = cast(dict, self.config["layer"]).get(ref_lay, {})
+            # Need to handle alignment layers too later
+            if ref_lay_info.get("layerType") == "relation" or ref_lay_info.get(
+                "alignment"
+            ):
+                continue
+            ref_select = f"{ref_lab}.{ref_lay}_id AS {ref_lab}".lower()
+            if not any(sl.lower() == ref_select for sl in self.selects):
+                self.selects.add(ref_select)
+            for anchname, anchatt in (
+                ("stream", "char_range"),
+                ("time", "frame_range"),
+                ("location", "xy_box"),
+            ):
+                if not _is_anchored(self.config, ref_lay, anchname):
+                    continue
+                anch_select = f"{ref_lab}.{anchatt} AS {ref_lab}_{anchatt}".lower()
+                if not any(sl.lower() == anch_select for sl in self.selects):
+                    self.selects.add(anch_select)
+            lay_attrs = ref_lay_info.get("attributes", {})
+            lay_maps = cast(dict, self.config["mapping"]).get(ref_lay, {})
+            lay_meta = lay_attrs.get("meta", {})
+            for attr in ref_attrs:
+                att_select = ""
+                atype = lay_attrs.get(attr, {}).get("type", "")
+                if attr in lay_meta:
+                    att_select = f"{ref_lab.lower()}.meta->'{attr.lower()}' AS {ref_lab.lower()}_{attr.lower()}"
+                elif atype == "text":
+                    amaps = lay_maps.get("attributes", {}).get(attr, {})
+                    aname = amaps.get("name", f"{ref_lab}_{attr}")
+                    akey = amaps.get("key", attr)
+                    att_select = f"{aname}.{akey} AS {ref_lab}_{attr}".lower()
+                elif atype == "labels":
+                    pass
+                else:
+                    att_select = f"{ref_lab}.{attr} AS {ref_lab}_{attr}".lower()
+                if any(sl.lower() == att_select for sl in self.selects):
+                    continue
+                self.selects.add(att_select)
+
         # print(
         #    "Debug -- data carried over from query:",
         #    self.r.entities,
@@ -582,7 +628,7 @@ class QueryMaker:
 
         # Last select potentially *from* the fixed_parts table
         self.selects = {
-            f"___lasttable___.{self._get_label_as(s)} as {self._get_label_as(s)}"
+            f"___lasttable___.{self._get_label_as(s).replace('.','_')} as {self._get_label_as(s)}"
             for s in self.selects
         }
 
@@ -707,11 +753,11 @@ class QueryMaker:
         self.selects = {
             i.replace("___seglabel___", label)
             for i in self.selects
-            if "___seglabel___" in i.lower()
-            or any(
-                x.endswith(i.lower().split()[-1]) for x in [*self.r.entities, label]
-            )  # Keep segment label in case it's needed later on
-            or not self.r.entities
+            # if "___seglabel___" in i.lower()
+            # or any(
+            #     x.endswith(i.lower().split()[-1]) for x in [*self.r.entities, label]
+            # )  # Keep segment label in case it's needed later on
+            # or not self.r.entities
         }
 
         # TODO: report tokens' part_of in their label_layer, then replace token<batch> accordingly
@@ -851,11 +897,11 @@ class QueryMaker:
                 if isinstance(last_cte, Cte) and n > 0:
                     state_prev_cte = last_cte.get_final_states()
                 transition_table: str = cte.transition()
-                additional_selects = [
+                additional_selects = sorted(
                     self._get_label_as(slc)
                     for slc in self.selects
                     if self._get_label_as(slc) != s.get_first_stream_part_of()
-                ]
+                )
                 traversal_table: str = cte.traversal(
                     from_table=last_table,
                     state_prev_cte=state_prev_cte,
@@ -1158,8 +1204,6 @@ class QueryMaker:
         join = f"{self.schema}.{table} {label}".lower()
         if join != self._base and not is_negative:
             self.joins[join] = None
-        # if is_meta:
-        #     self.handle_meta(label, layer, contains)
         constraints = cast(JSONObject, obj.get("constraints", {}))
         part_of: list[dict[str, str]] = cast(
             list[dict[str, str]], obj.get("partOf", [])
@@ -1188,35 +1232,4 @@ class QueryMaker:
                 cond = conn_obj.conditions() if conn_obj else ""
                 if cond:
                     self.conditions.add(cond)
-        return None
-
-    def handle_meta(self, label: str, layer: str, contains: str) -> None:
-        """
-        Add conditions relating to metadata queries, above segment level
-        """
-        seg = self.segment
-        segname: str | None
-        if (
-            contains
-            and contains not in {self.token}
-            and layer.lower() != "gesture"
-            and layer != seg
-            and layer != self.document
-        ):
-            formed = f"{self.conf.schema}.turn_alignment"
-            self.joins[formed.lower()] = None
-            formed = f"turn_alignment.alignment_id = {label}.alignment_id"
-            self.conditions.add(formed.lower())
-        ll = self.r.label_layer
-        assert ll
-        # if self.has_fts:
-        #     lab = self._seg_has_char_range()
-        #     segname = lab
-        # else:
-        segname = next((k for k, v in ll.items() if v[0] == seg), None)
-        if not segname:
-            print("Problem finding segment label -- ignoring ...")
-        else:
-            formed = f"{label}.char_range && {segname}.char_range"
-            self.conditions.add(formed.lower())
         return None

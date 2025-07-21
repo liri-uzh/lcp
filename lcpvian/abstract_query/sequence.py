@@ -12,7 +12,7 @@ from .constraint import _get_constraints, _get_table
 from .prefilter import Prefilter
 from .sequence_members import Member, Disjunction, Sequence, Unit
 from .typed import JSONObject, LabelLayer
-from .utils import Config
+from .utils import Config, _is_anchored
 
 
 # Helper function to retrieve a string of coordinated conditions for a token
@@ -388,22 +388,54 @@ class Cte:
                 {big_disjunction}
             )"""
 
+        big_disjunction = big_disjunction.lstrip().rstrip()
         # Hack to replace references to s.segment_id with just s
-        seg_lay = self.sequence.config.config["firstClass"]["segment"]
-        seg_labs = "|".join(
-            lb for lb, (ll, _) in self.sequence.label_layer.items() if ll == seg_lay
-        )
-        seg_regx = rf"\b({seg_labs})\.{seg_lay}_id\b"
-        big_disjunction = re.sub(
-            seg_regx, "\\1", big_disjunction.lstrip().rstrip(), flags=re.IGNORECASE
-        )
-        return (
-            big_disjunction,
-            {
-                re.sub(seg_regx, "\\1", slj, flags=re.IGNORECASE)
-                for slj in state_left_joins
-            },
-        )
+        all_refs = self.sequence.sequence.query_data.all_refs
+        for lab, attrs in all_refs.items():
+            lay, _ = self.sequence.label_layer.get(lab, (None, None))
+            if not lay:
+                continue
+            rgx = rf"\b({lab})\.{lay}_id\b"
+            big_disjunction = re.sub(rgx, "\\1", big_disjunction, flags=re.IGNORECASE)
+            state_left_joins = {
+                re.sub(rgx, "\\1", slj, flags=re.IGNORECASE) for slj in state_left_joins
+            }
+            for anchname, anchatt in (
+                ("stream", "char_range"),
+                ("time", "frame_range"),
+                ("location", "xy_box"),
+            ):
+                if not _is_anchored(self.sequence.config.config, lay, anchname):
+                    continue
+                anch_rgx = rf"\b({lab})\.({anchatt})\b"
+                big_disjunction = re.sub(
+                    anch_rgx, "\\1_\\2", big_disjunction, flags=re.IGNORECASE
+                )
+                state_left_joins = {
+                    re.sub(anch_rgx, "\\1_\\2", slj, flags=re.IGNORECASE)
+                    for slj in state_left_joins
+                }
+            for attr in attrs:
+                # direct or meta attr refs
+                att_rgx = rf"\b({lab})\.(meta->')?({attr})'?\b"
+                big_disjunction = re.sub(
+                    att_rgx, "\\1_\\3", big_disjunction, flags=re.IGNORECASE
+                )
+                state_left_joins = {
+                    re.sub(att_rgx, "\\1_\\3", slj, flags=re.IGNORECASE)
+                    for slj in state_left_joins
+                }
+                # lookup attr refs
+                att_rgx = rf"\b({lab})_{attr}\.({attr})\b"
+                big_disjunction = re.sub(
+                    att_rgx, "\\1_\\2", big_disjunction, flags=re.IGNORECASE
+                )
+                state_left_joins = {
+                    re.sub(att_rgx, "\\1_\\2", slj, flags=re.IGNORECASE)
+                    for slj in state_left_joins
+                }
+
+        return (big_disjunction, state_left_joins)
 
     def transition(self) -> str:
         automaton, states = self.optimal_graph

@@ -981,6 +981,9 @@ def _get_all_attributes(layer: str, config: Any, lang: str = "") -> dict:
 
 
 def _get_all_labels(json_query: dict | list) -> dict[str, str]:
+    """
+    Recursively scan the JSON query and return all the label to layer mappings
+    """
     ret = {}
     is_list = isinstance(json_query, list)
     for k in json_query:

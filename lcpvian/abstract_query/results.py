@@ -46,7 +46,9 @@ class ResultsMaker:
     A class to manage the creation of results SQL, data and metadata
     """
 
-    def __init__(self, query_json: QueryJSON, conf: Config) -> None:
+    def __init__(
+        self, query_json: QueryJSON, conf: Config, all_refs: dict[str, list[str]]
+    ) -> None:
         self.conf: Config = conf
         self.config: ConfigJSON = conf.config
         self.schema: str = conf.schema
@@ -57,6 +59,7 @@ class ResultsMaker:
         self.document = cast(str, self.config["document"])
         self.conf_layer = cast(JSONObject, self.config["layer"])
         self.r = QueryData()
+        self.r.all_refs = all_refs
         tmp_label_layer = _label_layer(query_json.get("query", query_json))
         new_query_json = cast(dict, self.r.add_labels(query_json, tmp_label_layer))
         lifted_quants = cast(list, self.lift_quantifiers(new_query_json["query"]))
