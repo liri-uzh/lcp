@@ -1021,28 +1021,29 @@ class SQLSequence:
                     part_of=(sub_member_part_of or []),
                     in_subsequence=joins_for_refs_from_prev_table,
                 )
-                # Replace dotted references to attributes of entities from fixed table
-                # with underscored labels + add those labels to the fixed table's selects
-                select_labels_from_fixed = [
-                    x.lower().split(" as ")[1] for x in self.sequence.query_data.selects
-                ]
-                for lbl, attrs in refs.items():
-                    if lbl not in select_labels_from_fixed:
-                        continue
-                    for attr in attrs:
-                        new_lbl_attr = self.sequence.query_data.unique_label(
-                            f"{lbl}_{attr}",
-                            obj={**m.obj, "partOf": sub_member_part_of},
-                        )
-                        token_conds = [
-                            x.replace(f"{lbl}.{attr}", new_lbl_attr)
-                            for x in token_conds
-                        ]
-                        ljs = [x.replace(f"{lbl}.{attr}", new_lbl_attr) for x in ljs]
-                        add_to_fixed_selects.add(f"{lbl}.{attr} as {new_lbl_attr}")
-                        fixed_part_ts += (
-                            f",\n{from_table}.{new_lbl_attr} AS {new_lbl_attr}"
-                        )
+                # Inherited from when subsequences created separate CTEs?
+                # # Replace dotted references to attributes of entities from fixed table
+                # # with underscored labels + add those labels to the fixed table's selects
+                # select_labels_from_fixed = [
+                #     x.lower().split(" as ")[1] for x in self.sequence.query_data.selects
+                # ]
+                # for lbl, attrs in refs.items():
+                #     if lbl not in select_labels_from_fixed:
+                #         continue
+                #     for attr in attrs:
+                #         new_lbl_attr = self.sequence.query_data.unique_label(
+                #             f"{lbl}_{attr}",
+                #             obj={**m.obj, "partOf": sub_member_part_of},
+                #         )
+                #         token_conds = [
+                #             x.replace(f"{lbl}.{attr}", new_lbl_attr)
+                #             for x in token_conds
+                #         ]
+                #         ljs = [x.replace(f"{lbl}.{attr}", new_lbl_attr) for x in ljs]
+                #         add_to_fixed_selects.add(f"{lbl}.{attr} as {new_lbl_attr}")
+                #         fixed_part_ts += (
+                #             f",\n{from_table}.{new_lbl_attr} AS {new_lbl_attr}"
+                #         )
                 if ljs or joins_for_refs_from_prev_table:
                     from_cross += f"\n                LEFT JOIN "
                     combined_joins: list[str] = [

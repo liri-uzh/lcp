@@ -1102,8 +1102,8 @@ class QueryMaker:
         """
         Process an object in the query larger than token unit that directly contains tokens
         """
-        if not obj.get("partOf", None):
-            return None
+        # if not obj.get("partOf", None):
+        #     return None
         is_negative = obj.get("quantor", "") == "NOT EXISTS"
         if not is_negative:
             select = f"{label}.{layer}_id as {label}"
