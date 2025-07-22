@@ -330,8 +330,7 @@ async def post_query(request: web.Request) -> web.Response:
             await asyncio.sleep(0.5)
             if not qi.has_request(req):
                 break
-        res = app["query_buffers"][req.id]
-        app["query_buffers"].pop(req.id, None)
+        res = app["query_buffers"].pop(req.id, None)
         print(f"[{req.id}] Done with synchronous request")
         serializer = CustomEncoder()
         return web.json_response(serializer.default(res))

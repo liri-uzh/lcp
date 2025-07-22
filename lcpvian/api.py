@@ -84,6 +84,6 @@ async def search(request: web.Request) -> web.Response:
         if not qi.has_request(req):
             break
 
-    payload = request.app["query_buffers"][req.id]
+    payload = request.app["query_buffers"].pop(req.id, {})
 
     return web.json_response(payload)
