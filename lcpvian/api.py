@@ -55,7 +55,7 @@ async def search(request: web.Request) -> web.Response:
     corpus_conf = request.app["config"].get(cid, {})
     lg = request_data.get("partition", "")
     offset = int(request_data.get("offset", 0))
-    required = int(request_data.get("offset", 200))
+    requested = int(request_data.get("requested", 200))
     if partitions := corpus_conf.get("partitions", {}):
         lg = partitions.get("values", [""])[0]
     kwargs: dict[str, Any] = {"config": {cid: corpus_conf}, "corpus": cid}
@@ -74,7 +74,7 @@ async def search(request: web.Request) -> web.Response:
             "query": json.dumps(json_query),
             "languages": [lg],
             "offset": offset,
-            "requested": required,
+            "requested": requested,
             "synchronous": True,
         },
     )
