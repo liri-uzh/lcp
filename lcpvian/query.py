@@ -213,6 +213,14 @@ def process_query(
     and return the corresponding Request + QueryInfo + job
     """
     request: Request = Request(app["redis"], request_data)
+    if request.synchronous:
+        try:
+            query_buffers = app["query_buffers"]
+        except:
+            query_buffers = {}
+            app.addkey("query_buffers", dict[str, dict], query_buffers)
+        if request.id not in query_buffers:
+            query_buffers[request.id] = {}
     print(
         f"Received new POST request: {request.id} ; {request.offset} -- {request.requested}"
     )
@@ -318,18 +326,12 @@ async def post_query(request: web.Request) -> web.Response:
         )
 
     if req.synchronous:
-        try:
-            query_buffers = app["query_buffers"]
-        except:
-            query_buffers = {}
-            app.addkey("query_buffers", dict[str, dict], query_buffers)
-        query_buffers[req.id] = {}
         while 1:
             await asyncio.sleep(0.5)
             if not qi.has_request(req):
                 break
-        res = query_buffers[req.id]
-        query_buffers.pop(req.id, None)
+        res = app["query_buffers"][req.id]
+        app["query_buffers"].pop(req.id, None)
         print(f"[{req.id}] Done with synchronous request")
         serializer = CustomEncoder()
         return web.json_response(serializer.default(res))

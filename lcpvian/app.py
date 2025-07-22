@@ -42,6 +42,7 @@ from .utils import (
 
 load_env()
 
+from .api import list_coprora, get_corpus, search
 from .check_file_permissions import check_file_permissions
 from .configure import CorpusConfig
 from .corpora import corpora
@@ -237,6 +238,9 @@ async def create_app(test: bool = False) -> web.Application:
     # app["auth"] = Authenticator(app)
 
     endpoints: list[tuple[str, str, Endpoint]] = [
+        ("/api/corpora", "GET", list_coprora),
+        ("/api/corpora/{corpus_id}", "GET", get_corpus),
+        ("/api/corpora/{corpus_id}/search", "POST", search),
         ("/check-file-permissions", "GET", check_file_permissions),
         ("/config", "POST", refresh_config),
         ("/corpora", "POST", corpora),

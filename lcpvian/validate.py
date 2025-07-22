@@ -92,11 +92,8 @@ def process_refs(
 
 
 async def validate(
-    user: str | None = None,
-    room: str | None = None,
     query: str = "",
     kind: str = "json",
-    query_name: str | None = None,
     **kwargs: dict[str, Any],
 ) -> JSONObject:
     """

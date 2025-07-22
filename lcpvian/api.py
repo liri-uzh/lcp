@@ -1,74 +1,89 @@
 """
-api.py: tools used on the command line for showing corpora, running queries etc.
+api.py: API access to LCP
 """
 
 import asyncio
 import json
-import os
 
-try:
-    from aiohttp import ClientSession
-except ImportError:
-    from aiohttp.client import ClientSession
+from aiohttp import web
+from typing import cast, Any
 
-from .typed import JSONObject
-
-
-AIO_PORT = os.getenv("AIO_PORT", 9090)
-QUERY_TIMEOUT = os.getenv("QUERY_TIMEOUT", 1000)
+from .query import process_query
+from .utils import LCPApplication
+from .validate import validate
 
 
-async def corpora(app_type: str = "all") -> JSONObject:
-    """
-    Helper to quickly show corpora in app
-    """
-    from .utils import load_env
-
-    load_env()
-
-    headers: JSONObject = {}
-    jso = {"appType": app_type, "all": True}
-
-    url = f"http://localhost:{AIO_PORT}/corpora"
-    async with ClientSession() as session:
-        async with session.post(url, headers=headers, json=jso) as resp:
-            result: JSONObject = await resp.json()
-            return result
+async def _get_user(request: web.Request, authenticator) -> dict:
+    user_data = {}
+    if "X-API-Key" in request.headers and "X-API-Secret" in request.headers:
+        user_data = await authenticator.check_api_key(request)
+    else:
+        user_data = await authenticator.user_details(request)
+    return user_data
 
 
-async def query(corpus: int, query: str) -> None:
-    """
-    Run a query and get results from websocket
-    """
-    sock_url = f"http://localhost:{AIO_PORT}/ws"
-    query_url = f"http://localhost:{AIO_PORT}/query"
-    async with ClientSession() as session:
-        async with session.ws_connect(sock_url) as ws:
-            msg = {"user": "api", "room": "api", "action": "joined"}
-            await ws.send_json(msg)
+async def list_coprora(request: web.Request) -> web.Response:
+    authenticator = request.app["auth_class"](request.app)
+    user_data = await _get_user(request, authenticator)
+    corpora = {
+        cid: conf
+        for cid, conf in request.app["config"].items()
+        if authenticator.check_corpus_allowed(cid, user_data, "lcp", get_all=False)
+    }
+    return web.json_response(corpora)
 
-            from textwrap import dedent
 
-            headers: JSONObject = {}
+async def get_corpus(request: web.Request) -> web.Response:
+    authenticator = request.app["auth_class"](request.app)
+    user_data = await _get_user(request, authenticator)
+    cid: str = request.match_info["corpus_id"]
+    if not authenticator.check_corpus_allowed(cid, user_data, "lcp", get_all=False):
+        return web.HTTPForbidden(text="Not allowed to access this corpus")
+    return web.json_response(request.app["config"].get(cid, {}))
 
-            jso = {
-                "user": "api",
-                "room": "api",
-                "appType": "lcp",
-                "languages": ["en"],
-                "total_results_requested": 100,
-                "corpora": [corpus],
-                "query": dedent(query),
-            }
 
-            async with session.post(query_url, headers=headers, json=jso) as resp:
-                result: JSONObject = await resp.json()
-                print(f"Query submission:\n{json.dumps(result, indent=4)}\n\n")
+async def search(request: web.Request) -> web.Response:
+    authenticator = request.app["auth_class"](request.app)
+    user_data = await _get_user(request, authenticator)
+    cid: str = request.match_info["corpus_id"]
+    if not authenticator.check_corpus_allowed(cid, user_data, "lcp", get_all=False):
+        return web.HTTPForbidden(text="Not allowed to access this corpus")
 
-            async for message in ws:
-                payload = message.json()
-                print(f"Query data:\n{json.dumps(payload, indent=4)}\n")
-                if payload["status"] != "partial":
-                    msg = {"user": "api", "room": "api", "action": "left"}
-                    await ws.send_json(msg)
-                    return None
+    request_data: dict[str, str] = await request.json()
+    query = request_data.get("query", "")
+    kind = request_data.get("kind", "json")
+    corpus_conf = request.app["config"].get(cid, {})
+    lg = request_data.get("partition", "")
+    offset = int(request_data.get("offset", 0))
+    required = int(request_data.get("offset", 200))
+    if partitions := corpus_conf.get("partitions", {}):
+        lg = partitions.get("values", [""])[0]
+    kwargs: dict[str, Any] = {"config": {cid: corpus_conf}, "corpus": cid}
+
+    val = await validate(query, kind, **kwargs)
+    if val.get("status") != 200:
+        return web.HTTPForbidden(text=cast(dict, val).get("error", "Error"))
+
+    json_query = val["json"]
+
+    (req, qi, job) = process_query(
+        cast(LCPApplication, request.app),
+        {
+            "appType": "lcp",
+            "corpus": cid,
+            "query": json.dumps(json_query),
+            "languages": [lg],
+            "offset": offset,
+            "requested": required,
+            "synchronous": True,
+        },
+    )
+
+    while 1:
+        await asyncio.sleep(0.5)
+        if not qi.has_request(req):
+            break
+
+    payload = request.app["query_buffers"][req.id]
+
+    return web.json_response(payload)

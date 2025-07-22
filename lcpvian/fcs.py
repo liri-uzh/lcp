@@ -216,12 +216,6 @@ async def search_retrieve(
     except:
         startRecord = 0
 
-    try:
-        query_buffers = app["query_buffers"]
-    except:
-        query_buffers = {}
-        app.addkey("query_buffers", dict[str, dict], query_buffers)
-
     request_ids: dict[str, dict] = {}
     async with asyncio.TaskGroup() as tg:
         for cid, conf, lg in corpora:
@@ -247,7 +241,6 @@ async def search_retrieve(
                     "synchronous": True,
                 },
             )
-            query_buffers[req.id] = {}
             request_ids[req.id] = {
                 "cid": cid,
                 "conf": conf,
@@ -259,7 +252,10 @@ async def search_retrieve(
                 _check_request_complete(qi, req, app, request_ids, requested)
             )
     return _make_search_response(
-        query_buffers, request_ids, startRecord=startRecord, requested=requested
+        app["query_buffers"],
+        request_ids,
+        startRecord=startRecord,
+        requested=requested,
     )
 
 
