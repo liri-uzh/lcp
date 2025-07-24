@@ -101,8 +101,8 @@
       </p>
     </div>
     <div class="col-12 col-lg-7">
-      <!-- <CorpusGraphViewNew :corpus="corpusModal" /> -->
-      <CorpusGraphView :corpus="corpusModal" v-if="showGraph" />
+      <CorpusGraphViewNew :corpus="corpusModal" />
+      <!-- <CorpusGraphView :corpus="corpusModal" v-if="showGraph" /> -->
     </div>
   </div>
 </template>
@@ -128,8 +128,8 @@
   import { useCorpusStore } from "@/stores/corpusStore";
   import { useUserStore } from "@/stores/userStore";
 
-  // import CorpusGraphViewNew from "@/components/CorpusGraphViewNew.vue";
-  import CorpusGraphView from "@/components/CorpusGraphView.vue";
+  import CorpusGraphViewNew from "@/components/CorpusGraphViewNew.vue";
+  // import CorpusGraphView from "@/components/CorpusGraphView.vue";
 
   import router from "@/router";
   import config from "@/config";
@@ -174,8 +174,8 @@
       ...mapState(useUserStore, ["userData"]),
     },
     components: {
-      // CorpusGraphViewNew,
-      CorpusGraphView,
+      CorpusGraphViewNew,
+      // CorpusGraphView,
     },
     mounted() {
       setTimeout(() => {
