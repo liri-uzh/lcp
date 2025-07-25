@@ -96,7 +96,6 @@ export default {
         if (attProps.ref && attProps.ref in this.corpus.globalAttributes && !(attProps.ref in globalAttributesDones)) {
           globalAttributesDones[attProps.ref] = true;
           subAttributes = Object.entries(this.corpus.globalAttributes[attProps.ref].keys || {});
-          console.log(attProps.ref, attProps.ref in this.corpus.globalAttributes, !(attProps.ref in globalAttributesDones), subAttributes);
         }
         else if (attProps.type == "dict")
           subAttributes = Object.entries(attProps.keys || {});
@@ -108,7 +107,6 @@ export default {
         }
         entities.at(-1).nAttrs = subAttributes.length;
         const subFolded = subAttributes.length > NATTR_FOLD;
-        console.log("subattributes", subAttributes);
         for (let [subAttName, subAttProps] of subAttributes)
           entities.push({
             id: `${layerName}_${attName}_${subAttName}`,
