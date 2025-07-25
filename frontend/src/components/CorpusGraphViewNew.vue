@@ -5,8 +5,11 @@
 </template>
 
 <script>
+// TODO: use tooltips to add the layers/attributes descriptions, notes and the list of possible values
 import * as d3 from 'd3'
+import Utils from '@/utils.js'
 
+const NATTR_FOLD = 4;
 const WIDTH = 650, HEIGHT = 500;
 
 function attrColor(props) {
@@ -68,17 +71,18 @@ export default {
         layers[layerProps.partOf].contains = [layers[layerProps.partOf].contains];
       layers[layerProps.partOf].contains.push(layerName);
     });
+    const globalAttributesDones = {};
     const entities = [];
     for (let [layerName, layerProps] of Object.entries(layers)) {
-      const layerEntity = {id: layerName, label: layerName, width: displayTextWidth(layerName), anchors: []};
       const attributes = layerProps.attributes || {};
       if ("meta" in attributes && typeof(attributes.meta)=="object" && Object.keys(attributes.meta).length>=1) {
         for (let [metaAttrName, metaAttrProps] of Object.entries(attributes.meta))
           attributes[metaAttrName] = metaAttrProps;
         delete attributes.meta;
       }
-      let folded = Object.keys(attributes).length > 4;
-      for (let [attName, attProps] of Object.entries(attributes))
+      const nAttrs = Object.keys(attributes).length;
+      const folded = nAttrs > NATTR_FOLD;
+      for (let [attName, attProps] of Object.entries(attributes)) {
         entities.push({
           id: `${layerName}_${attName}`,
           parentId: layerName,
@@ -88,16 +92,59 @@ export default {
           width: displayTextWidth(attName),
           folded: folded
         });
-      if (folded)
+        let subAttributes = null;
+        if (attProps.ref && attProps.ref in this.corpus.globalAttributes && !(attProps.ref in globalAttributesDones)) {
+          globalAttributesDones[attProps.ref] = true;
+          subAttributes = Object.entries(this.corpus.globalAttributes[attProps.ref].keys || {});
+          console.log(attProps.ref, attProps.ref in this.corpus.globalAttributes, !(attProps.ref in globalAttributesDones), subAttributes);
+        }
+        else if (attProps.type == "dict")
+          subAttributes = Object.entries(attProps.keys || {});
+        if (subAttributes === null)
+          continue;
+        if (subAttributes.length == 0) {
+          entities.at(-1).note = "Sub-attributes missing from config";
+          continue;
+        }
+        entities.at(-1).nAttrs = subAttributes.length;
+        const subFolded = subAttributes.length > NATTR_FOLD;
+        console.log("subattributes", subAttributes);
+        for (let [subAttName, subAttProps] of subAttributes)
+          entities.push({
+            id: `${layerName}_${attName}_${subAttName}`,
+            parentId: `${layerName}_${attName}`,
+            label: subAttName,
+            attribute: true,
+            props: subAttProps,
+            width: displayTextWidth(subAttName),
+            folded: subFolded
+          });
         entities.push({
-          id: `${layerName}__unfolder`,
-          parentId: layerName,
-          label: "...4+",
+          id: `${layerName}_${attName}__unfolder`,
+          parentId: `${layerName}_${attName}`,
+          label: `show ${subAttributes.length}`,
           attribute: true,
           props: {type: "_unfolder"},
-          width: displayTextWidth("...4+"),
-          folded: false
-        })
+          width: displayTextWidth(`show ${subAttributes.length}`),
+          folded: !subFolded
+        });
+      }
+      entities.push({
+        id: `${layerName}__unfolder`,
+        parentId: layerName,
+        label: `show ${nAttrs}`,
+        attribute: true,
+        props: {type: "_unfolder"},
+        width: displayTextWidth(`show ${nAttrs}`),
+        folded: !folded
+      });
+      const layerEntity = {
+        id: layerName,
+        label: layerName,
+        width: displayTextWidth(layerName),
+        nAttrs: nAttrs,
+        anchors: ["stream","time","location"].filter(a=>Utils.isAnchored(layerName,this.corpus.layer,a))
+      };
       entities.push(layerEntity);
     }
     const additionalParents = {};
@@ -134,7 +181,7 @@ export default {
       const nodeWidth = 50, nodeHeight = 50;
       const horizontalSep = 20, verticalSep = 50;
 
-      const unfoldedentities = this.entities.filter((s)=>!s.folded);
+      const unfoldedentities = this.entities.filter((s)=>!s.folded && (!s.parentId || !this.entities.find(e=>e.id == s.parentId).folded));
 
       let hierarchy = d3.stratify()(unfoldedentities);
       const treeLayout = d3.tree()
@@ -154,18 +201,21 @@ export default {
         });
       }).flat().filter(x=>x != null);
 
-      this.skillTree.selectAll("*").remove();
+      this.corpusTree.selectAll("*").remove();
 
-      const svgLines = this.skillTree
+      const svgLines = this.corpusTree
         .selectAll("line")
         .data([...links, ...additionalLinks])
         .join('line')
-        .style('stroke', 'black');
+        .style('stroke', (d) => d.target.data.attribute ? 'brown' : 'darkgrey');
 
-      const svgRects = this.skillTree
-        .selectAll("rect")
+      const svgBoxes = this.corpusTree.selectAll("g")
         .data(nodes)
-        .join("rect")
+        .enter()
+        .append("g");
+
+      const svgRects = svgBoxes
+        .append("rect")
         .attr("width", (d) => d.data.width)
         .attr("height", () => nodeHeight)
         .attr("rx", (d) => d.data.attribute ? 5 : 0 )
@@ -180,14 +230,21 @@ export default {
           let id = node.id;
           if (node.data.attribute && node.data.props.type == "_unfolder")
             id = node.data.parentId;
-          this.entities.forEach((s)=>s.parentId != id || !s.attribute || (s.folded = !s.folded));
+          const entity = this.entities.find(e=>e.id == id);
+          if (!entity) return;
+          if (!entity.nAttrs || entity.nAttrs == 1) return;
+          this.entities.forEach(e=>e.parentId != id || !e.attribute || (e.folded = !e.folded));
           this.drawTree();
         });
 
-      const svgTexts = this.skillTree
-        .selectAll("text")
-        .data(nodes)
-        .join("text")
+      const svgAnchors = svgBoxes
+        .append("text")
+        .attr("font-size", "smaller")
+        .text( (d) => (d.data.anchors||[]).map(a=>Object({stream:"c",time:"t",location:"l"})[a]).join(".") )
+        .attr("text-anchor", "end");
+
+      const svgTexts = svgBoxes
+        .append("text")
         .attr("fill", "black")
         .attr("dominant-baseline", "middle")
         .attr("text-anchor", "middle")
@@ -202,16 +259,19 @@ export default {
       simulation.stop();
 
       svgRects
-          .attr("x", d => d.x )
-          .attr("y", d => d.y );
-        svgTexts
-          .attr("x", d => d.x + d.data.width/2 )
-          .attr("y", d => d.y + nodeHeight/2 );
-        svgLines
-          .attr("x1", d => d.source.x + d.source.data.width/2 )
-          .attr("x2", d => d.target.x + d.target.data.width/2 )
-          .attr("y1", d => d.source.y + nodeHeight/2 )
-          .attr("y2", d => d.target.y + nodeHeight/2 );
+        .attr("x", d => d.x )
+        .attr("y", d => d.y );
+      svgAnchors
+        .attr("x", d => d.x + d.data.width - 2 )
+        .attr("y", d => d.y + 10);
+      svgTexts
+        .attr("x", d => d.x + d.data.width/2 )
+        .attr("y", d => d.y + nodeHeight/2 );
+      svgLines
+        .attr("x1", d => d.source.x + d.source.data.width/2 )
+        .attr("x2", d => d.target.x + d.target.data.width/2 )
+        .attr("y1", d => d.source.y + nodeHeight/2 )
+        .attr("y2", d => d.target.y + nodeHeight/2 );
     },
     onPointerDown: function (event) {
       this.isClicked = true;
@@ -230,7 +290,9 @@ export default {
           const x = this.viewBoxPointer.x - event.pageX;
           const y = this.viewBoxPointer.y - event.pageY;
           this.viewBoxOffset = {x: x, y: y};
-          this.svg.attr("viewBox", `${x} ${y} ${WIDTH} ${HEIGHT}`);
+          const [w, h] = (this.svg.attr("viewBox") || `_ _ ${WIDTH} ${HEIGHT}`)
+            .split(" ").map(x=>parseInt(x)).slice(2,4);
+          this.svg.attr("viewBox", `${x} ${y} ${w} ${h}`);
       }
     },
   },
@@ -243,7 +305,7 @@ export default {
       .attr("height", HEIGHT)
       .attr("cursor", "grab")
       .attr("position", "relative");
-    this.skillTree = this.svg.append("g");
+    this.corpusTree = this.svg.append("g");
     this.drawTree();
 
     this.svg.on("pointerdown", this.onPointerDown);
@@ -251,9 +313,16 @@ export default {
     this.svg.on("pointerleave", this.onPointerUp);
     this.svg.on("pointermove", this.onPointerMove);
 
-    document.querySelector("svg#corpusDiagram").parentElement.addEventListener("wheel", (e)=>{
-      this.zoom = Math.max(0.2, Math.min(4.0, this.zoom + e.deltaY/250));
-      document.querySelector("svg#corpusDiagram > g").style.zoom = this.zoom;
+    const svgInDOM = document.querySelector("svg#corpusDiagram");
+    svgInDOM.parentElement.addEventListener("wheel", (e)=>{
+      this.zoom = Math.max(0.2, Math.min(2.0, this.zoom + e.deltaY/250));
+      if (!svgInDOM.hasAttribute("viewBox"))
+        svgInDOM.setAttribute("viewBox", `0 0 ${WIDTH} ${HEIGHT}`);
+      const [x,y] = svgInDOM.getAttribute("viewBox").split(" ").map(x=>parseInt(x)).slice(0,2);
+      svgInDOM.setAttribute(
+        "viewBox",
+        [x, y, Math.round(WIDTH * this.zoom), Math.round(HEIGHT * this.zoom)].join(" ")
+      );
     });
   },
   beforeUnmount() {
