@@ -221,7 +221,7 @@
                     <div class="corpus-graph mt-3" v-if="selectedCorpora">
                       <FontAwesomeIcon :icon="['fas', 'expand']" @click="openGraphInModal" data-bs-toggle="modal"
                         data-bs-target="#corpusDetailsModal" />
-                      <CorpusGraphView :corpus="selectedCorpora.corpus" :key="graphIndex" v-if="showGraph == 'main'"
+                      <CorpusGraphViewNew :corpus="selectedCorpora.corpus" :key="graphIndex" v-if="showGraph == 'main'"
                         @graphReady="resizeGraph" />
                     </div>
                   </div>
@@ -624,7 +624,7 @@
           <div class="modal-body text-start" v-if="showGraph == 'modal'">
             <div class="row">
               <p class="title mb-0">{{ selectedCorpora.corpus.meta.name }}</p>
-              <CorpusGraphView :corpus="selectedCorpora.corpus" />
+              <CorpusGraphViewNew :corpus="selectedCorpora.corpus" />
             </div>
           </div>
           <div class="modal-footer">
@@ -733,7 +733,8 @@ import ResultsTableView from "@/components/results/TableView.vue";
 import ResultsKWICView from "@/components/results/KWICView.vue";
 import ResultsPlainTableView from "@/components/results/PlainTableView.vue";
 import EditorView from "@/components/EditorView.vue";
-import CorpusGraphView from "@/components/CorpusGraphView.vue";
+// import CorpusGraphView from "@/components/CorpusGraphView.vue";
+import CorpusGraphViewNew from "@/components/CorpusGraphViewNew.vue";
 import PlayerComponent from "@/components/PlayerComponent.vue";
 import { setTooltips, removeTooltips } from "@/tooltips";
 import Utils from "@/utils";
@@ -815,7 +816,8 @@ export default {
     ResultsPlainTableView,
     ResultsTableView,
     EditorView,
-    CorpusGraphView,
+    // CorpusGraphView,
+    CorpusGraphViewNew,
     PlayerComponent,
   },
   watch: {
