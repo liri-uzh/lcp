@@ -3,24 +3,36 @@
         "entity": "t",
         "layer": "Token",
         "attribute": "form",
-        "label": "t_form.form",
-        "tables": ["ofrom.tokenrest t", "ofrom.token_form t_form"],
-        "conditions": ["t.form_id = t_form.form_id"]
+        "ref": "t_form.form",
+        "joins": {
+            "ofrom.tokenrest t": {},
+            "ofrom.token_form t_form": {
+                "t_form.form_id = t.form_id": 1
+            }
+        }
     },
     {
         "entity": "t",
         "layer": "Token",
         "attribute": "misc",
-        "label": "t_misc.misc",
-        "tables": ["ofrom.tokenrest t", "ofrom.token_misc t_misc"],
-        "conditions": ["t.misc_id = t_misc.misc_id"]
+        "ref": "t_misc.misc",
+        "joins": {
+            "ofrom.tokenrest t": {},
+            "ofrom.token_misc t_misc": {
+                "t_misc.misc_id = t.misc_id": 1
+            }
+        }
     },
     {
         "entity": "u",
         "layer": "Utterance",
         "attribute": "agent",
-        "label": "u_agent.agent",
-        "tables": ["ofrom.utterancerest u", "ofrom.global_attribute_agent u_agent"],
-        "conditions": ["u.agent_id = u_agent.agent_id"]
+        "ref": "u_agent.agent",
+        "joins": {
+            "ofrom.utterancerest u": {},
+            "ofrom.global_attribute_agent u_agent": {
+                "u_agent.agent_id = u.agent_id": 1
+            }
+        }
     }
 ]

@@ -105,13 +105,18 @@ class MyAppTestCase(AioHTTPTestCase):
 
             for r in refs:
                 sr = sqlc.attribute(r["entity"], r["layer"], r["attribute"])
-                self.assertEqual(r["label"], sr.label)
-                for t in r["tables"]:
-                    print("table", t)
-                    self.assertTrue(t in sr.tables)
-                for t in r["conditions"]:
-                    print("condition", t)
-                    self.assertTrue(t in sr.conditions)
+                self.assertEqual(r["ref"], sr.ref)
+                for tab, conds in r["joins"].items():
+                    print("table", tab)
+                    self.assertTrue(tab in sr.joins)
+                    for cond in conds:
+                        print("condition", cond)
+                        try:
+                            self.assertTrue(cond in sr.joins[tab])
+                        except:
+                            import pdb
+
+                            pdb.set_trace()
 
     async def test_conversions(self):
         """
