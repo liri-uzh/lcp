@@ -15,12 +15,13 @@ from lcpvian.abstract_query.create import json_to_sql
 from lcpvian.typed import Batch
 
 # this env var must be set before we import anything from .run
-os.environ["_TEST"] = "true"
+os.environ["_TEST"] = "True"
 
 from lcpvian.app import create_app
 
 # from lcpvian.sock import handle_redis_response
 from lcpvian.utils import get_segment_meta_script
+from lcpvian.abstract_query.utils import SQLCorpus, SQLRef
 
 
 PUBSUB_CHANNEL = PUBSUB_CHANNEL_TEMPLATE % "query"
@@ -68,6 +69,50 @@ class MyAppTestCase(AioHTTPTestCase):
     #    a = subprocess.Popen(app, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     #    # stdout, stderr = a.communicate()
 
+    async def test_sqlrefs(self):
+        """
+        Test that the SQLRef generates the proper SQL bits
+        """
+        self.maxDiff = None
+        test_dir = os.path.join(os.path.abspath(os.path.dirname(__file__)), "test_data")
+        names = {
+            os.path.splitext(i)[0]
+            for i in os.listdir(test_dir)
+            if os.path.splitext(i)[0].isnumeric()
+        }
+        for n in sorted(names):
+
+            base = os.path.join(test_dir, n)
+
+            if not os.path.exists(base + ".refs"):
+                continue
+
+            with open(base + ".meta") as mfile:
+                meta = json.load(mfile)
+
+            with open(base + ".refs") as rfile:
+                refs = json.load(rfile)
+
+            schema = meta.pop("schema")
+            batch = meta.pop("batch")
+            lang = (
+                _determine_language(meta.get("batch", ""))
+                or meta.get("partitions", {"values": ["en"]})["values"][0]
+            )
+            lab_lay = {}
+
+            sqlc = SQLCorpus(meta, schema, batch, lang, lab_lay)
+
+            for r in refs:
+                sr = sqlc.attribute(r["entity"], r["layer"], r["attribute"])
+                self.assertEqual(r["label"], sr.label)
+                for t in r["tables"]:
+                    print("table", t)
+                    self.assertTrue(t in sr.tables)
+                for t in r["conditions"]:
+                    print("condition", t)
+                    self.assertTrue(t in sr.conditions)
+
     async def test_conversions(self):
         """
         Test that we can convert dqd to SQL
@@ -82,6 +127,12 @@ class MyAppTestCase(AioHTTPTestCase):
         for n in sorted(names):
 
             base = os.path.join(test_dir, n)
+
+            if any(
+                not os.path.exists(base + ext)
+                for ext in (".dqd", ".sql", ".msql", ".meta")
+            ):
+                continue
 
             with open(base + ".dqd") as dfile:
                 dqd = dfile.read().strip() + "\n"

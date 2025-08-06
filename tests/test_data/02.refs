@@ -1,0 +1,34 @@
+[
+    {
+        "entity": "dr",
+        "layer": "DepRel",
+        "attribute": "head",
+        "label": "dr.head",
+        "tables": ["sparcling1.deprel_de dr"],
+        "conditions": []
+    },
+    {
+        "entity": "t",
+        "layer": "Token",
+        "attribute": "xpos",
+        "label": "t.xpos",
+        "tables": ["sparcling1.token_derest t"],
+        "conditions": []
+    },
+    {
+        "entity": "t",
+        "layer": "Token",
+        "attribute": "form",
+        "label": "t_form.form",
+        "tables": ["sparcling1.token_derest t", "sparcling1.form_de t_form"],
+        "conditions": ["t.form_id = t_form.form_id"]
+    },
+    {
+        "entity": "se",
+        "layer": "Session",
+        "attribute": "date",
+        "label": "se_aligned.meta->'date'",
+        "tables": ["sparcling1.session_de se", "sparcling1.session_alignment se_aligned"],
+        "conditions": ["se.alignment_id = se_aligned.alignment_id"]
+    }
+]

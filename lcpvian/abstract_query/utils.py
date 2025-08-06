@@ -9,6 +9,23 @@ from .typed import Joins, LabelLayer, QueryType
 SUFFIXES = {".*", ".+", ".*?", ".?", ".+?", "."}
 
 
+def unique_label(
+    label: str = "anonymous",
+    layer="__internal",
+    references: LabelLayer | None = None,
+    obj: dict = dict({}),
+) -> str:
+    references = references or {}
+    label = label or "anonymous"
+    new_label: str = label
+    n: int = 1
+    while new_label in references:
+        n += 1
+        new_label = f"{label}{str(n)}"
+    references[new_label] = (layer, obj)
+    return new_label
+
+
 @dataclass
 class QueryData:
     """
@@ -46,16 +63,7 @@ class QueryData:
         references: LabelLayer | None = None,
         obj: dict = dict({}),
     ) -> str:
-        if references is None:
-            references = self.label_layer
-        label = label or "anonymous"
-        new_label: str = label
-        n: int = 1
-        while new_label in references:
-            n += 1
-            new_label = f"{label}{str(n)}"
-        references[new_label] = (layer, obj)
-        return new_label
+        return unique_label(label, layer, references or self.label_layer, obj)
 
     def add_labels(self, query_json: list | dict, references: dict) -> list | dict:
         is_dict = isinstance(query_json, dict)
@@ -93,6 +101,139 @@ class Config:
     batch: str
     config: dict[str, Any]
     lang: str | None
+
+
+@dataclass
+class SQLRef:
+    """
+    Label, tables and conditions to reference a layer or an attribute
+    """
+
+    label: str
+    tables: dict[str, int]
+    conditions: dict[str, int]
+
+
+class SQLCorpus:
+    def __init__(
+        self,
+        conf: dict,
+        schema: str,
+        batch: str,
+        lang: str,
+        label_layer: LabelLayer,
+    ):
+        self.refs: dict[tuple[str, str], SQLRef] = {}
+        self.conf = conf
+        self.schema = schema
+        self.batch = batch
+        self.lang = lang
+        self.label_layer = label_layer
+
+    def add_ref(
+        self,
+        key: tuple[str, str],
+        label: str,
+        tables: dict[str, int],
+        conditions: dict[str, int],
+    ) -> SQLRef:
+        self.refs[key] = SQLRef(label, tables, conditions)
+        return self.refs[key]
+
+    def layer(self, entity: str, layer: str) -> SQLRef:
+        key = (entity, "")
+        if key not in self.refs:
+            label = unique_label(entity, layer, self.label_layer)
+            layer_table = _get_table(layer, self.conf, self.batch, self.lang)
+            table = f"{self.schema}.{layer_table} {label}"
+            self.add_ref(key, label, {table: 1}, {})
+        return self.refs[key]
+
+    def attribute(self, entity: str, layer: str, attribute: str) -> SQLRef:
+        key = (entity, attribute)
+        if key in self.refs:
+            return self.refs[key]
+        lab_lay = self.label_layer
+        tables: dict[str, int] = {}
+        conditions: dict[str, int] = {}
+        entity_key = (entity, "")
+        entity_ref: SQLRef
+        if entity_key in self.refs:
+            entity_ref = self.refs[entity_key]
+        else:
+            entity_ref = self.layer(entity, layer)
+        tables.update(entity_ref.tables)
+        conditions.update(entity_ref.conditions)
+        entity_label = entity_ref.label
+        layer_info = self.conf["layer"][layer]
+        info_attributes = layer_info.get("attributes", {})
+        layer_mapping = _get_mapping(layer, self.conf, self.batch, self.lang)
+        mapping_attributes = layer_mapping.get("attributes", {})
+        meta = info_attributes.get("meta", None)
+        attr_type = info_attributes.get(attribute, {}).get("type", "categorical")
+        rel_table = (
+            self.conf["mapping"]["layer"][layer].get("alignment", {}).get("relation")
+        )
+        if rel_table:
+            rel_ent_label = unique_label(f"{entity_label}_aligned", layer, lab_lay)
+            tables[f"{self.schema}.{rel_table} {rel_ent_label}"] = 1
+            conditions[
+                f"{entity_label}.alignment_id = {rel_ent_label}.alignment_id"
+            ] = 1
+            entity_label = rel_ent_label
+        is_glob = info_attributes.get(attribute, {}).get("ref", "") in self.conf.get(
+            "globalAttributes", {}
+        )
+        label: str = ""
+        if layer_info.get("layerType") == "relation":
+            label = next(
+                (
+                    attribute
+                    for k, v in info_attributes.items()
+                    if "entity" in v and v.get("name") == attribute
+                ),
+                "",
+            )
+            label = f"{entity_label}.{label}" if label else ""
+        elif isinstance(meta, dict) and attribute in meta:
+            label = f"{entity_label}.meta->'{attribute}'"
+        elif attr_type in ("categorical", "number") and not is_glob:
+            label = f"{entity_label}.{attribute}"
+        if label:
+            return self.add_ref(key, label, tables, conditions)
+        label = unique_label(f"{entity}_{attribute}", layer, lab_lay)
+        attr_map = mapping_attributes.get(attribute, {})
+        rel_key = attr_map.get("key") or attribute
+        rel_tab = attr_map.get("name") or (
+            f"global_attribute_{attribute}" if is_glob else f"{layer}_{attribute}"
+        )
+        tables[f"{self.schema}.{rel_tab} {label}"] = 1
+        conditions[f"{entity_label}.{rel_key}_id = {label}.{rel_key}_id"] = 1
+        self.refs[key] = SQLRef(f"{label}.{rel_key}", tables, conditions)
+        return self.refs[key]
+
+    def not_attribute(self, entity: str, layer: str, what: str) -> SQLRef:
+        key = (entity, what)
+        entity_ref = self.layer(entity, layer)
+        entity_label = entity_ref.label
+        if key not in self.refs:
+            self.add_ref(
+                key,
+                f"{entity_label}.{key[1]}",
+                entity_ref.tables,
+                entity_ref.conditions,
+            )
+        return self.refs[key]
+
+    def range(self, entity: str, layer: str, range: str) -> SQLRef:
+        return self.not_attribute(
+            entity,
+            layer,
+            {"char": "char_range", "frame": "frame_range", "box": "xy_box"}[range],
+        )
+
+    def id(self, entity: str, layer: str) -> SQLRef:
+        return self.not_attribute(entity, layer, "id")
 
 
 def _strip_batch(batch: str) -> str:
