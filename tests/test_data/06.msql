@@ -1,0 +1,16 @@
+WITH preps AS (SELECT Segment_id, id_offset, content, annotations FROM cineminds_video_topic__0538f19753ba4303873463b0d6b3dace_3.prepared_Segment WHERE Segment_id = ANY(:sids)),
+    meta AS (SELECT
+    s.segment_id AS Segment_id, s."meta"::jsonb AS Segment_meta, s."char_range" AS Segment_char_range, s."frame_range" AS Segment_frame_range, Topic.topic_id AS Topic_id, Topic_name_topic_name."name" AS Topic_name, Topic_urls_topic_urls."urls" AS Topic_urls, array_agg(Topic_keywords_topic_labels.label) AS Topic_keywords, Topic."char_range" AS Topic_char_range, Topic."frame_range" AS Topic_frame_range, Document.document_id AS Document_id, Document."meta"::jsonb AS Document_meta, Document."char_range" AS Document_char_range, Document."frame_range" AS Document_frame_range, Document.media::jsonb AS Document_media, Document.name::text AS Document_name
+FROM
+    preps
+    LEFT JOIN cineminds_video_topic__0538f19753ba4303873463b0d6b3dace_3.segmentrest s ON s.Segment_id = preps.Segment_id
+    LEFT JOIN cineminds_video_topic__0538f19753ba4303873463b0d6b3dace_3.topic Topic ON Topic.char_range @> s.char_range
+    LEFT JOIN cineminds_video_topic__0538f19753ba4303873463b0d6b3dace_3.topic_name Topic_name_topic_name ON Topic.name_id = Topic_name_topic_name.name_id
+    LEFT JOIN cineminds_video_topic__0538f19753ba4303873463b0d6b3dace_3.topic_urls Topic_urls_topic_urls ON Topic.urls_id = Topic_urls_topic_urls.urls_id
+    LEFT JOIN cineminds_video_topic__0538f19753ba4303873463b0d6b3dace_3.topic_labels Topic_keywords_topic_labels ON get_bit(Topic.keywords, 327-Topic_keywords_topic_labels.bit) > 0
+    LEFT JOIN cineminds_video_topic__0538f19753ba4303873463b0d6b3dace_3.document Document ON Document.char_range @> s.char_range
+GROUP BY
+    s.segment_id, s."char_range", Topic.topic_id, Topic_name_topic_name."name", Topic_urls_topic_urls."urls", Topic."char_range", Document.document_id, Document."char_range")
+SELECT -1::int2 AS rstype, jsonb_build_array(preps.segment_id, preps.id_offset, preps.content, preps.annotations) FROM preps
+UNION ALL
+SELECT -2::int2 AS rstype, jsonb_build_array(meta.Segment_id, meta.Segment_meta, meta.Segment_char_range, meta.Segment_frame_range, meta.Topic_id, meta.Topic_name, meta.Topic_urls, meta.Topic_keywords, meta.Topic_char_range, meta.Topic_frame_range, meta.Document_id, meta.Document_meta, meta.Document_char_range, meta.Document_frame_range, meta.Document_media, meta.Document_name) FROM meta;

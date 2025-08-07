@@ -10,6 +10,7 @@ from .typed import JSONObject, Joins, LabelLayer, QueryJSON, QueryPart
 from .utils import (
     Config,
     QueryData,
+    SQLCorpus,
     _flatten_coord,
     _get_table,
     _get_mapping,
@@ -446,15 +447,11 @@ class QueryMaker:
             ref_lay, _ = self.r.label_layer.get(ref_lab, (None, None))
             if not ref_lay:
                 continue
-            ref_lay_info = cast(dict, self.config["layer"]).get(ref_lay, {})
-            # Need to handle alignment layers too later
-            if ref_lay_info.get("layerType") == "relation" or ref_lay_info.get(
-                "alignment"
-            ):
-                continue
-            ref_select = f"{ref_lab}.{ref_lay}_id AS {ref_lab}".lower()
-            if not any(sl.lower() == ref_select for sl in self.selects):
-                self.selects.add(ref_select)
+            sql = cast(SQLCorpus, self.r.sql_corpus)
+            ref_entity = sql.layer(ref_lab, ref_lay, pointer=True)
+            ref_entity_select = f"{ref_entity.ref} AS {ref_entity.alias}".lower()
+            if not any(sl.lower() == ref_entity_select for sl in self.selects):
+                self.selects.add(ref_entity_select)
             for anchname, anchatt in (
                 ("stream", "char_range"),
                 ("time", "frame_range"),
@@ -462,29 +459,17 @@ class QueryMaker:
             ):
                 if not _is_anchored(self.config, ref_lay, anchname):
                     continue
-                anch_select = f"{ref_lab}.{anchatt} AS {ref_lab}_{anchatt}".lower()
+                anch_ref = sql.anchor(ref_lab, ref_lay, anchname)
+                anch_select = f"{anch_ref.ref} AS {anch_ref.alias}".lower()
                 if not any(sl.lower() == anch_select for sl in self.selects):
                     self.selects.add(anch_select)
-            lay_attrs = ref_lay_info.get("attributes", {})
-            lay_maps = cast(dict, self.config["mapping"]).get(ref_lay, {})
-            lay_meta = lay_attrs.get("meta", {})
             for attr in ref_attrs:
-                att_select = ""
-                atype = lay_attrs.get(attr, {}).get("type", "")
-                if attr in lay_meta:
-                    att_select = f"{ref_lab.lower()}.meta->'{attr.lower()}' AS {ref_lab.lower()}_{attr.lower()}"
-                elif atype == "text":
-                    amaps = lay_maps.get("attributes", {}).get(attr, {})
-                    aname = amaps.get("name", f"{ref_lab}_{attr}")
-                    akey = amaps.get("key", attr)
-                    att_select = f"{aname}.{akey} AS {ref_lab}_{attr}".lower()
-                elif atype == "labels":
-                    pass
-                else:
-                    att_select = f"{ref_lab}.{attr} AS {ref_lab}_{attr}".lower()
-                if any(sl.lower() == att_select for sl in self.selects):
+                attr_ref = sql.attribute(ref_lab, ref_lay, attr)
+                if not attr_ref.ref or not attr_ref.alias:
                     continue
-                self.selects.add(att_select)
+                attr_select = f"{attr_ref.ref} AS {attr_ref.alias}"
+                if not any(sl.lower() == attr_select for sl in self.selects):
+                    self.selects.add(attr_select)
 
         # print(
         #    "Debug -- data carried over from query:",
@@ -589,13 +574,6 @@ class QueryMaker:
             llabel = label.lower()
             if not self._backup_table:  # and (is_document or is_segment or is_token):
                 self._backup_table = (layerlang, llabel)
-
-            if layer_info["layerType"] != "relation" and not layer_info.get(
-                "alignment"
-            ):
-                # make sure we always select all the main units
-                self.selects.add(f"{label}.{layer}_id as {label}".lower())
-                self.r.entities.add(label.lower())
 
             if is_segment or is_document or is_meta or is_above_segment:
                 self.segment_level(obj, label, layer)

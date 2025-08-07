@@ -1,0 +1,12 @@
+Segment s
+
+Topic@s top
+    keywords contain "film"
+
+Token@s t
+
+res => plain
+    context
+        s
+    entities
+        *

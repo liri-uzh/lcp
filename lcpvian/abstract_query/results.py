@@ -19,6 +19,7 @@ from .typed import (
 from .utils import (
     Config,
     QueryData,
+    SQLCorpus,
     _flatten_coord,
     _get_table,
     _bound_label,
@@ -60,6 +61,7 @@ class ResultsMaker:
         self.conf_layer = cast(JSONObject, self.config["layer"])
         self.r = QueryData()
         self.r.all_refs = all_refs
+        self.r.sql_corpus = SQLCorpus(self.config, self.schema, self.batch, self.lang)
         tmp_label_layer = _label_layer(query_json.get("query", query_json))
         new_query_json = cast(dict, self.r.add_labels(query_json, tmp_label_layer))
         lifted_quants = cast(list, self.lift_quantifiers(new_query_json["query"]))
@@ -72,9 +74,6 @@ class ResultsMaker:
         self.r.label_layer = _label_layer(self.query_json.get("query", self.query_json))
         self._n = 1
         self._underlang = _get_underlang(self.lang, self.config)
-        self._label_mapping: dict[str, str] = (
-            dict()
-        )  # Map entities' labels to potentially internal labels
 
     def lift_conjunctions(self, query_list: list) -> list:
         return [  # lift and flatten conjunctions
@@ -137,7 +136,6 @@ class ResultsMaker:
                     original_label: str = cast(str, t.obj["unit"].get("label", ""))
                     if original_label:
                         self.r.entities.add(original_label)
-                        self._label_mapping[original_label] = t.internal_label
                         if original_label in self.r.label_layer:
                             self.r.label_layer[t.internal_label] = self.r.label_layer[
                                 original_label
@@ -168,7 +166,6 @@ class ResultsMaker:
                 ).lower() == self.token.lower() and cast(str, unit.get("label", "")):
                     lab: str = unit["label"].lower()
                     self.r.entities.add(lab)
-                    self._label_mapping[lab] = lab
         return None
 
     def add_set_objects(self, query_json: dict[str, Any]) -> None:

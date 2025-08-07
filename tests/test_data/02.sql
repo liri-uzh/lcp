@@ -1,9 +1,20 @@
 WITH RECURSIVE fixed_parts AS
-  (SELECT s.segment_id AS s,
+  (SELECT e.alignment_id AS e,
+          e.char_range AS e_char_range,
+          e_aligned.meta->>'date' AS e_aligned_date,
+          s.char_range AS s_char_range,
+          s.segment_id AS s,
+          t1.char_range AS t1_char_range,
           t1.token_id AS t1,
+          t1.upos AS t1_upos,
           t1_lemma.lemma AS t1_lemma,
+          t2.char_range AS t2_char_range,
           t2.token_id AS t2,
-          t3.token_id AS t3
+          t2.upos AS t2_upos,
+          t3.char_range AS t3_char_range,
+          t3.token_id AS t3,
+          t3.upos AS t3_upos,
+          t3.xpos AS t3_xpos
    FROM
      (SELECT Segment_id
       FROM sparcling1.fts_vector_enrest vec
@@ -30,18 +41,40 @@ WITH RECURSIVE fixed_parts AS
      AND t2.token_id - t1.token_id = 1
      AND t3.token_id - t2.token_id = 1 ),
                gather AS
-  (SELECT s,
+  (SELECT e,
+          e_aligned_date,
+          e_char_range,
+          s,
+          s_char_range,
           t1,
+          t1_char_range,
           t1_lemma,
+          t1_upos,
           t2,
-          t3
+          t2_char_range,
+          t2_upos,
+          t3,
+          t3_char_range,
+          t3_upos,
+          t3_xpos
    FROM fixed_parts) ,
                match_list AS
-  (SELECT gather.s AS s,
+  (SELECT gather.e AS e,
+          gather.e_aligned_date AS e_aligned_date,
+          gather.e_char_range AS e_char_range,
+          gather.s AS s,
+          gather.s_char_range AS s_char_range,
           gather.t1 AS t1,
+          gather.t1_char_range AS t1_char_range,
           gather.t1_lemma AS t1_lemma,
+          gather.t1_upos AS t1_upos,
           gather.t2 AS t2,
-          gather.t3 AS t3
+          gather.t2_char_range AS t2_char_range,
+          gather.t2_upos AS t2_upos,
+          gather.t3 AS t3,
+          gather.t3_char_range AS t3_char_range,
+          gather.t3_upos AS t3_upos,
+          gather.t3_xpos AS t3_xpos
    FROM gather),
                res1 AS
   (SELECT DISTINCT 1::int2 AS rstype,

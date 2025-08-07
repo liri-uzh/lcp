@@ -12,7 +12,6 @@ from lcpvian.dqd_parser import convert as dqd_to_json
 # from lcpvian.sock import listen_to_redis
 from lcpvian.utils import _determine_language
 from lcpvian.abstract_query.create import json_to_sql
-from lcpvian.typed import Batch
 
 # this env var must be set before we import anything from .run
 os.environ["_TEST"] = "True"
@@ -21,7 +20,7 @@ from lcpvian.app import create_app
 
 # from lcpvian.sock import handle_redis_response
 from lcpvian.utils import get_segment_meta_script
-from lcpvian.abstract_query.utils import SQLCorpus, SQLRef
+from lcpvian.abstract_query.utils import SQLCorpus
 
 
 PUBSUB_CHANNEL = PUBSUB_CHANNEL_TEMPLATE % "query"
@@ -99,9 +98,7 @@ class MyAppTestCase(AioHTTPTestCase):
                 _determine_language(meta.get("batch", ""))
                 or meta.get("partitions", {"values": ["en"]})["values"][0]
             )
-            lab_lay = {}
-
-            sqlc = SQLCorpus(meta, schema, batch, lang, lab_lay)
+            sqlc = SQLCorpus(meta, schema, batch, lang)
 
             for r in refs:
                 sr = sqlc.attribute(r["entity"], r["layer"], r["attribute"])
@@ -111,12 +108,7 @@ class MyAppTestCase(AioHTTPTestCase):
                     self.assertTrue(tab in sr.joins)
                     for cond in conds:
                         print("condition", cond)
-                        try:
-                            self.assertTrue(cond in sr.joins[tab])
-                        except:
-                            import pdb
-
-                            pdb.set_trace()
+                        self.assertTrue(cond in sr.joins[tab])
 
     async def test_conversions(self):
         """

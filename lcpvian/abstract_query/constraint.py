@@ -101,7 +101,6 @@ class Constraints:
             self.schema,
             config.batch,
             config.lang or "",
-            {},
         )
 
     def make(self):
@@ -316,7 +315,7 @@ class Constraint:
         self._allow_any: bool = allow_any
         self.references: dict[str, list[str]] = {}  # dict of labels + attributes
         self.sql_corpus = sql_corpus or SQLCorpus(
-            self.config, self.schema, self.batch, self.lang or "", {}
+            self.config, self.schema, self.batch, self.lang or ""
         )
 
     def _add_join_on(self, table: str, constraint: str) -> None:
@@ -672,6 +671,8 @@ class Constraint:
                 sql_ref = self.sql_corpus.attribute(prefix, layer, ref, pointer=True)
             else:
                 ref_info["type"] = attributes[ref].get("type", "string")
+                if ref_info["type"] == "labels":
+                    ref_info["meta"] = {"nbit": attributes[ref].get("nlabels", 1)}
                 sql_ref = self.sql_corpus.attribute(prefix, layer, ref)
         # Layer or dotted-attribute reference
         elif ref in lab_lay:
@@ -679,6 +680,8 @@ class Constraint:
             if post_dots:
                 attributes = _get_all_attributes(layer, self.config, self.lang or "")
                 ref_info["type"] = attributes[sub_ref].get("type", "string")
+                if ref_info["type"] == "labels":
+                    ref_info["meta"] = {"nbit": attributes[sub_ref].get("nlabels", 1)}
                 sql_ref = self.sql_corpus.attribute(ref, layer, sub_ref)
             else:
                 ref_info = RefInfo(type="entity", layer=layer, mapping=mapping)

@@ -1,7 +1,7 @@
 WITH RECURSIVE fixed_parts AS
   (SELECT d.char_range AS d_char_range,
           d.document_id AS d,
-          d.meta->'classcode' AS d_classcode,
+          d.meta->>'classCode' AS d_classcode,
           s.char_range AS s_char_range,
           s.segment_id AS s,
           t1.char_range AS t1_char_range,

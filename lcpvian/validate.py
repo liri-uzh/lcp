@@ -18,6 +18,10 @@ def process_refs(
     recent_layer: str = "",
     recent_label: str = "",
 ) -> dict[str, set[str]]:
+    """
+    Check all the unit references in the list/dict (ultimately the JSON query)
+    and map all the unit labels to their attribute references
+    """
     ret: dict[str, set[str]] = {}
     if isinstance(obj, list):
         for x in obj:
