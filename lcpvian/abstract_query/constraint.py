@@ -1,9 +1,10 @@
 import re
 
+from psycopg import sql
 from typing import Any, cast
 from uuid import UUID
 
-from .typed import JSONObject, Joins, LabelLayer, RefInfo
+from .typed import JSONObject, Joins, LabelLayer, RefInfo, SQLRef
 from .utils import (
     Config,
     _get_underlang,
@@ -12,6 +13,7 @@ from .utils import (
     arg_sort_key,
     QueryData,
     SQLCorpus,
+    sql_str,
     _joinstring,
     _is_anchored,
     _layer_contains,
@@ -43,6 +45,8 @@ FUNCS = {
     "lower": "string",
     "upper": "string",
 }
+
+LR = "{}"
 
 
 def _valid_uuid(val: Any) -> bool:
@@ -678,19 +682,22 @@ class Constraint:
             layer = lab_lay[ref][0]
             if post_dots:
                 attributes = _get_all_attributes(layer, self.config, self.lang or "")
+                sql_ref = self.sql_corpus.attribute(ref, layer, sub_ref)
                 ref_info["type"] = attributes[sub_ref].get("type", "string")
                 if ref_info["type"] == "labels":
                     ref_info["meta"] = {"nbit": attributes[sub_ref].get("nlabels", 1)}
-                sql_ref = self.sql_corpus.attribute(ref, layer, sub_ref)
             else:
-                ref_info = RefInfo(type="entity", layer=layer, mapping=mapping)
                 sql_ref = self.sql_corpus.layer(ref, layer)
+                ref_info = RefInfo(
+                    type="entity", layer=layer, mapping=mapping, sql=sql_ref
+                )
 
         try:
             assert sql_ref
         except:
             raise ReferenceError(f"Could not parse {'.'.join([prefix,ref,sub_ref])}")
 
+        ref_info["sql"] = sql_ref
         ref_info["type"] = (
             ref_info.get("type", "string")
             .replace("categorical", "string")
@@ -722,7 +729,7 @@ class Constraint:
             ref = math_obj["math"]
             return (ref, ref_info)
         elif isinstance(math_obj["math"], dict) and "function" in math_obj["math"]:
-            return self.parse_function(math_obj["math"]["funciton"])
+            return self.parse_function(math_obj["math"]["function"])
         operation = math_obj["math"].get("operation", {})
         op: str = operation.get("operator", "+")
         ref_array: list[str] = ["", op, ""]
@@ -750,7 +757,7 @@ class Constraint:
         )
         ars = fn_obj.get("arguments", [])
         assert ars, ValueError(f"Arguments of function '{fn}' are missing")
-        parsed_ars = [self.get_sql_expr(a) for a in ars]
+        parsed_ars: list[tuple[str, RefInfo]] = [self.get_sql_expr(a) for a in ars]
         ars_str = ",".join([a[0] for a in parsed_ars])
         fn_str = f"{fn}({ars_str})"
         ref_str_ars = ",".join(
@@ -759,33 +766,38 @@ class Constraint:
         ref_info_str = f"{fn}({ref_str_ars})"
         ref_info = RefInfo(type=FUNCS[fn], meta={"str": ref_info_str})
         if fn == "range":
-            first_arg_str, first_arg_info = parsed_ars[0]
-            assert first_arg_info.get("type") == "entity", TypeError(
-                f"Range only applies to layer annotations (error in '{first_arg_str}')"
+            entity, ent_info = parsed_ars[0]
+            assert ent_info.get("type") == "entity", TypeError(
+                f"Range only applies to layer annotations (error in '{entity}')"
             )
-            fn_str = (
-                f"upper({first_arg_str}.char_range) - lower({first_arg_str}.char_range)"
-            )
+            ent_layer = ent_info.get("layer", self.layer)
+            ent_lab = cast(SQLRef, ent_info.get("sql")).entity
+            ent_stream_ref = self.sql_corpus.anchor(ent_lab, ent_layer, "stream")
+            fn_str = f"upper({ent_stream_ref}) - lower({ent_stream_ref})"
             ref_info = RefInfo(type="number", meta={"str": ref_info_str})
         elif fn == "position":
-            first_arg_str, first_arg_info = parsed_ars[0]
-            assert first_arg_info.get("type") == "entity", TypeError(
-                f"Range only applies to layer annotations (error in '{first_arg_str}')"
+            entity, ent_info = parsed_ars[0]
+            assert ent_info.get("type") == "entity", TypeError(
+                f"Range only applies to layer annotations (error in '{entity}')"
             )
-            fn_str = f"lower({first_arg_str}.char_range)"
+            ent_layer = ent_info.get("layer", self.layer)
+            ent_lab = cast(SQLRef, ent_info.get("sql")).entity
+            ent_stream_ref = self.sql_corpus.anchor(ent_lab, ent_layer, "stream")
+            fn_str = f"lower({ent_stream_ref})"
             ref_info = RefInfo(type="number", meta={"str": ref_info_str})
         elif fn in ("start", "end"):
-            first_arg_str, first_arg_info = parsed_ars[0]
-            assert first_arg_info.get("type") == "entity", TypeError(
-                f"{fn} only applies to layer annotations (error in '{first_arg_str}')"
+            entity, ent_info = parsed_ars[0]
+            assert ent_info.get("type") == "entity", TypeError(
+                f"{fn} only applies to layer annotations (error in '{entity}')"
             )
-            assert _is_anchored(
-                self.config, first_arg_info.get("layer", self.layer), "time"
-            ), TypeError(
-                f"{fn} only applies to time-aligned layer annotations (error in '{first_arg_str})"
+            ent_layer = ent_info.get("layer", self.layer)
+            assert _is_anchored(self.config, ent_layer, "time"), TypeError(
+                f"{fn} only applies to time-aligned layer annotations (error in '{entity})"
             )
             lower_or_upper = "lower" if fn == "start" else "upper"
-            fn_str = f"({lower_or_upper}({first_arg_str}.frame_range) / 25.0)"  # time in seconds
+            ent_lab = cast(SQLRef, ent_info.get("sql")).entity
+            ent_time_ref = self.sql_corpus.anchor(ent_lab, ent_layer, "time")
+            fn_str = f"({lower_or_upper}({ent_time_ref}) / 25.0)"  # time in seconds
             ref_info = RefInfo(type="number", meta={"str": ref_info_str})
         elif fn in (
             "year",
@@ -797,9 +809,12 @@ class Constraint:
             "week",
             "month",
         ):
-            first_arg_str, first_arg_info = parsed_ars[0]
+            attr_ref, attr_info = parsed_ars[0]
             sql_fn = fn.replace("dayofweek", "dow").replace("dayofyear", "doy")
-            fn_str = f"extract('{sql_fn}' from ({first_arg_str})::date)"
+            fn_str = sql_str(
+                "extract({sql_fn} from (" + attr_ref + ")::date)",
+                sql_fn=sql.Literal(sql_fn),
+            )
             ref_info = RefInfo(type="number", meta={"str": ref_info_str})
         return (fn_str, ref_info)
 
@@ -1084,38 +1099,33 @@ def process_set(
     attribute="___tokenid___",
     label: str = "",
 ) -> str:
-    batch = conf.batch
-    schema = conf.schema
     config = conf.config
 
     joins: Joins = {}
-
     conditions: dict[str, int] = {}
-    if attribute == "___tokenid___":
-        field = cast(str, config["token"]).lower() + "_id"
-    elif (
-        config["layer"][token]["attributes"].get(attribute, {}).get("type", "")
-        == "text"
-    ):
-        field = attribute + "_id"
-    else:
-        field = attribute
-
-    if not label:
-        label = set_data.get("label", f"unknown_{_n}") + f"_{field}"
 
     first_unit: dict[str, Any] = next(
         (u["unit"] for u in set_data.get("members", []) if "unit" in u), {}
     )
-    from_label = first_unit.get("label", "t")
     lay = first_unit.get("layer", token)
+
+    set_label = label or set_data.get("label", "")
+    if not set_label:
+        set_label = r.unique_label(f"unknown_set", "_internal", r.label_layer)
+
+    if attribute == "___tokenid___":
+        field_ref = r.sql.layer(set_label, config["token"], pointer=True)
+    else:
+        field_ref = r.sql.attribute(set_label, lay, attribute, pointer=True)
+
+    from_label = first_unit.get("label", "t")
+    from_ref = r.sql.layer(from_label, lay)
+
     assert config["layer"][lay].get("layerType") != "relation", TypeError(
         f"Cannot build a set of relational entities ({lay})"
     )
 
-    lang: str = cast(str, _underlang)[1:] if _underlang else ""
-    from_table = batch if lay == token else _get_table(lay, config, batch, lang)
-    disallowed = f"{schema}.{lay} {from_label}"
+    disallowed = sql_str(f"{from_ref} {LR}", from_ref.alias)
 
     conn_obj = _get_constraints(
         first_unit.get("constraints", []),
@@ -1129,6 +1139,7 @@ def process_set(
         n=_n,
         is_set=True,
         top_level=False,
+        sql_corpus=r.sql,
     )
     if conn_obj:
         _n = conn_obj._n + 1
@@ -1148,19 +1159,25 @@ def process_set(
             conditions[cond] = 1
 
     if config["layer"][lay].get("contains") == config["token"]:
-        joins[f"{schema}.{from_table} {from_label}"] = True
-        conditions[f"{from_label}.char_range && anonymous_set_t.char_range"] = 1
-        from_table = batch
-        from_label = "anonymous_set_t"
+        join_tab = sql_str(f"{from_ref} {LR}", from_ref.alias)
+        joins[join_tab] = True
+        from_stream_ref = r.sql.anchor(from_label, lay, "stream")
+        from_label = r.unique_label("anonymous_set_t", "_internal", r.label_layer)
+        from_ref = r.sql.anchor(from_label, config["token"], "stream")
+        conditions[f"{from_stream_ref} && {from_ref}"] = 1
 
     strung_joins = _joinstring(joins)
     strung_conds = "WHERE " + " AND ".join(x for x in conditions) if conditions else ""
 
-    formed = f"""
-              (SELECT array_agg({from_label}.{field})
-              FROM {schema}.{from_table} {from_label}
+    formed = sql_str(
+        f"""
+              (SELECT array_agg({field_ref})
+              FROM {from_ref} {LR}
                {strung_joins} 
                {strung_conds}
-              ) AS {label}
-    """
+              ) AS {LR}
+    """,
+        from_ref.alias,
+        field_ref.alias,
+    )
     return formed.strip()

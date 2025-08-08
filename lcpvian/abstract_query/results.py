@@ -64,7 +64,7 @@ class ResultsMaker:
         self.conf_layer = cast(JSONObject, self.config["layer"])
         self.r = QueryData()
         self.r.all_refs = all_refs
-        self.r.sql_corpus = SQLCorpus(self.config, self.schema, self.batch, self.lang)
+        self.r._sql_corpus = SQLCorpus(self.config, self.schema, self.batch, self.lang)
         tmp_label_layer = _label_layer(query_json.get("query", query_json))
         new_query_json = cast(dict, self.r.add_labels(query_json, tmp_label_layer))
         lifted_quants = cast(list, self.lift_quantifiers(new_query_json["query"]))
@@ -314,7 +314,7 @@ class ResultsMaker:
         """
         # TODO: support a list of references as "space"
         # space = result.get("space", [])
-        sql: SQLCorpus = self.r.get_sql()
+        sql: SQLCorpus = self.r.sql
         space = result.get("space", "")
         feat = cast(str, result.get("attribute", "lemma"))
 
@@ -373,8 +373,7 @@ class ResultsMaker:
         keys = {first_class[f].lower() for f in {"token", "segment", "document"}}
         err = f"Context not allowed: {lay.lower()} not in {keys}"
         assert lay.lower() in keys, err
-        sql: SQLCorpus = self.r.get_sql()
-        context_ref = sql.layer(context, lay, pointer=True)
+        context_ref = self.r.sql.layer(context, lay, pointer=True)
         select = sql_str(f"{context_ref} AS {LR}", context_ref.alias)
         self.r.selects.add(select)
         self.r.entities.add(context_ref.alias)

@@ -611,7 +611,7 @@ class SQLSequence:
         self.sequence: Sequence = sequence
         label_layer = self.sequence.query_data.label_layer
         config = self.sequence.conf
-        self.sql: SQLCorpus = sequence.query_data.get_sql()
+        self.sql: SQLCorpus = sequence.query_data.sql
         entities = label_layer.keys()
         self.part_of: list[dict[str, str]] = []
         if "partOf" in sequence.obj.get("sequence", {}):

@@ -1096,21 +1096,21 @@ def get_segment_meta_script(
     joins: dict[str, dict[str, int]] = {}
     meta_select_labels: dict[str, int] = {}
     seg_stream_ref = ""
-    sql = SQLCorpus(config, schema, batch_name, lang)
+    sqlc = SQLCorpus(config, schema, batch_name, lang)
     for layer in parents_with_attributes:
         entity_lab = layer  # .lower()
-        entity_ref = sql.layer(entity_lab, layer, pointer=True)
+        entity_ref = sqlc.layer(entity_lab, layer, pointer=True)
         for tab, conds in entity_ref.joins.items():
             conditions = [c for c in conds]
             if tab.endswith(sql_str(" {}", entity_ref.alias)):
                 if layer == seg:
-                    seg_stream_ref = sql.anchor(entity_lab, layer, "stream").ref
+                    seg_stream_ref = sqlc.anchor(entity_lab, layer, "stream").ref
                     conditions.insert(
                         0,
                         sql_str(f"{entity_ref.ref} = preps.{LR}", f"{seg.lower()}_id"),
                     )
                 else:
-                    layer_stream_ref = sql.anchor(entity_lab, layer, "stream")
+                    layer_stream_ref = sqlc.anchor(entity_lab, layer, "stream")
                     conditions.insert(0, f"{layer_stream_ref} @> {seg_stream_ref}")
             joins[tab] = {**joins.get(tab, {}), **{c: 1 for c in conditions}}
         layer_alias = entity_ref.alias
@@ -1121,16 +1121,16 @@ def get_segment_meta_script(
         for anchor in ("stream", "time", "location"):
             if not _is_anchored(layers[layer], config, anchor):
                 continue
-            layer_anchor_ref = sql.anchor(entity_lab, layer, anchor)
+            layer_anchor_ref = sqlc.anchor(entity_lab, layer, anchor)
             selects[
                 sql_str(f"{layer_anchor_ref.ref} AS {LR}", layer_anchor_ref.alias)
             ] = 1
             meta_select_labels[layer_anchor_ref.alias] = 1
         if layer == doc and has_media:
-            doc_media_ref = sql.not_attribute(
+            doc_media_ref = sqlc.not_attribute(
                 entity_lab, layer, "media", cast="::jsonb"
             )
-            doc_name_ref = sql.not_attribute(entity_lab, layer, "name", cast="::text")
+            doc_name_ref = sqlc.not_attribute(entity_lab, layer, "name", cast="::text")
             filt_aliases = (doc_media_ref.alias, doc_name_ref.alias)
             selects = {
                 s: 1
@@ -1144,11 +1144,11 @@ def get_segment_meta_script(
         group_by[entity_ref.ref] = 1
         meta_attrs = layers[layer].get("attributes", {}).get("meta", {})
         for attr_name, attr_props in _get_all_attributes(layer, config, lang).items():
-            attr_ref = sql.attribute(entity_lab, layer, attr_name)
+            attr_ref = sqlc.attribute(entity_lab, layer, attr_name)
             attr_alias = attr_ref.alias
             is_meta = attr_name in meta_attrs
             if is_meta:
-                attr_ref = sql.attribute(entity_lab, layer, "meta")
+                attr_ref = sqlc.attribute(entity_lab, layer, "meta")
                 if not attr_ref.ref.endswith("::jsonb"):
                     attr_ref.ref += "::jsonb"
                 attr_alias = f"{layer}_meta"
@@ -1160,9 +1160,7 @@ def get_segment_meta_script(
                 #                 f"get_bit({alias}.{attr}, {nbit-1}-{alias_attr_table}.bit) > 0"
                 #             )
                 #             sel = f"array_agg({alias_attr_table}.label) AS {layer}_{attr}"
-                import pdb
-
-                pdb.set_trace()
+                pass
             else:
                 selects[sql_str(f"{attr_ref.ref} AS {LR}", attr_alias)] = 1
                 meta_select_labels[attr_alias] = 1

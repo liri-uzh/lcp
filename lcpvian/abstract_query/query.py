@@ -147,8 +147,8 @@ class QueryMaker:
         conf: Config,
     ) -> None:
         """
-        A class to oversee the generation of the query part of the SQL
-        Use the query() method to actually make the SQL after instantiating
+        A class to oversee the generation of the query part of the sqlc
+        Use the query() method to actually make the sqlc after instantiating
         """
         self.query_json: QueryJSON = query_json
         self.r = result_data
@@ -437,7 +437,7 @@ class QueryMaker:
 
     def query(self) -> tuple[str, str, str]:
         """
-        The main entrypoint: produce query SQL as a single string
+        The main entrypoint: produce query sqlc as a single string
         """
         self.selects = self.r.selects
         self.joins = self.r.joins
@@ -449,20 +449,20 @@ class QueryMaker:
             ref_lay, _ = self.r.label_layer.get(ref_lab, (None, None))
             if not ref_lay:
                 continue
-            sql = cast(SQLCorpus, self.r.sql_corpus)
-            ref_entity = sql.layer(ref_lab, ref_lay, pointer=True)
+            sqlc = cast(SQLCorpus, self.r.sql)
+            ref_entity = sqlc.layer(ref_lab, ref_lay, pointer=True)
             ref_entity_select = sql_str(f"{ref_entity} AS {LR}", ref_entity.alias)
             if not any(sl.lower() == ref_entity_select for sl in self.selects):
                 self.selects.add(ref_entity_select)
             for anchname in ("stream", "time", "location"):
                 if not _is_anchored(self.config, ref_lay, anchname):
                     continue
-                anch_ref = sql.anchor(ref_lab, ref_lay, anchname)
+                anch_ref = sqlc.anchor(ref_lab, ref_lay, anchname)
                 anch_select = sql_str(f"{anch_ref} AS {LR}", anch_ref.alias)
                 if not any(sl.lower() == anch_select for sl in self.selects):
                     self.selects.add(anch_select)
             for attr in ref_attrs:
-                attr_ref = sql.attribute(ref_lab, ref_lay, attr)
+                attr_ref = sqlc.attribute(ref_lab, ref_lay, attr)
                 if not attr_ref.ref or not attr_ref.alias:
                     continue
                 attr_select = sql_str(f"{attr_ref} AS {LR}", attr_ref.alias)
@@ -621,9 +621,9 @@ class QueryMaker:
         seg_str: str = self.segment.lower()
         for s in self.sqlsequences:
             for t, _, _, _ in s.fixed_tokens:
-                # TODO: use sql. and sql_str here
+                # TODO: use sqlc. and sql_str here
                 lab = t.internal_label
-                fixed_ref = sql.layer(lab, tok, pointer=True)
+                fixed_ref = sqlc.layer(lab, tok, pointer=True)
                 selects_in_fixed.add(sql_str(f"{fixed_ref} AS {LR}", lab))
                 original_label: str = t.obj["unit"].get("label", "")
                 if original_label:
@@ -794,7 +794,7 @@ class QueryMaker:
                     found_lab = re.search(rf"\b{lab}\b", union_cte)
                     if not found_lab:
                         continue
-                    lab_ref = sql.layer(lab, lay, pointer=True)
+                    lab_ref = sqlc.layer(lab, lay, pointer=True)
                     sel_lab = sql_str(
                         "___lasttable___.{} AS {}", lab_ref.alias, lab_ref.alias
                     )
@@ -924,8 +924,8 @@ class QueryMaker:
                     continue
                 gather_selects += f",\n{min_seq.replace('___lasttable___', last_table)}"
                 gather_selects += f",\n{max_seq.replace('___lasttable___', last_table)}"
-                min_label = min_seq.split(" as ")[-1]
-                max_label = max_seq.split(" as ")[-1]
+                min_label = min_seq.split(" AS ")[-1]
+                max_label = max_seq.split(" AS ")[-1]
                 jttable = self.r.unique_label("t", layer=self.token)
                 infrom: str = f"{self.conf.schema}.{tok}{batch_suffix} {jttable}"
                 inwhere: str = (
@@ -1137,9 +1137,8 @@ class QueryMaker:
         """
         # if not obj.get("partOf", None):
         #     return None
-        sql = self.r.get_sql()
         is_negative = obj.get("quantor", "") == "NOT EXISTS"
-        ref = sql.layer(label, layer, pointer=True)
+        ref = self.r.sql.layer(label, layer, pointer=True)
         if not is_negative:
             self.selects.add(sql_str(f"{ref} AS {LR}", ref.alias))
         for tab, conds in ref.joins.items():
@@ -1180,8 +1179,7 @@ class QueryMaker:
         is_relation = layer_info.get("layerType", "relation")
         is_negative = obj.get("quantor", "") == "NOT EXISTS"
         if not is_meta and not is_relation and not is_negative:
-            sql = self.r.get_sql()
-            ref = sql.layer(label, layer, pointer=True)
+            ref = self.r.sql.layer(label, layer, pointer=True)
             self.selects.add(sql_str(f"{ref} AS {LR}", ref.alias))
 
         table = f"{layer}{self._underlang}"

@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from psycopg import sql
 from typing import Any, cast
 
-from .typed import Joins, LabelLayer, QueryType
+from .typed import Joins, LabelLayer, QueryType, SQLRef
 
 SUFFIXES = {".*", ".+", ".*?", ".?", ".+?", "."}
 LR = "{}"
@@ -37,20 +37,6 @@ def sql_str(template: str, *args, **kwargs) -> str:
     return sql.SQL(template).format(*prep_args, **kwargs).as_string()  # type: ignore
 
 
-@dataclass
-class SQLRef:
-    """
-    Label, tables and conditions to reference a layer or an attribute
-    """
-
-    ref: str
-    alias: str  # alias to use in SELECT
-    joins: dict[str, dict[str, int]]
-
-    def __str__(self):
-        return self.ref
-
-
 class SQLCorpus:
     def __init__(
         self,
@@ -70,11 +56,12 @@ class SQLCorpus:
     def add_ref(
         self,
         key: tuple[str, str, bool],
+        entity: str,
         ref: str,
         alias: str,
         joins: dict[str, dict[str, int]],
     ) -> SQLRef:
-        self.refs[key] = SQLRef(ref, alias, joins)
+        self.refs[key] = SQLRef(entity, ref, alias, joins)
         return self.refs[key]
 
     def layer(self, entity: str, layer: str, pointer: bool = False) -> SQLRef:
@@ -98,7 +85,7 @@ class SQLCorpus:
             else:
                 ref = sql_str("{}", ref)
             alias = unique_label(entity, layer, self.used_aliases)
-            self.add_ref(key, ref, alias, joins)
+            self.add_ref(key, entity, ref, alias, joins)
         return self.refs[key]
 
     def attribute(
@@ -170,7 +157,7 @@ class SQLCorpus:
         elif attr_type in ("categorical", "number", "labels") and not is_glob:
             ref = sql_str(f"{entity_label}.{LR}", attribute)
         if ref:
-            return self.add_ref(key, ref, alias, joins)
+            return self.add_ref(key, entity, ref, alias, joins)
         ref = unique_label(f"{entity}_{attribute}", layer, used_refs)
         attr_map = mapping_attributes.get(attribute, {})
         rel_key = attr_map.get("key") or attribute
@@ -189,7 +176,7 @@ class SQLCorpus:
             )
             joins[table] = {**joins.get(table, {}), condition: 1}
         ref = sql_str("{}.{}", ref, rel_key)
-        return self.add_ref(key, ref, alias, joins)
+        return self.add_ref(key, entity, ref, alias, joins)
 
     def not_attribute(
         self, entity: str, layer: str, what: str, cast: str = ""
@@ -203,7 +190,7 @@ class SQLCorpus:
         if key not in self.refs:
             alias = unique_label(f"{entity_alias}_{key[1]}", layer, self.used_aliases)
             ref = sql_str(f"{LR}.{LR}{cast}", entity_alias, key[1])
-            self.add_ref(key, ref, alias, entity_ref.joins)
+            self.add_ref(key, entity, ref, alias, entity_ref.joins)
         return self.refs[key]
 
     def anchor(self, entity: str, layer: str, range: str) -> SQLRef:
@@ -249,10 +236,11 @@ class QueryData:
     # all the entity-label-to-attribute references in the query
     all_refs: dict[str, list[str]] = field(default_factory=dict)
     # the SQL interface to get SQL references
-    sql_corpus: SQLCorpus | None = None
+    _sql_corpus: SQLCorpus | None = None
 
-    def get_sql(self) -> SQLCorpus:
-        return self.sql_corpus or SQLCorpus({}, "", "", "")
+    @property
+    def sql(self) -> SQLCorpus:
+        return self._sql_corpus or SQLCorpus({}, "", "", "")
 
     def unique_label(
         self,
