@@ -29,9 +29,31 @@ CREATE TABLE main.corpus (
  , schema_path       text           NOT NULL
  , token_counts      jsonb
  , version_history   jsonb
- , UNIQUE (name, current_version, project_id)
+ , UNIQUE (schema_path, enabled, current_version)
 );
 
+
+
+CREATE TYPE main.corpus_state AS (
+   created_at        timestamptz
+ , current_version   int
+ , corpus_template   jsonb
+ , description       text
+ , mapping           jsonb
+ , name              text
+ , sample_query      text
+ , schema_path       text
+ , token_counts      jsonb
+ , version_history   jsonb
+);
+
+CREATE TABLE main.corpus_history (
+   target            int               REFERENCES main.corpus
+ , source            int               UNIQUE REFERENCES main.corpus
+ , initial_state     main.corpus_state
+ , executed          timestamptz       NOT NULL DEFAULT now()
+ , PRIMARY KEY (target, source)
+);
 
 CREATE TABLE main.inprogress_corpus (
    schema_path       uuid                 PRIMARY KEY

@@ -122,3 +122,90 @@ ALTER PROCEDURE main.update_corpus_projects
 
 REVOKE EXECUTE ON PROCEDURE main.update_corpus_projects FROM public;
 GRANT EXECUTE ON PROCEDURE main.update_corpus_projects TO lcp_production_importer;
+
+
+CREATE OR REPLACE PROCEDURE main.update_corpus(
+   live_version      int
+ , updating_version  int
+)
+AS $$
+   DECLARE
+      _initial_state    main.corpus_state;
+      _history_entry    jsonb;
+   BEGIN
+      IF (
+         SELECT NOT EXISTS (
+                  SELECT 1
+                    FROM main.corpus_history
+                   WHERE target = live_version
+                )
+         )
+      THEN
+         SELECT created_at
+              , current_version
+              , corpus_template
+              , description
+              , mapping
+              , name
+              , sample_query
+              , schema_path
+              , token_counts
+              , version_history
+           INTO _initial_state
+           FROM main.corpus
+          WHERE corpus_id = live_version
+              ;
+      END IF;
+
+      INSERT
+        INTO main.corpus_history (target, source, initial_state)
+      SELECT live_version
+           , updating_version
+           , _initial_state
+   RETURNING jsonb_build_array(
+                jsonb_build_array(target, source)
+             )
+        INTO _history_entry
+           ;
+
+      UPDATE main.corpus
+         SET enabled = FALSE
+       WHERE corpus_id = updating_version
+           ;
+
+        WITH upd AS (
+            SELECT created_at
+                 , current_version
+                 , corpus_template
+                 , description
+                 , mapping
+                 , name
+                 , sample_query
+                 , schema_path
+                 , token_counts
+              FROM main.corpus
+             WHERE corpus_id = updating_version
+             )
+      UPDATE main.corpus
+         SET created_at      = upd.created_at
+           , current_version = upd.current_version
+           , corpus_template = upd.corpus_template
+           , description     = upd.description
+           , mapping         = upd.mapping
+           , name            = upd.name
+           , sample_query    = upd.sample_query
+           , schema_path     = upd.schema_path
+           , token_counts    = upd.token_counts
+           , version_history = coalesce(version_history, '[]'::jsonb) || _history_entry
+        FROM upd
+       WHERE corpus_id = live_version
+           ;
+   END
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+ALTER PROCEDURE main.update_corpus
+  SET search_path = pg_catalog,pg_temp;
+
+REVOKE EXECUTE ON PROCEDURE main.update_corpus FROM public;
+GRANT EXECUTE ON PROCEDURE main.update_corpus TO lcp_production_importer;
+
