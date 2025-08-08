@@ -1296,8 +1296,11 @@ export default {
             for (let n in hit_meta) {
               let value = hit_meta[n];
               const [layer, attr] = meta_labels[n];
-              if (layer == segment && attr == "id")
+              console.log("META layer", layer, "attr", attr, "segment", segment, "layer == segment", layer==segment, "attr=='id'", attr=="id");
+              if (layer == segment && attr == "id") {
                 segment_id = value;
+                console.log("META segment_id", segment_id);
+              }
               meta_object[layer] = meta_object[layer] || {};
               if (attr.endsWith("_range") && value) {
                 const ranges = value.match(/\[(\d+),(\d+)\)/);

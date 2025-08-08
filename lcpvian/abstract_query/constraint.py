@@ -12,7 +12,6 @@ from .utils import (
     arg_sort_key,
     QueryData,
     SQLCorpus,
-    SQLRef,
     _joinstring,
     _is_anchored,
     _layer_contains,

@@ -3,25 +3,25 @@
         "entity": "dr",
         "layer": "DepRel",
         "attribute": "head",
-        "ref": "dr.head",
-        "joins": {"sparcling1.deprel_de dr": {}}
+        "ref": "\"dr\".\"head\"",
+        "joins": {"\"sparcling1\".\"deprel_de\" \"dr\"": {}}
     },
     {
         "entity": "t",
         "layer": "Token",
         "attribute": "xpos",
-        "ref": "t.xpos",
-        "joins": {"sparcling1.token_derest t": {}}
+        "ref": "\"t\".\"xpos\"",
+        "joins": {"\"sparcling1\".\"token_derest\" \"t\"": {}}
     },
     {
         "entity": "t",
         "layer": "Token",
         "attribute": "form",
-        "ref": "t_form.form",
+        "ref": "\"t_form\".\"form\"",
         "joins": {
-            "sparcling1.token_derest t": {},
-            "sparcling1.form_de t_form": {
-                "t_form.form_id = t.form_id": 1
+            "\"sparcling1\".\"token_derest\" \"t\"": {},
+            "\"sparcling1\".\"form_de\" \"t_form\"": {
+                "\"t_form\".\"form_id\" = \"t\".\"form_id\"": 1
             }
         }
     },
@@ -29,11 +29,11 @@
         "entity": "se",
         "layer": "Session",
         "attribute": "date",
-        "ref": "se_aligned.meta->>'date'",
+        "ref": "\"se_aligned\".\"meta\"->>'date'",
         "joins": {
-            "sparcling1.session_de se": {},
-            "sparcling1.session_alignment se_aligned": {
-                "se.alignment_id = se_aligned.alignment_id": 1
+            "\"sparcling1\".\"session_de\" \"se\"": {},
+            "\"sparcling1\".\"session_alignment\" \"se_aligned\"": {
+                "\"se\".alignment_id = \"se_aligned\".alignment_id": 1
             }
         }
     }

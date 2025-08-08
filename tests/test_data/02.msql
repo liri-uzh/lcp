@@ -1,16 +1,16 @@
-WITH preps AS (SELECT Segment_id, id_offset, content FROM sparcling1.prepared_segment_en WHERE Segment_id = ANY(:sids)),
+ WITH preps AS (SELECT Segment_id, id_offset, content FROM sparcling1.prepared_segment_en WHERE Segment_id = ANY(:sids)),
     meta AS (SELECT
-    s.segment_id AS Segment_id, s."char_range" AS Segment_char_range, Turn.alignment_id AS Turn_id, Turn."meta"::jsonb AS Turn_meta, Turn_en."char_range" AS Turn_char_range, Session.alignment_id AS Session_id, Session."meta"::jsonb AS Session_meta, Session_en."char_range" AS Session_char_range, Chapter.alignment_id AS Chapter_id, Chapter."char_range" AS Chapter_char_range
+    "Segment"."segment_id" AS "Segment_id", "Segment"."char_range" AS "Segment_char_range", "Turn"."alignment_id" AS "Turn_id", "Turn"."char_range" AS "Turn_char_range", "Turn_aligned"."meta"::jsonb AS "Turn_meta", "Session"."alignment_id" AS "Session_id", "Session"."char_range" AS "Session_char_range", "Session_aligned"."meta"::jsonb AS "Session_meta", "Chapter"."alignment_id" AS "Chapter_id", "Chapter"."char_range" AS "Chapter_char_range"
 FROM
     preps
-    LEFT JOIN sparcling1.segment_enrest s ON s.Segment_id = preps.Segment_id
-    LEFT JOIN sparcling1.turn_en Turn_en ON Turn_en.char_range @> s.char_range
-    LEFT JOIN sparcling1.turn_alignment Turn ON Turn_en.alignment_id = Turn.alignment_id
-    LEFT JOIN sparcling1.session_en Session_en ON Session_en.char_range @> s.char_range
-    LEFT JOIN sparcling1.session_alignment Session ON Session_en.alignment_id = Session.alignment_id
-    LEFT JOIN sparcling1.chapter_en Chapter ON Chapter.char_range @> s.char_range
+    LEFT JOIN "sparcling1"."segment_enrest" "Segment" ON "Segment"."segment_id" = preps."segment_id"
+    LEFT JOIN "sparcling1"."turn_en" "Turn" ON "Turn"."char_range" @> "Segment"."char_range"
+    LEFT JOIN "sparcling1"."turn_alignment" "Turn_aligned" ON "Turn".alignment_id = "Turn_aligned".alignment_id
+    LEFT JOIN "sparcling1"."session_en" "Session" ON "Session"."char_range" @> "Segment"."char_range"
+    LEFT JOIN "sparcling1"."session_alignment" "Session_aligned" ON "Session".alignment_id = "Session_aligned".alignment_id
+    LEFT JOIN "sparcling1"."chapter_en" "Chapter" ON "Chapter"."char_range" @> "Segment"."char_range"
 GROUP BY
-    s.segment_id, s."char_range", Turn.alignment_id, Turn_en."char_range", Session.alignment_id, Session_en."char_range", Chapter.alignment_id, Chapter."char_range")
+    "Segment"."segment_id", "Turn"."alignment_id", "Turn_aligned"."meta"::jsonb, "Session"."alignment_id", "Session_aligned"."meta"::jsonb, "Chapter"."alignment_id")
 SELECT -1::int2 AS rstype, jsonb_build_array(preps.segment_id, preps.id_offset, preps.content) FROM preps
 UNION ALL
-SELECT -2::int2 AS rstype, jsonb_build_array(meta.Segment_id, meta.Segment_char_range, meta.Turn_id, meta.Turn_meta, meta.Turn_char_range, meta.Session_id, meta.Session_meta, meta.Session_char_range, meta.Chapter_id, meta.Chapter_char_range) FROM meta;
+SELECT -2::int2 AS rstype, jsonb_build_array(meta."Segment_id", meta."Segment_char_range", meta."Turn_id", meta."Turn_char_range", meta."Turn_meta", meta."Session_id", meta."Session_char_range", meta."Session_meta", meta."Chapter_id", meta."Chapter_char_range") FROM meta;

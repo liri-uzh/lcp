@@ -12,7 +12,7 @@ from .constraint import _get_constraints, _get_table
 from .prefilter import Prefilter
 from .sequence_members import Member, Disjunction, Sequence, Unit
 from .typed import JSONObject, LabelLayer
-from .utils import Config, _is_anchored
+from .utils import Config, SQLCorpus, _is_anchored
 
 
 # Helper function to retrieve a string of coordinated conditions for a token
@@ -611,6 +611,7 @@ class SQLSequence:
         self.sequence: Sequence = sequence
         label_layer = self.sequence.query_data.label_layer
         config = self.sequence.conf
+        self.sql: SQLCorpus = sequence.query_data.get_sql()
         entities = label_layer.keys()
         self.part_of: list[dict[str, str]] = []
         if "partOf" in sequence.obj.get("sequence", {}):

@@ -20,6 +20,7 @@ from .utils import (
     Config,
     QueryData,
     SQLCorpus,
+    sql_str,
     _flatten_coord,
     _get_table,
     _bound_label,
@@ -40,6 +41,8 @@ COUNTER = f"""
 """
 
 ANCHORINGS = ("stream", "time", "location")
+
+LR = "{}"
 
 
 class ResultsMaker:
@@ -311,37 +314,37 @@ class ResultsMaker:
         """
         # TODO: support a list of references as "space"
         # space = result.get("space", [])
+        sql: SQLCorpus = self.r.get_sql()
         space = result.get("space", "")
         feat = cast(str, result.get("attribute", "lemma"))
-        attribs = cast(JSONObject, self.conf_layer[self.token])["attributes"]
-        assert isinstance(attribs, dict)
-        att_feat = cast(JSONObject, cast(JSONObject, attribs)[feat])
-        is_text = cast(str, att_feat.get("type", "")) == "text"
-        need_id = feat in attribs and is_text
 
         if not space:
             center = result["center"]
             if center in self.r.set_objects:
                 raise ValueError(f"center cannot be set ({center})")
             else:
-                # is this use of _id correct? is feat correct?
-                idx = "_id"  # if need_id else "" # always append id here
-                formed = f"{center}.{self.token}{idx} as {center}"
-                self.r.selects.add(formed.lower())
-                self.r.entities.add(center)
+                center_ref = sql.layer(center, self.token, pointer=True)
+                formed = sql_str(f"{center_ref} AS {LR}", center_ref.alias)
+                self.r.selects.add(formed)
+                self.r.entities.add(center_ref.alias)
             return None
 
-        feat_maybe_id = f"{feat}_id" if need_id and not feat.endswith("_id") else feat
         # in_entities = False if not space else space[0].lower() in self.r.entities
         layer, _ = self.r.label_layer[space]
-        attr = f"{self.token.lower()}_id"
+        attr_ref = sql.attribute(
+            space or result.get("center", ""), layer, feat, pointer=True
+        )
+        # feat_maybe_id = f"{feat}_id" if need_id and not feat.endswith("_id") else feat
+        assert layer == self.token, TypeError("Cannot use a space that is not a token")
+        space_ref = sql.layer(space, self.token, pointer=True)
+        formed = sql_str(f"{space_ref} AS {LR}", space_ref.alias)
         self._n += 1
-        formed = f"{space}.{attr} AS {space}"
 
         if space not in self.r.set_objects:
-            self.r.selects.add(formed.lower())
-            self.r.entities.add(space)
-            formed = f"{space}.{feat_maybe_id} AS {space}_{feat_maybe_id}"
+            self.r.selects.add(formed)
+            self.r.entities.add(space_ref.alias)
+            # formed = f"{space}.{feat_maybe_id} AS {space}_{feat_maybe_id}"
+            formed = sql_str(f"{attr_ref} AS {LR}", attr_ref.alias)
         # thead.lemma_id AS thead_lemma_id
         else:
             formed = process_set(
@@ -356,9 +359,9 @@ class ResultsMaker:
                 attribute=feat,
             )
 
-        self.r.selects.add(formed.lower())
+        self.r.selects.add(formed)
         # add entity: thead_lemma_id
-        self.r.entities.add(f"{space}_{feat_maybe_id}".lower())
+        self.r.entities.add(attr_ref.alias)
 
     def _update_context(self, context: str) -> None:
         """
@@ -370,9 +373,11 @@ class ResultsMaker:
         keys = {first_class[f].lower() for f in {"token", "segment", "document"}}
         err = f"Context not allowed: {lay.lower()} not in {keys}"
         assert lay.lower() in keys, err
-        select = f"{context}.{lay.lower()}_id AS {context}"
-        self.r.selects.add(select.lower())
-        self.r.entities.add(context.lower())
+        sql: SQLCorpus = self.r.get_sql()
+        context_ref = sql.layer(context, lay, pointer=True)
+        select = sql_str(f"{context_ref} AS {LR}", context_ref.alias)
+        self.r.selects.add(select)
+        self.r.entities.add(context_ref.alias)
         return None
 
     def _process_entity(self, ent: str) -> tuple[list[str], list[Details]]:

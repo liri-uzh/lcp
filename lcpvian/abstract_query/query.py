@@ -20,6 +20,7 @@ from .utils import (
     _joinstring,
     _layer_contains,
     _bound_label,
+    sql_str,
 )
 
 MATCH_LIST = """
@@ -41,6 +42,7 @@ match_list AS (
 
 SELECT_PH = "{selects}"
 CARRY_PH = "{carry_over}"
+LR = "{}"
 
 
 class Token:
@@ -449,25 +451,21 @@ class QueryMaker:
                 continue
             sql = cast(SQLCorpus, self.r.sql_corpus)
             ref_entity = sql.layer(ref_lab, ref_lay, pointer=True)
-            ref_entity_select = f"{ref_entity.ref} AS {ref_entity.alias}".lower()
+            ref_entity_select = sql_str(f"{ref_entity} AS {LR}", ref_entity.alias)
             if not any(sl.lower() == ref_entity_select for sl in self.selects):
                 self.selects.add(ref_entity_select)
-            for anchname, anchatt in (
-                ("stream", "char_range"),
-                ("time", "frame_range"),
-                ("location", "xy_box"),
-            ):
+            for anchname in ("stream", "time", "location"):
                 if not _is_anchored(self.config, ref_lay, anchname):
                     continue
                 anch_ref = sql.anchor(ref_lab, ref_lay, anchname)
-                anch_select = f"{anch_ref.ref} AS {anch_ref.alias}".lower()
+                anch_select = sql_str(f"{anch_ref} AS {LR}", anch_ref.alias)
                 if not any(sl.lower() == anch_select for sl in self.selects):
                     self.selects.add(anch_select)
             for attr in ref_attrs:
                 attr_ref = sql.attribute(ref_lab, ref_lay, attr)
                 if not attr_ref.ref or not attr_ref.alias:
                     continue
-                attr_select = f"{attr_ref.ref} AS {attr_ref.alias}"
+                attr_select = sql_str(f"{attr_ref} AS {LR}", attr_ref.alias)
                 if not any(sl.lower() == attr_select for sl in self.selects):
                     self.selects.add(attr_select)
 
@@ -623,15 +621,18 @@ class QueryMaker:
         seg_str: str = self.segment.lower()
         for s in self.sqlsequences:
             for t, _, _, _ in s.fixed_tokens:
+                # TODO: use sql. and sql_str here
                 lab = t.internal_label
-                selects_in_fixed.add(f"{lab}.{tok}_id as {lab}")
+                fixed_ref = sql.layer(lab, tok, pointer=True)
+                selects_in_fixed.add(sql_str(f"{fixed_ref} AS {LR}", lab))
                 original_label: str = t.obj["unit"].get("label", "")
                 if original_label:
-                    self.selects.add(f"___lasttable___.{lab} as {original_label}")
+                    self.selects.add(
+                        sql_str("___lasttable___.{} AS {}", lab, original_label)
+                    )
                     self.r.entities.add(original_label)
-                table: str = tok + batch_suffix
-                formed_join: str = f"{self.schema}.{table} {lab}".lower()
-                self.joins[formed_join] = self.joins.get(formed_join, None)
+                for tab, conds in fixed_ref.joins.items():
+                    self.joins[tab] = {c for c in conds}
             swhere, sleft_joins = s.where_fixed_members(entities_set, tok)
 
             for w in swhere:
@@ -677,8 +678,8 @@ class QueryMaker:
 
                 s_part_of = s.get_first_stream_part_of()
                 sequence_ranges[s.sequence.label] = (
-                    f"{min_ref} as {min_label}",
-                    f"{max_ref} as {max_label}",
+                    f"{min_ref} AS {min_label}",
+                    f"{max_ref} AS {max_label}",
                     s_part_of,
                 )
 
@@ -793,14 +794,22 @@ class QueryMaker:
                     found_lab = re.search(rf"\b{lab}\b", union_cte)
                     if not found_lab:
                         continue
-                    sel_lab = f"___lasttable___.{lab} AS {lab}".lower()
+                    lab_ref = sql.layer(lab, lay, pointer=True)
+                    sel_lab = sql_str(
+                        "___lasttable___.{} AS {}", lab_ref.alias, lab_ref.alias
+                    )
                     self.selects.add(sel_lab)
-                    sel_lab_in_fixed = f"{lab}.{lay}_id AS {lab}".lower()
+                    sel_lab_in_fixed = sql_str(f"{lab_ref} AS {LR}", lab_ref.alias)
                     selects_in_fixed.add(sel_lab_in_fixed)
                     union_cte = re.sub(
-                        rf"\b{lab}\.{lay}_id", lab, union_cte, flags=re.IGNORECASE
+                        rf"\b\"?{lab}\"?\.\"?{lay}_id\"?",
+                        sql_str("{}", lab),
+                        union_cte,
+                        flags=re.IGNORECASE,
                     )
-                    for labref in re.findall(rf"\b{lab}\.[_.a-zA-Z0-9]+", union_cte):
+                    for labref in re.findall(
+                        rf"\b\"?{lab}\"?\.\"?[_.a-zA-Z0-9]+\"?", union_cte
+                    ):
                         # if labref.endswith("_id"):
                         #     continue
                         aname = labref.split(".")[-1]
@@ -1128,13 +1137,13 @@ class QueryMaker:
         """
         # if not obj.get("partOf", None):
         #     return None
+        sql = self.r.get_sql()
         is_negative = obj.get("quantor", "") == "NOT EXISTS"
+        ref = sql.layer(label, layer, pointer=True)
         if not is_negative:
-            select = f"{label}.{layer}_id as {label}"
-            self.selects.add(select.lower())
-        join: str = f"{self.schema}.{layer}{self._underlang} {label}".lower()
-        if join not in self.joins:
-            self.joins[join] = None
+            self.selects.add(sql_str(f"{ref} AS {LR}", ref.alias))
+        for tab, conds in ref.joins.items():
+            self.joins[tab] = self.joins[tab] = {c for c in conds}
 
         constraints = cast(JSONObject, obj.get("constraints", {}))
         conn_obj: Constraints | None = _get_constraints(
@@ -1171,9 +1180,9 @@ class QueryMaker:
         is_relation = layer_info.get("layerType", "relation")
         is_negative = obj.get("quantor", "") == "NOT EXISTS"
         if not is_meta and not is_relation and not is_negative:
-            idx = "_id" if not is_meta else ""
-            select = f"{label}.{layer}{idx} as {label}"
-            self.selects.add(select.lower())
+            sql = self.r.get_sql()
+            ref = sql.layer(label, layer, pointer=True)
+            self.selects.add(sql_str(f"{ref} AS {LR}", ref.alias))
 
         table = f"{layer}{self._underlang}"
         if layer.lower() == self.segment.lower():

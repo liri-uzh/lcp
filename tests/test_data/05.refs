@@ -3,11 +3,11 @@
         "entity": "t",
         "layer": "Token",
         "attribute": "form",
-        "ref": "t_form.form",
+        "ref": "\"t_form\".\"form\"",
         "joins": {
-            "ofrom.tokenrest t": {},
-            "ofrom.token_form t_form": {
-                "t_form.form_id = t.form_id": 1
+            "\"ofrom\".\"tokenrest\" \"t\"": {},
+            "\"ofrom\".\"token_form\" \"t_form\"": {
+                "\"t_form\".\"form_id\" = \"t\".\"form_id\"": 1
             }
         }
     },
@@ -15,11 +15,11 @@
         "entity": "t",
         "layer": "Token",
         "attribute": "misc",
-        "ref": "t_misc.misc",
+        "ref": "\"t_misc\".\"misc\"",
         "joins": {
-            "ofrom.tokenrest t": {},
-            "ofrom.token_misc t_misc": {
-                "t_misc.misc_id = t.misc_id": 1
+            "\"ofrom\".\"tokenrest\" \"t\"": {},
+            "\"ofrom\".\"token_misc\" \"t_misc\"": {
+                "\"t_misc\".\"misc_id\" = \"t\".\"misc_id\"": 1
             }
         }
     },
@@ -27,11 +27,11 @@
         "entity": "u",
         "layer": "Utterance",
         "attribute": "agent",
-        "ref": "u_agent.agent",
+        "ref": "\"u_agent\".\"agent\"",
         "joins": {
-            "ofrom.utterancerest u": {},
-            "ofrom.global_attribute_agent u_agent": {
-                "u_agent.agent_id = u.agent_id": 1
+            "\"ofrom\".\"utterancerest\" \"u\"": {},
+            "\"ofrom\".\"global_attribute_agent\" \"u_agent\"": {
+                "\"u_agent\".\"agent_id\" = \"u\".\"agent_id\"": 1
             }
         }
     }
