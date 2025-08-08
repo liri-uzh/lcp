@@ -43,7 +43,6 @@ def _where_conditions_from_constraints(
         label_layer=label_layer,
     )
     if cons is None:
-        # return ([f"{label}.{conf.config['token'].lower()}_id > 0"], [])
         return (["1 = 1"], [], {})
     all_conditions: list[str] = []
     inner_conditions = cons.conditions()

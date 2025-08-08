@@ -427,10 +427,10 @@ class ResultsMaker:
             else:
                 lay, _ = self.r.label_layer[label]
             if lay == self.token:
-                field = f"{self.token}_id"
                 if label not in self.r.set_objects:
-                    formed = f"{label}.{field} as {label}"
-                    self.r.selects.add(formed.lower())
+                    ent_ref = self.r.sql.layer(label, lay, pointer=True)
+                    formed = sql_str(f"{ent_ref} AS {LR}", ent_ref.alias)
+                    self.r.selects.add(formed)
                     if label not in self.r.entities:
                         self.r.entities.add(label)
                 piece: Details = {"name": label, "type": lay, "multiple": False}
@@ -558,7 +558,7 @@ class ResultsMaker:
                 )
                 # cannot be lowercased because it is a subquery and may have WHERE
                 self.r.selects.add(select)
-                self.r.entities.add(e.lower())
+                self.r.entities.add(e)
                 continue
 
             if lay == self.token:
@@ -568,9 +568,10 @@ class ResultsMaker:
                     for m in seq.get_members()
                 )
                 if not is_fixed_token_in_sequence and e not in self.r.set_objects:
-                    select = f"{e}.{self.token}_id as {e}"
-                    self.r.selects.add(select.lower())
-                    self.r.entities.add(e.lower())
+                    ent_ref = self.r.sql.layer(e, lay, pointer=True)
+                    select = sql_str(f"{ent_ref} AS {LR}", ent_ref.alias)
+                    self.r.selects.add(select)
+                    self.r.entities.add(ent_ref.alias)
 
         for e in ents:
             entities_list, attributes = self._process_entity(e)
@@ -585,16 +586,26 @@ class ResultsMaker:
                 entout += [cast(dict, attributes[0]).get("name", "")]
                 # entout += [f"ARRAY[{', '.join(entities_list)}]"]
             elif conf_layer_info.get("contains", "").lower() == self.token.lower():
-                select = """(SELECT array_agg(contained_token.{token_lay}_id)
-FROM {schema}.{token_table} contained_token
-WHERE {entity}.char_range && contained_token.char_range
-) AS {entity}_container""".format(
-                    schema=self.schema,
-                    token_lay=self.token.lower(),
-                    token_table=self.batch,
-                    entity=e,
+                container_lab = self.r.unique_label(
+                    f"{e}_container", "_internal", self.r.sql.used_aliases
                 )
-                container_lab = f"{e}_container"
+                cont_tok_ref = self.r.sql.layer(
+                    "contained_token", self.token, pointer=True
+                )
+                cont_tok_stream_ref = self.r.sql.anchor(
+                    "contained_token", self.token, "stream"
+                )
+                ent_lay, _ = self.r.label_layer[e]
+                ent_stream_ref = self.r.sql.anchor(e, ent_lay, "stream")
+                cont_tok_tab: str = next(x for x in cont_tok_ref.joins)
+                select = sql_str(
+                    f"""(SELECT array_agg({cont_tok_ref})
+FROM {cont_tok_tab} {LR}
+WHERE {ent_stream_ref} && {cont_tok_stream_ref}
+) AS {LR}""",
+                    cont_tok_ref.alias,
+                    container_lab,
+                )
                 self.r.selects.add(select)
                 self.r.entities.add(container_lab)
                 entout += [container_lab]
@@ -839,6 +850,7 @@ WHERE {entity}.char_range && contained_token.char_range
                     self.r.conditions.add(c)
             for condition in constraint._conditions:
                 self.r.conditions.add(condition)
+            # TODO: use sql here
             alias = (ref_info.get("meta") or {}).get("str", ref)
             alias = re.sub("[^a-zA-Z0-9_]", "_", alias)
             alias = alias.lstrip("_").rstrip("_")
