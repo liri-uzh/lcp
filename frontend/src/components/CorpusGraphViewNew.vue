@@ -5,9 +5,9 @@
 </template>
 
 <script>
-// TODO: use tooltips to add the layers/attributes descriptions, notes and the list of possible values
 import * as d3 from 'd3'
 import Utils from '@/utils.js'
+import { setTooltips, removeTooltips } from "@/tooltips";
 
 const NATTR_FOLD = 4;
 const WIDTH = 650, HEIGHT = 500;
@@ -122,7 +122,7 @@ export default {
           parentId: `${layerName}_${attName}`,
           label: `show ${subAttributes.length}`,
           attribute: true,
-          props: {type: "_unfolder"},
+          props: {type: "_unfolder", description: `Click to view all ${subAttributes.length} sub-attributes`},
           width: displayTextWidth(`show ${subAttributes.length}`),
           folded: !subFolded
         });
@@ -132,7 +132,7 @@ export default {
         parentId: layerName,
         label: `show ${nAttrs}`,
         attribute: true,
-        props: {type: "_unfolder"},
+        props: {type: "_unfolder", description: `Click to view all ${nAttrs} attributes`},
         width: displayTextWidth(`show ${nAttrs}`),
         folded: !folded
       });
@@ -175,6 +175,16 @@ export default {
   },
   props: ["corpus"],
   methods: {
+    title(node) {
+      let title = (node.data.props||node.data).description || node.data.label;
+      if (node.data.anchors && node.data.anchors.length > 0)
+        title += "; " +
+                (node.data.anchors||[]).map(a=>Object({stream:"character-",time:"time-",location:"location-"})[a]).join(" and ") +
+                "aligned";
+      if (node.data.props && node.data.props.values instanceof Array)
+        title += "; Possible values: " + node.data.props.values.join(" ");
+      return title;
+    },
     drawTree() {
       const nodeWidth = 50, nodeHeight = 50;
       const horizontalSep = 20, verticalSep = 50;
@@ -218,12 +228,16 @@ export default {
         .attr("height", () => nodeHeight)
         .attr("rx", (d) => d.data.attribute ? 5 : 0 )
         .attr("ry", (d) => d.data.attribute ? 5 : 0 )
-        .attr("style", (d) => Object.entries({
-          fill: d.data.attribute ? attrColor(d.data.props) : "#EEE",
-          stroke: d.data.attribute ? "#333" : "#999",
-          "stroke-width": d.data.attribute ? "2px" : "1px"
-        }).map(([p,v])=>`${p}:${v};`).join(' '))
-        .on("click", (e,node)=>{
+        .attr("style",
+          (d) => Object.entries({
+            fill: d.data.attribute ? attrColor(d.data.props) : "#EEE",
+            stroke: d.data.attribute ? "#333" : "#999",
+            "stroke-width": d.data.attribute ? "2px" : "1px"
+          }).map(([p,v])=>`${p}:${v};`).join(' ')
+        )
+        .attr("class", "tooltips")
+        .attr("title", (d) => this.title(d) )
+        .on("pointerdown", (e,node)=>{
           if (!node.parent) return e;
           let id = node.id;
           if (node.data.attribute && node.data.props.type == "_unfolder")
@@ -233,6 +247,7 @@ export default {
           if (!entity.nAttrs || entity.nAttrs == 1) return;
           this.entities.forEach(e=>e.parentId != id || !e.attribute || (e.folded = !e.folded));
           this.drawTree();
+          setTooltips();
         });
 
       const svgAnchors = svgBoxes
@@ -297,12 +312,14 @@ export default {
   computed: {
   },
   mounted() {
+    this.viewBoxOffset = {x: -1 * Math.round(WIDTH/2), y: 0};
     this.svg = d3
       .select("svg#corpusDiagram")
       .attr("width", WIDTH)
       .attr("height", HEIGHT)
       .attr("cursor", "grab")
-      .attr("position", "relative");
+      .attr("position", "relative")
+      .attr("viewBox", `${this.viewBoxOffset.x} ${this.viewBoxOffset.y} ${WIDTH} ${HEIGHT}`);
     this.corpusTree = this.svg.append("g");
     this.drawTree();
 
@@ -313,17 +330,23 @@ export default {
 
     const svgInDOM = document.querySelector("svg#corpusDiagram");
     svgInDOM.parentElement.addEventListener("wheel", (e)=>{
+      e.preventDefault();
+      e.stopPropagation();
       this.zoom = Math.max(0.2, Math.min(2.0, this.zoom + e.deltaY/250));
-      if (!svgInDOM.hasAttribute("viewBox"))
-        svgInDOM.setAttribute("viewBox", `0 0 ${WIDTH} ${HEIGHT}`);
       const [x,y] = svgInDOM.getAttribute("viewBox").split(" ").map(x=>parseInt(x)).slice(0,2);
       svgInDOM.setAttribute(
         "viewBox",
         [x, y, Math.round(WIDTH * this.zoom), Math.round(HEIGHT * this.zoom)].join(" ")
       );
     });
+
+    setTooltips();
+  },
+  updated() {
+    setTooltips();
   },
   beforeUnmount() {
+    removeTooltips();
   }
 };
 </script>
