@@ -1155,15 +1155,21 @@ def get_segment_meta_script(
             for tab, conds in attr_ref.joins.items():
                 joins[tab] = {**joins.get(tab, {}), **{c: 1 for c in conds}}
             if attr_props.get("type") == "labels" and not is_meta:
-                #             nbit: int = cast(int, attributes[attr].get("nlabels", 1))
-                #             on_cond = (
-                #                 f"get_bit({alias}.{attr}, {nbit-1}-{alias_attr_table}.bit) > 0"
-                #             )
-                #             sel = f"array_agg({alias_attr_table}.label) AS {layer}_{attr}"
-                pass
+                nbit = attr_props.get("nlabels", 1)
+                labels_map = _get_mapping(layer, config, batch_name, lang)
+                attr_map = labels_map.get("attributes", {}).get(attr_name, {})
+                labels_rel = attr_map.get("name", f"{layer}_labels")
+                labels_tab = sql_str("{}.{} {}", schema, labels_rel, attr_ref.alias)
+                labels_cond = sql_str(
+                    f"get_bit({attr_ref}, {nbit-1}-{LR}.bit) > 0", attr_ref.alias
+                )
+                joins[labels_tab] = {**joins.get(tab, {}), labels_cond: 1}
+                selects[
+                    sql_str("array_agg({}.label) AS {}", attr_ref.alias, attr_ref.alias)
+                ] = 1
             else:
                 selects[sql_str(f"{attr_ref.ref} AS {LR}", attr_alias)] = 1
-                meta_select_labels[attr_alias] = 1
+            meta_select_labels[attr_alias] = 1
             group_by[attr_ref.ref] = 1
 
     selects_formed = ", ".join(selects)

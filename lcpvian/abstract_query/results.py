@@ -604,31 +604,30 @@ WHERE {entity}.char_range && contained_token.char_range
 
         ents_form: str = ", ".join(entout)
         doc_join = ""
-        frame_range_base = "array[lower(match_list.{fr}), upper(match_list.{fr})]"
         extras: list[str] = []
-        extra_meta: list[str] = []
         frame_ranges: list[dict[str, Any]] = []
 
         if _is_anchored(self.config, context_layer, "time"):
-            out_name = f"{context}_frame_range"
-            formed = f"{context}.frame_range AS {out_name}"
-            self.r.selects.add(formed.lower())
-            self.r.entities.add(out_name.lower())
-            fr = frame_range_base.format(fr=out_name)
+            out_ref = self.r.sql.anchor(context, context_layer, "time")
+            self.r.selects.add(sql_str(f"{out_ref} AS {LR}", out_ref.alias))
+            self.r.entities.add(out_ref.alias)
+            fr = sql_str(
+                "array[lower(match_list.{}), upper(match_list.{})]",
+                out_ref.alias,
+                out_ref.alias,
+            )
             extras.append(fr)
-            extra_meta.append(lay)
-
-            for ex in extra_meta:
-                obj = {
-                    "name": f"{ex}_frame_range",
+            frame_ranges.append(
+                {
+                    "name": out_ref.alias,
                     "type": "list[int]",
                     "multiple": True,
                 }
-                frame_ranges.append(obj)
+            )
 
-            if extras:
-                formed = ", ".join(extras)
-                select_extra = ", " + formed
+        if extras:
+            formed = ", ".join(extras)
+            select_extra = ", " + formed
 
         attribs = self._make_attribs(context, context_layer, tokens, frame_ranges)
 
