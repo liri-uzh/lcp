@@ -624,6 +624,7 @@ export default {
           this.currentMeta[layer][k] = submeta[k];
         }
         for (let k in this.currentMeta[layer]) {
+          if (!(k in submeta)) continue;
           const isString = typeof(submeta[k]) == "string";
           if (isString)
             this.currentMeta[layer][k] = this.currentMeta[layer][k].trim();
