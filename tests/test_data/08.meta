@@ -1,0 +1,171 @@
+{
+    "schema": "udhr_ocr_c789824360354006aa3cf723bed8d2db_1",
+    "schema_path": "udhr_ocr_c789824360354006aa3cf723bed8d2db_1",
+    "idx": 120,
+    "batch": "tokenrest",
+    "wordcount": 1,
+    "token": "Token",
+    "segment": "Segment",
+    "document": "Document",
+    "meta": {
+        "url": "",
+        "date": "2024",
+        "name": "UDHR OCR",
+        "author": "Jeremy Zehr",
+        "source": {
+            "en": ""
+        },
+        "authors": {
+            "en": ""
+        },
+        "license": "",
+        "version": 1,
+        "dataType": {
+            "en": ""
+        },
+        "language": "und",
+        "revision": "",
+        "swissubase": {
+            "licence": null,
+            "keywords": "",
+            "projectId": "",
+            "requestDoi": false,
+            "versionNote": "",
+            "datasetTitle": {
+                "de": "",
+                "en": "",
+                "fr": "",
+                "it": ""
+            },
+            "resourceType": 1,
+            "apiAccessToken": null,
+            "datasetLanguage": "en",
+            "datasetDescription": "",
+            "resourceDescription": "",
+            "documentationRemarks": "",
+            "validationInformation": ""
+        },
+        "institution": {
+            "en": ""
+        },
+        "userLicense": {
+            "en": ""
+        },
+        "sample_query": {
+            "en": ""
+        },
+        "corpusDescription": "An OCR sample of the Universal Declaration of the Human Rights with smudges on the images"
+    },
+    "layer": {
+        "Token": {
+            "abstract": false,
+            "anchoring": {
+                "time": false,
+                "stream": true,
+                "location": true
+            },
+            "layerType": "unit",
+            "attributes": {
+                "form": {
+                    "type": "text",
+                    "isGlobal": false,
+                    "nullable": false
+                },
+                "lemma": {
+                    "type": "text",
+                    "isGlobal": false,
+                    "nullable": false
+                }
+            }
+        },
+        "Smudge": {
+            "abstract": false,
+            "anchoring": {
+                "time": false,
+                "stream": false,
+                "location": true
+            },
+            "layerType": "unit",
+            "attributes": {}
+        },
+        "Segment": {
+            "abstract": false,
+            "contains": "Token",
+            "anchoring": {
+                "time": false,
+                "stream": true,
+                "location": true
+            },
+            "layerType": "span",
+            "attributes": {}
+        },
+        "Document": {
+            "abstract": false,
+            "contains": "Segment",
+            "anchoring": {
+                "time": false,
+                "stream": true,
+                "location": true
+            },
+            "layerType": "span",
+            "attributes": {
+                "page": {
+                    "type": "image",
+                    "isGlobal": false,
+                    "nullable": false
+                }
+            }
+        }
+    },
+    "project": "848c1f0f-a1e3-4f6b-93da-4a7b26c6c6d9",
+    "projects": [
+        "848c1f0f-a1e3-4f6b-93da-4a7b26c6c6d9"
+    ],
+    "firstClass": {
+        "token": "Token",
+        "segment": "Segment",
+        "document": "Document"
+    },
+    "schema_name": "udhr_ocr_c789824360354006aa3cf723bed8d2db_1",
+    "mapping": {
+        "layer": {
+            "Token": {
+                "batches": 10,
+                "relation": "token<batch>",
+                "attributes": {
+                    "form": {
+                        "key": "form",
+                        "name": "token_form",
+                        "type": "relation"
+                    },
+                    "lemma": {
+                        "key": "lemma",
+                        "name": "token_lemma",
+                        "type": "relation"
+                    }
+                }
+            },
+            "Smudge": {
+                "relation": "smudge"
+            },
+            "Segment": {
+                "prepared": {
+                    "relation": "prepared_Segment",
+                    "columnHeaders": [
+                        "form",
+                        "lemma"
+                    ]
+                },
+                "relation": "segment<batch>"
+            },
+            "Document": {
+                "relation": "document"
+            }
+        },
+        "hasFTS": true,
+        "FTSvectorCols": {
+            "1": "form",
+            "2": "lemma"
+        }
+    }
+}

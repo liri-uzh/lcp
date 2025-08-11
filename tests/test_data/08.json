@@ -1,0 +1,45 @@
+{
+    "query": [
+        {
+            "unit": {
+                "layer": "Segment",
+                "label": "s"
+            }
+        },
+        {
+            "unit": {
+                "layer": "Smudge",
+                "partOf": [
+                    {
+                        "partOfLocation": "s"
+                    }
+                ],
+                "label": "sm"
+            }
+        },
+        {
+            "unit": {
+                "layer": "Token",
+                "partOf": [
+                    {
+                        "partOfStream": "s"
+                    }
+                ],
+                "label": "t"
+            }
+        }
+    ],
+    "results": [
+        {
+            "label": "res",
+            "resultsPlain": {
+                "context": [
+                    "s"
+                ],
+                "entities": [
+                    "t"
+                ]
+            }
+        }
+    ]
+}

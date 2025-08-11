@@ -154,7 +154,7 @@ class SQLCorpus:
                 "meta",
                 attribute=sql.Literal(attribute),
             )
-        elif attr_type in ("categorical", "number", "labels") and not is_glob:
+        elif attr_type in ("categorical", "number", "labels", "image") and not is_glob:
             ref = sql_str(f"{entity_label}.{LR}", attribute)
         if ref:
             return self.add_ref(key, entity, ref, alias, joins)

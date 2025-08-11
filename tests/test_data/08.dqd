@@ -1,0 +1,13 @@
+# Test location-anchored constraints
+
+Segment s
+
+Smudge&s sm
+
+Token@s t
+
+res => plain
+    context
+        s
+    entities
+        t
