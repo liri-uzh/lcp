@@ -1144,6 +1144,8 @@ def get_segment_meta_script(
         group_by[entity_ref.ref] = 1
         meta_attrs = layers[layer].get("attributes", {}).get("meta", {})
         for attr_name, attr_props in _get_all_attributes(layer, config, lang).items():
+            if attr_props.get("type") == "vector":
+                continue
             attr_ref = sqlc.attribute(entity_lab, layer, attr_name)
             attr_alias = attr_ref.alias
             is_meta = attr_name in meta_attrs

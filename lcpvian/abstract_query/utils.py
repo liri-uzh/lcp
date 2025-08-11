@@ -161,7 +161,11 @@ class SQLCorpus:
         ref = unique_label(f"{entity}_{attribute}", layer, used_refs)
         attr_map = mapping_attributes.get(attribute, {})
         rel_key = attr_map.get("key") or attribute
-        rel_tab = attr_map.get("name") or (
+        rel_tab = attr_map.get("name")
+        if not rel_tab and not is_glob and attr_type not in ("dict", "jsonb"):
+            ref = sql_str(f"{entity_label}.{LR}", attribute)
+            return self.add_ref(key, entity, ref, alias, joins)
+        rel_tab = rel_tab or (
             f"global_attribute_{attribute}" if is_glob else f"{layer}_{attribute}"
         )
         if pointer:
