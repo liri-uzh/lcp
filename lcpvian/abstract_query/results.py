@@ -600,10 +600,9 @@ class ResultsMaker:
                 cont_tok_tab: str = next(x for x in cont_tok_ref.joins)
                 select = sql_str(
                     f"""(SELECT array_agg({cont_tok_ref})
-FROM {cont_tok_tab} {LR}
+FROM {cont_tok_tab}
 WHERE {ent_stream_ref} && {cont_tok_stream_ref}
 ) AS {LR}""",
-                    cont_tok_ref.alias,
                     container_lab,
                 )
                 self.r.selects.add(select)
