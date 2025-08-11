@@ -19,27 +19,27 @@ WITH RECURSIVE fixed_parts AS
      (SELECT Segment_id
       FROM bnc1.fts_vectorrest vec
       WHERE vec.vector @@ '7ART <1> (2true & 7ADJ) <1> 7SUBST') AS fts_vector_s
-   CROSS JOIN bnc1.document d
-   CROSS JOIN bnc1.segmentrest s
+   CROSS JOIN "bnc1"."document" "d"
+   CROSS JOIN "bnc1"."segmentrest" "s"
    CROSS JOIN "bnc1"."tokenrest" "t1"
    CROSS JOIN "bnc1"."tokenrest" "t2"
    CROSS JOIN "bnc1"."tokenrest" "t3"
    CROSS JOIN "bnc1"."lemma" "t3_lemma"
    CROSS JOIN "bnc1"."lemma" "t2_lemma"
-   WHERE "t2_lemma"."lemma_id" = "t2"."lemma_id"
-     AND "t3_lemma"."lemma_id" = "t3"."lemma_id"
-     AND ("d"."meta"->>'classCode')::text ~ '^S'
-     AND d.char_range && s.char_range
-     AND fts_vector_s.segment_id = s.segment_id
-     AND s.segment_id = t1.segment_id
+   WHERE "d"."char_range" && "s"."char_range"
+     AND "fts_vector_s"."segment_id" = "s"."segment_id"
+     AND "s"."segment_id" = "t1"."segment_id"
      AND ("t1"."xpos2")::text = ('ART')::text
-     AND s.segment_id = t2.segment_id
+     AND "s"."segment_id" = "t2"."segment_id"
      AND (("t2_lemma"."lemma")::text = ('true')::text
           AND ("t2"."xpos2")::text = ('ADJ')::text)
-     AND s.segment_id = t3.segment_id
+     AND "s"."segment_id" = "t3"."segment_id"
      AND ("t3"."xpos2")::text = ('SUBST')::text
-     AND t2.token_id - t1.token_id = 1
-     AND t3.token_id - t2.token_id = 1 ),
+     AND "t2"."token_id" - "t1"."token_id" = 1
+     AND "t2_lemma"."lemma_id" = "t2"."lemma_id"
+     AND "t3"."token_id" - "t2"."token_id" = 1
+     AND "t3_lemma"."lemma_id" = "t3"."lemma_id"
+     AND ("d"."meta"->>'classCode')::text ~ '^S' ),
                gather AS
   (SELECT "d",
           "d_char_range",

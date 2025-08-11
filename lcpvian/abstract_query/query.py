@@ -22,6 +22,7 @@ from .utils import (
     _bound_label,
     sql_str,
 )
+from ..utils import _get_all_attributes
 
 MATCH_LIST = """
 WITH RECURSIVE fixed_parts AS (
@@ -60,6 +61,7 @@ class Token:
         set_objects: set[str],
         entities: set[str] | None,
         n: int,
+        sql_corpus: SQLCorpus,
     ) -> None:
         """
         Model a single Token object, whether in a sequence or not
@@ -86,11 +88,13 @@ class Token:
         self.quantor = quantor
         self._n: int = n or 1
         self._needs_lang: bool = False
+        self.sql = sql_corpus
         self.conn_obj = _get_constraints(
             self.constraints,
             self.layer,
             self.label,
             self.conf,
+            sql_corpus,
             quantor=quantor,
             label_layer=self.label_layer,
             n=self._n,
@@ -114,8 +118,9 @@ class Token:
                 if self.layer.lower() == self.config["token"].lower()
                 else self.layer
             )
+            ref = self.sql.layer(self.label, lay)
             lay = lay.lower()
-            formed = f"{self.schema.lower()}.{lay} {self.label.lower()}"
+            formed = next(x for x in ref.joins)
             out[formed] = None
         joins = self.conn_obj.joins() if self.conn_obj else {}
         for k, v in joins.items():
@@ -226,6 +231,7 @@ class QueryMaker:
             self.r.set_objects,
             self.r.entities,
             self._n,
+            self.r.sql,
         )
         self._n += 1
         joins = tok.joins()
@@ -264,14 +270,8 @@ class QueryMaker:
             main_label = alt["unit"].get("label", main_layer)
         return "", main_layer, main_label
 
-    def _process_sequences(self) -> None:
-        """
-        A dedicated method to process sequences since it's quite complex
-        """
-        # TODO
-
     def process_disjunction(self, members: list) -> list[list[str]]:
-        token_table = _get_table(self.token, self.config, self.batch, self.lang or "")
+        # TODO: refactor this
         disjunction_ctes: list[list[str]] = []
         unions: list[str] = []
         for m in _flatten_coord(members, "OR"):
@@ -300,7 +300,9 @@ class QueryMaker:
                     f"SELECT {SELECT_PH}, {CARRY_PH}jsonb_build_array({ulb}.{self.token}_id) AS disjunction_matches FROM {from_built} WHERE {conds_built}"
                 )
             elif "sequence" in m:
-                seq: Sequence = Sequence(QueryData(), self.conf, m)
+                qd: QueryData = QueryData()
+                qd._sql_corpus = self.r.sql
+                seq: Sequence = Sequence(qd, self.conf, m)
                 sqlseq: SQLSequence = SQLSequence(seq)
                 sqlseq.categorize_members()
                 assert not sqlseq.ctes, RuntimeError(
@@ -328,13 +330,17 @@ class QueryMaker:
                 token_labels = [t.internal_label for t, *_ in sqlseq.fixed_tokens]
                 seq_from = " CROSS JOIN ".join(
                     ["{prev_table}"]
-                    + [f"{self.schema}.{token_table} {tlab}" for tlab in token_labels]
+                    + [
+                        next(x for x in self.r.sql.layer(tlab, self.token).joins)
+                        for tlab in token_labels
+                    ]
                 )
                 seq_from = " JOIN ".join([seq_from] + fixed_joins)
                 seq_where_built = " AND ".join(seq_where)
                 select_matches = ", ".join(
                     [
-                        f"{u.internal_label}.{self.token}_id"
+                        # f"{u.internal_label}.{self.token}_id"
+                        self.r.sql.layer(u.internal_label, self.token, pointer=True).ref
                         for u, *_ in sqlseq.fixed_tokens
                     ]
                 )
@@ -378,9 +384,13 @@ class QueryMaker:
                     )
                     conjunction_where += sorted(c for c in conds.union(joins_conds))
                     conjunction_cross_joins += [j for j in joins]
-                    conjunction_selects.append(f"{ulb}.{self.token}_id")
+                    conjunction_selects.append(
+                        self.r.sql.layer(ulb, self.token, pointer=True).ref
+                    )
                 elif "sequence" in conj:
-                    seq = Sequence(QueryData(), self.conf, conj)
+                    qd = QueryData()
+                    qd._sql_corpus = self.r.sql
+                    seq = Sequence(qd, self.conf, conj)
                     sqlseq = SQLSequence(seq)
                     sqlseq.categorize_members()
                     # if sqlseq.get_first_stream_part_of() != seg_lab:
@@ -414,10 +424,13 @@ class QueryMaker:
                         or _bound_label(t.internal_label, self.config)
                     ]
                     conjunction_cross_joins += [
-                        f"{self.schema}.{token_table} {tlab}" for tlab in bound_tokens
+                        # f"{self.schema}.{token_table} {tlab}" for tlab in bound_tokens
+                        next(x for x in self.r.sql.layer(tlab, self.token).joins)
+                        for tlab in bound_tokens
                     ]
                     conjunction_selects += [
-                        f"{u.internal_label}.{self.token}_id"
+                        self.r.sql.layer(u.internal_label, self.token, pointer=True).ref
+                        # f"{u.internal_label}.{self.token}_id"
                         for u, *_ in sqlseq.fixed_tokens
                     ]
             disj_joins += [f"disjunction{n}" + " USING ({using})" for n in from_nested]
@@ -443,6 +456,14 @@ class QueryMaker:
         self.joins = self.r.joins
         self.conditions = self.r.conditions
 
+        unbound_labels: dict[str, str] = {
+            e: l
+            for e, (l, _) in self.r.label_layer.items()
+            if not _bound_label(e, self.query_json)
+            and l in cast(dict, self.config["layer"])
+        }
+
+        # Select all the explicit references in the query
         for ref_lab, ref_attrs in self.r.all_refs.items():
             if _bound_label(ref_lab, self.query_json):
                 continue
@@ -604,7 +625,7 @@ class QueryMaker:
 
         # Last select potentially *from* the fixed_parts table
         self.selects = {
-            f"___lasttable___.{self._get_label_as(s).replace('.','_')} as {self._get_label_as(s)}"
+            f"___lasttable___.{self._get_label_as(s).replace('.','_')} AS {self._get_label_as(s)}"
             for s in self.selects
         }
 
@@ -642,12 +663,10 @@ class QueryMaker:
                 self.joins[join_table] = True
                 self.conditions.add(join_conds)
 
+            fixed_part_ases = [self._get_label_as(s) for s in sorted(selects_in_fixed)]
             simple_seq, new_labels, simple_where = s.simple_sequences_table(
                 fixed_part_ts=",\n".join(
-                    [
-                        f"{last_table}.{self._get_label_as(s)} AS {self._get_label_as(s)}"
-                        for s in sorted(selects_in_fixed)
-                    ]
+                    [sql_str("{}.{} AS {}", last_table, a, a) for a in fixed_part_ases]
                 ),
                 from_table=last_table,
                 tok=tok,
@@ -776,57 +795,12 @@ class QueryMaker:
 
         additional_ctes: str = ""
 
-        unbound_labels: dict[str, str] = {
-            lab: lay
-            for lab, (lay, _) in self.r.label_layer.items()
-            if not _bound_label(lab, self.query_json)
-        }
         built_disjunctions = []
         for disjunction in disjunctions:
             disj_ctes: list[str] = [
                 " UNION ALL ".join(union_cte)
                 for union_cte in self.process_disjunction(disjunction)
             ]
-            # Make sure we select what's necessary from fixed_parts
-            for n in range(len(disj_ctes)):
-                union_cte = disj_ctes[n]
-                for lab, lay in unbound_labels.items():
-                    found_lab = re.search(rf"\b{lab}\b", union_cte)
-                    if not found_lab:
-                        continue
-                    lab_ref = sqlc.layer(lab, lay, pointer=True)
-                    sel_lab = sql_str(
-                        "___lasttable___.{} AS {}", lab_ref.alias, lab_ref.alias
-                    )
-                    self.selects.add(sel_lab)
-                    sel_lab_in_fixed = sql_str(f"{lab_ref} AS {LR}", lab_ref.alias)
-                    selects_in_fixed.add(sel_lab_in_fixed)
-                    union_cte = re.sub(
-                        rf"\b\"?{lab}\"?\.\"?{lay}_id\"?",
-                        sql_str("{}", lab),
-                        union_cte,
-                        flags=re.IGNORECASE,
-                    )
-                    for labref in re.findall(
-                        rf"\b\"?{lab}\"?\.\"?[_.a-zA-Z0-9]+\"?", union_cte
-                    ):
-                        # if labref.endswith("_id"):
-                        #     continue
-                        aname = labref.split(".")[-1]
-                        ref_sel_lab = (
-                            f"___lasttable___.{lab}_{aname} AS {lab}_{aname}".lower()
-                        )
-                        self.selects.add(ref_sel_lab)
-                        ref_sel_lab_in_fixed = f"{lab}.{aname} AS {lab}_{aname}".lower()
-                        selects_in_fixed.add(ref_sel_lab_in_fixed)
-                        union_cte = re.sub(
-                            rf"\b{labref}\b",
-                            f"{lab}_{aname}",
-                            union_cte,
-                            flags=re.IGNORECASE,
-                        )
-                        disj_ctes[n] = union_cte
-                    disj_ctes[n] = union_cte
             built_disjunctions.append(disj_ctes)
 
         disjunction_ctes: list[str] = []
@@ -835,13 +809,25 @@ class QueryMaker:
             self._table[1] if self._table else next(s for s in seg_suffixes)
         )
         using: list[str] = [table_suffix]
-        for anchor in ("char_range", "frame_range", "xy_box"):
-            if not any(
-                sel.lower().endswith(f"as {table_suffix}_{anchor}".lower())
-                for sel in selects_in_fixed
-            ):
-                continue
-            using.append(f"{table_suffix}_{anchor}")
+        # for anchor in ("char_range", "frame_range", "xy_box"):
+        #     if not any(
+        #         sel.lower().endswith(f"as {table_suffix}_{anchor}".lower())
+        #         for sel in selects_in_fixed
+        #     ):
+        #         continue
+        #     using.append(f"{table_suffix}_{anchor}")
+        shift_unbound: dict[str, str] = {}
+        for elab, elay in unbound_labels.items():
+            e_ref = self.r.sql.layer(elab, elay, pointer=True)
+            shift_unbound[e_ref.ref] = sql_str("{}", e_ref.alias)
+            for a in _get_all_attributes(elay, self.config, self.lang or ""):
+                a_ref = self.r.sql.attribute(elab, elay, a)
+                shift_unbound[a_ref.ref] = sql_str("{}", a_ref.alias)
+            for anch in ("stream", "time", "location"):
+                e_anch_ref = self.r.sql.anchor(elab, elay, anch)
+                shift_unbound[e_anch_ref.ref] = sql_str("{}", e_anch_ref.alias)
+        shift_rgx = "|".join(k for k in shift_unbound)
+        replacer = lambda m: shift_unbound.get(m[1], m[1]) or m[1]
         for n_main_disj, disj_ctes in enumerate(built_disjunctions):
             for disj_cte in disj_ctes:
                 cte_prev_table = (
@@ -862,6 +848,7 @@ class QueryMaker:
                     carry_over=carry_over,
                     using=", ".join(using),
                 )
+                disj_cte_str = re.sub(rf"({shift_rgx})", replacer, disj_cte_str)
                 disjunction_ctes.append(disj_cte_str)
                 additional_ctes += f"disjunction{n_disj_cte} AS ({disj_cte_str}),"
                 n_disj_cte += 1
@@ -887,7 +874,8 @@ class QueryMaker:
                 additional_selects = sorted(
                     self._get_label_as(slc)
                     for slc in self.selects
-                    if self._get_label_as(slc) != s.get_first_stream_part_of()
+                    if self._get_label_as(slc)
+                    != sql_str("{}", s.get_first_stream_part_of())
                 )
                 traversal_table: str = cte.traversal(
                     from_table=last_table,
@@ -953,7 +941,7 @@ class QueryMaker:
 
         for g, refs in groups.items():
             str_refs: str = ",".join(refs)
-            self.selects.add(f"jsonb_build_array({str_refs}) as {g}")
+            self.selects.add(f"jsonb_build_array({str_refs}) AS {g}")
 
         # Do not select ambiguous references (e.g. because of repeated sequences)
         match_selects: str = ",\n".join(
@@ -1071,8 +1059,8 @@ class QueryMaker:
         elif self._backup_table:
             table, label = self._backup_table
 
-        schema_prefix: str = f"{self.schema}."
-        base: str = f"{schema_prefix}{table} {label}".lower()
+        schema_prefix: str = sql_str("{}.", self.schema)
+        base: str = schema_prefix + sql_str("{} {}", table, label)
         prefilters: set[str] = {
             p
             for s in self.sqlsequences
@@ -1092,9 +1080,8 @@ class QueryMaker:
                 new_joins = {x for x in old_base_joins}
             elif isinstance(old_base_joins, bool):
                 new_joins = {old_base_joins}
-            new_joins.add(
-                f"{new_label}.{self.segment}_id = {label}.{self.segment}_id".lower()
-            )
+            seg_id = f"{self.segment.lower()}_id"
+            new_joins.add(sql_str("{}.{} = {}.{}", new_label, seg_id, label, seg_id))
             self.joins[base] = new_joins
             table = f"(SELECT {self.config['segment']}_id FROM {self.conf.schema}.{vector_name} vec WHERE {ps})"
             schema_prefix = ""
@@ -1116,6 +1103,7 @@ class QueryMaker:
             "",
             "",
             self.conf,
+            self.r.sql,
             label_layer=self.r.label_layer,
             entities=self.r.entities,
             set_objects=self.r.set_objects,
@@ -1150,6 +1138,7 @@ class QueryMaker:
             layer,
             label,
             self.conf,
+            self.r.sql,
             quantor=cast(str | None, obj.get("quantor", None)),
             label_layer=self.r.label_layer,
             entities=self.r.entities,
@@ -1172,6 +1161,7 @@ class QueryMaker:
         """
         Process an object in the query larger than token unit
         """
+        ref = self.r.sql.layer(label, layer, pointer=True)
         layer_info = cast(JSONObject, self.config["layer"])
         layer_info = cast(JSONObject, layer_info[layer])
         contains = cast(str, layer_info.get("contains", ""))
@@ -1179,14 +1169,9 @@ class QueryMaker:
         is_relation = layer_info.get("layerType", "relation")
         is_negative = obj.get("quantor", "") == "NOT EXISTS"
         if not is_meta and not is_relation and not is_negative:
-            ref = self.r.sql.layer(label, layer, pointer=True)
             self.selects.add(sql_str(f"{ref} AS {LR}", ref.alias))
 
-        table = f"{layer}{self._underlang}"
-        if layer.lower() == self.segment.lower():
-            table += _get_batch_suffix(self.batch, n_batches=self.n_batches)
-
-        join = f"{self.schema}.{table} {label}".lower()
+        join = next(x for x in ref.joins)
         if join != self._base and not is_negative:
             self.joins[join] = None
         constraints = cast(JSONObject, obj.get("constraints", {}))
@@ -1200,6 +1185,7 @@ class QueryMaker:
                 layer,
                 label,
                 self.conf,
+                self.r.sql,
                 quantor=cast(str | None, obj.get("quantor", None)),
                 label_layer=self.r.label_layer,
                 entities=self.r.entities,

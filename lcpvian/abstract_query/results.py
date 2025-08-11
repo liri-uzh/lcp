@@ -965,6 +965,7 @@ WHERE {ent_stream_ref} && {cont_tok_stream_ref}
             lay,
             item,
             self.conf,
+            self.r.sql,
             n=self._n,
             label_layer=self.r.label_layer,
             entities=self.r.entities,

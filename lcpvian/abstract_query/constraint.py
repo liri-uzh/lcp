@@ -431,7 +431,7 @@ class Constraint:
 
     def join_labels_table(
         self,
-        label: str,
+        ref: SQLRef,
         layer: str,
         nbit: int,
         op: str,
@@ -451,12 +451,14 @@ class Constraint:
             f"~{'*' if case_insensitive else ''}" if value_type == "regex" else "="
         )
         dummy_mask = "".join(["0" for _ in range(nbit)])
-        inner_condition = (
+        inner_condition = sql_str(
             f"(SELECT COALESCE(bit_or(1::bit({nbit})<<bit)::bit({nbit}), b'{dummy_mask}') AS m "
-            + f"FROM {self.schema}.{lookup_table} WHERE label {inner_op} {value})"
+            + f"FROM {LR}.{LR} WHERE label {inner_op} {value})",
+            self.schema,
+            lookup_table,
         )
         # Use label_layer to store the inner conditions query-wide and give them unique labels
-        label = label or self.label
+        label = ref.entity or self.label
         if self.label_layer is None:
             self.label_layer = {}
         if label not in self.label_layer:
@@ -468,12 +470,13 @@ class Constraint:
             comp_str, len(meta["labels inner conditions"])
         )
         meta["labels inner conditions"][comp_str] = n
-        mask_label = f"{label.replace('.','_')}_mask_{n}"
-        formed_join_table = f"{inner_condition} {mask_label}"
+        mask_label = f"{label}_mask_{n}"
+        mask_alias = sql_str("{}", self.sql_corpus.layer(mask_label, layer).alias)
+        formed_join_table = f"{inner_condition} {mask_alias}"
         self._add_join_on(formed_join_table, "")
         negated = op.lower().startswith(("not", "!"))
         op = "=" if negated else ">"
-        return (op, mask_label)
+        return (op, mask_alias)
 
     def make(self) -> None:
         """
@@ -513,11 +516,13 @@ class Constraint:
             if left_type == right_type:
                 formed_condition = f"{left} {self.op} {right}"
             elif left_type == "entity":
-                left_layer = left_info.get("layer", self.layer).lower()
-                formed_condition = f"{left}.{left_layer}_id {self.op} {right}"
+                left_layer = left_info.get("layer", self.layer)
+                left_ref = self.sql_corpus.layer(left, left_layer, pointer=True)
+                formed_condition = f"{left_ref} {self.op} {right}"
             elif right_type == "entity":
-                right_layer = right_info.get("layer", self.layer).lower()
-                formed_condition = f"{left} {self.op} {right}.{right_layer}_id"
+                right_layer = right_info.get("layer", self.layer)
+                right_ref = self.sql_corpus.layer(right, right_layer, pointer=True)
+                formed_condition = f"{left} {self.op} {right_ref}"
             else:
                 raise TypeError(f"Cannot compare {left} to {right}")
 
@@ -539,7 +544,11 @@ class Constraint:
                 ), TypeError(
                     f"Entity {right} cannot overlap because it is not time-anchored"
                 )
-                formed_condition = f"{left}.frame_range && {right}.frame_range"
+                left_layer = left_info.get("layer", self.layer)
+                right_layer = right_info.get("layer", self.layer)
+                left_ref = self.sql_corpus.anchor(left, left_layer, "time")
+                right_ref = self.sql_corpus.anchor(right, right_layer, "time")
+                formed_condition = f"{left_ref} && {right_ref}"
                 if self.op != "overlaps":
                     formed_condition = f"NOT({formed_condition})"
             else:
@@ -548,21 +557,23 @@ class Constraint:
                 )
                 left_layer = left_info.get("layer", self.layer).lower()
                 right_layer = right_info.get("layer", self.layer).lower()
-                formed_condition = (
-                    f"{left}.{left_layer}_id {self.op} {right}.{right_layer}_id"
-                )
+                left_ref = self.sql_corpus.layer(left, left_layer, pointer=True)
+                right_ref = self.sql_corpus.layer(right, right_layer, pointer=True)
+                formed_condition = f"{left_ref} {self.op} {right_ref}"
 
         elif "labels" in (left_type, right_type):
             labels_left = left_type == "labels"
             ref: str = left if labels_left else right
-            ref_layer = (left_info if labels_left else right_info).get(
-                "layer", self.layer
+            ref_info = left_info if labels_left else right_info
+            ref_layer = ref_info.get("layer", self.layer)
+            ref_ref = cast(SQLRef, ref_info.get("sql"))
+            ref_attr = cast(dict, ref_info.get("meta", {})).get(
+                "str", ref.split(".")[1].strip('"')
             )
-            ref_attr = ref.split(".")[-1]
             ref_mapping = (
-                _get_mapping(ref_layer, self.config, self.batch, self.lang or "")
+                cast(dict, ref_info.get("mapping", {}))
                 .get("attributes", {})
-                .get(ref_attr, {"name": ref_attr})
+                .get(ref_attr, {"name": f"{ref_layer.lower()}_{ref_attr}"})
             )
             value = right if labels_left else left
             value_type: str = right_type if labels_left else left_type
@@ -572,7 +583,7 @@ class Constraint:
                 dict, (right_info if labels_left else left_info)
             ).get("meta", {})
             (parsed_op, mask) = self.join_labels_table(
-                ref,
+                ref_ref,
                 ref_layer,
                 nbit,
                 self.op,
@@ -824,6 +835,7 @@ def _get_constraint(
     layer: str,
     label: str,
     conf: Config,
+    sql_corpus: SQLCorpus,
     quantor: str | None = None,
     n: int = 1,
     order: int | None = None,
@@ -834,7 +846,6 @@ def _get_constraint(
     set_objects: set[str] | None = None,
     allow_any: bool = True,  # False,
     top_level: bool = False,
-    sql_corpus: SQLCorpus | None = None,
 ) -> Constraint | Constraints | None:
     """
     Handle a single constraint, or nested constraints
@@ -883,6 +894,7 @@ def _get_constraint(
             unit_layer,
             unit_label,
             conf,
+            sql_corpus,
             quantor or unit.get("quantor", None),
             "AND",
             n,
@@ -895,7 +907,6 @@ def _get_constraint(
             set_objects,
             allow_any,
             top_level,
-            sql_corpus,
         )
         return _get_constraints(*args)
 
@@ -913,6 +924,7 @@ def _get_constraint(
             cast(str, obj.get("layer", layer)),  # todo: which layer is correct?
             cast(str, obj.get("label", label)),
             conf,
+            sql_corpus,
             cast(str | None, quantor),
             operator,
             n + 1,
@@ -925,7 +937,6 @@ def _get_constraint(
             set_objects,
             allow_any,
             top_level,
-            sql_corpus,
         )
 
     if not len(constraint):
@@ -967,6 +978,7 @@ def _get_constraints(
     layer: str,
     label: str,
     conf: Config,
+    sql_corpus: SQLCorpus,
     quantor: str | None = None,
     op: str | None = "AND",
     n: int = 1,
@@ -979,7 +991,6 @@ def _get_constraints(
     set_objects: set[str] | None = None,
     allow_any: bool = True,  # False,
     top_level=False,
-    sql_corpus: SQLCorpus | None = None,
 ) -> Constraints | None:
     """
     Create a Constraints object containing all subconstraints
@@ -1032,16 +1043,22 @@ def _get_constraints(
             and is_token
             and part_of_layer.lower() == segname
         ):  # Use id for token in segment
-            part_ofs.append(f"{part_label}.{segname}_id = {label}.{segname}_id")
-        else:
-            col_name = (
-                "char_range"
-                if part_type == "partOfStream"
-                else ("frame_range" if part_type == "partOfTime" else "xy_box")
+            part_ref = sql_corpus.layer(part_label, part_of_layer, pointer=True)
+            own_ref = sql_corpus.layer(label, layer, pointer=True)
+            part_ofs.append(
+                sql_str(part_ref.ref + " = {}.{}", own_ref.alias, f"{segname}_id")
             )
-            references[part_label] = references.get(part_label, []) + [col_name]
-            references[label] = references.get(label, []) + [col_name]
-            part_ofs.append(f"{part_label}.{col_name} && {label}.{col_name}")
+        else:
+            anchor_name = {
+                "partOfStream": "stream",
+                "partOfTime": "time",
+                "partOfLocation": "location",
+            }.get(part_type, "stream")
+            references[part_label] = references.get(part_label, []) + [anchor_name]
+            references[label] = references.get(label, []) + [anchor_name]
+            part_ref = sql_corpus.anchor(part_label, part_of_layer, anchor_name)
+            own_ref = sql_corpus.anchor(label, layer, anchor_name)
+            part_ofs.append(f"{part_ref} && {own_ref}")
     part_of_str = " AND ".join(part_ofs)
 
     args = cast(list[JSONObject], constraints)
@@ -1052,6 +1069,7 @@ def _get_constraints(
             layer,
             arg_label,
             conf,
+            sql_corpus,
             quantor=None,  # quantor is not passed down to single constraints
             n=n,
             order=order,
@@ -1062,7 +1080,6 @@ def _get_constraints(
             set_objects=set_objects,
             allow_any=allow_any,
             top_level=top_level,
-            sql_corpus=sql_corpus,
         )
         n += 1
         results.append(tup)
@@ -1132,6 +1149,7 @@ def process_set(
         first_unit.get("layer", ""),
         from_label,
         conf,
+        r.sql,
         label_layer=r.label_layer,
         entities=set(),
         part_of=first_unit.get("partOf", []),
@@ -1139,7 +1157,6 @@ def process_set(
         n=_n,
         is_set=True,
         top_level=False,
-        sql_corpus=r.sql,
     )
     if conn_obj:
         _n = conn_obj._n + 1
