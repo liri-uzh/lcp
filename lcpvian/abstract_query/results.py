@@ -870,7 +870,7 @@ WHERE {ent_stream_ref} && {cont_tok_stream_ref}
             prefix, *_ = att["attribute"].split(".")
             prefix_layer, _ = self.r.label_layer[prefix]
             anchorings = [
-                {"stream": "char_range", "time": "frame_range", "location": "xy_box"}[a]
+                a
                 for a in ANCHORINGS
                 if _is_anchored(self.config, prefix_layer, a)
                 and _is_anchored(self.config, entity_layer, a)
@@ -883,12 +883,16 @@ WHERE {ent_stream_ref} && {cont_tok_stream_ref}
             # if join_formed != f"{self.schema}.{table} {entity_lab}":
             #     jjoins.append(join_formed)
             where_anchors = " OR ".join(
-                f"{prefix}_{a} && {entity_lab}.{a}" for a in anchorings
+                sql_str("{} && ", self.r.sql.anchor(prefix, prefix_layer, a).alias)
+                + self.r.sql.anchor(entity_lab, entity_layer, a).ref
+                for a in anchorings
             )
             jwheres.append(where_anchors)
-            self.r.selects.update({f"{prefix}.{a} AS {prefix}_{a}" for a in anchorings})
-            self.r.entities.update({f"{prefix}_{a}" for a in anchorings})
-            jgroups = [f"{prefix}_{a}" for a in anchorings]
+            # self.r.selects.update({f"{prefix}.{a} AS {prefix}_{a}" for a in anchorings})
+            jgroups = [
+                self.r.sql.anchor(prefix, prefix_layer, a).alias for a in anchorings
+            ]
+            self.r.entities.update({x for x in jgroups})
         assert parsed_attributes, RuntimeError(
             f"Need at least one *attribute* referenced in the analysis"
         )
