@@ -158,23 +158,6 @@ class QueryArgs(BaseArgs):
     offset: int
 
 
-class RequestInfo(QueryArgs):
-    """
-    The request-specific info associated with a corpus query (offset, status)
-    These can be updated after the request has been submitted
-    """
-
-    needed: int
-    no_more_data: bool
-    start_query_from_sents: bool
-    status: str
-    percentage_done: float
-    percentage_words_done: float
-    progress_info: dict
-    been_warned: bool
-    msg_ids: list[str]  # all the msg_id's sent through publish_msg/push_msg
-
-
 class DocIDArgs(BaseArgs):
     corpus_id: int
 

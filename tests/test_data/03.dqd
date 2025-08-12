@@ -1,3 +1,5 @@
+# test disjunctions in sequences
+
 Document d
     classCode = /^S/
 

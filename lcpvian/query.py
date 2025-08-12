@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import traceback
 
 from aiohttp import web
 from redis import Redis as RedisConnection
@@ -212,6 +213,14 @@ def process_query(
     and return the corresponding Request + QueryInfo + job
     """
     request: Request = Request(app["redis"], request_data)
+    if request.synchronous:
+        try:
+            query_buffers = app["query_buffers"]
+        except:
+            query_buffers = {}
+            app.addkey("query_buffers", dict[str, dict], query_buffers)
+        if request.id not in query_buffers:
+            query_buffers[request.id] = {}
     print(
         f"Received new POST request: {request.id} ; {request.offset} -- {request.requested}"
     )
@@ -280,7 +289,7 @@ async def post_query(request: web.Request) -> web.Response:
         else app_type
     )
     allowed = authenticator.check_corpus_allowed(
-        str(corpus), app["config"][str(corpus)], user_data, app_type, get_all=False
+        str(corpus), user_data, app_type, get_all=False
     )
     if not allowed:
         fail: dict[str, str] = {
@@ -302,6 +311,8 @@ async def post_query(request: web.Request) -> web.Response:
     try:
         (req, qi, job) = process_query(app, request_data)
     except Exception as e:
+        print("Could not process query", e)
+        traceback.print_exc()
         raise web.HTTPBadRequest(reason=str(e))
 
     if req.to_export and req.user:
@@ -315,18 +326,11 @@ async def post_query(request: web.Request) -> web.Response:
         )
 
     if req.synchronous:
-        try:
-            query_buffers = app["query_buffers"]
-        except:
-            query_buffers = {}
-            app.addkey("query_buffers", dict[str, dict], query_buffers)
-        query_buffers[req.id] = {}
         while 1:
             await asyncio.sleep(0.5)
             if not qi.has_request(req):
                 break
-        res = query_buffers[req.id]
-        query_buffers.pop(req.id, None)
+        res = app["query_buffers"].pop(req.id, None)
         print(f"[{req.id}] Done with synchronous request")
         serializer = CustomEncoder()
         return web.json_response(serializer.default(res))

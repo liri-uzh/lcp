@@ -5,7 +5,6 @@ utils.py: all miscellaneous helpers and tools used by backend
 import asyncio
 import json
 import logging
-import math
 import numpy as np
 import os
 import re
@@ -21,8 +20,6 @@ from datetime import date, datetime
 from hashlib import md5
 from io import BytesIO
 from typing import Any, cast, TypeAlias
-from uuid import uuid4, UUID
-from rq.exceptions import NoSuchJobError
 from rq.registry import FinishedJobRegistry
 
 from aiohttp import web
@@ -52,7 +49,6 @@ from .authenticate import Authentication
 # from .callbacks import _general_failure
 from .configure import CorpusConfig, CorpusTemplate
 from .typed import (
-    Batch,
     Config,
     JSON,
     JSONObject,
@@ -61,10 +57,9 @@ from .typed import (
     ObservableList,
     _serialize_observable,
     SentJob,
-    QueryArgs,
-    RequestInfo,
     Websockets,
 )
+from .abstract_query.utils import SQLCorpus, sql_str
 
 CSV_DELIMITERS = [",", "\t"]
 CSV_QUOTES = ['"', "\b"]
@@ -144,6 +139,8 @@ META_QUERY_REGEXP = rf"""SELECT
     -2::int2 AS rstype,{slb}((.+ AS .+)+?)
 FROM(.|{slb})+
 """
+
+LR = "{}"
 
 
 def _futurecb(
@@ -366,54 +363,6 @@ async def handle_bad_request(exc: Exception, request: web.Request) -> None:
     await _general_error_handler(str(exc), exc, request)
 
 
-def refresh_job_ttl(
-    connection: RedisConnection, job_id: str, new_ttl: int = QUERY_TTL
-) -> None:
-    connection.expire(job_id, new_ttl)
-    connection.expire(f"rq:job:{job_id}", new_ttl)
-    connection.expire(f"rq:resluts:{job_id}", new_ttl)
-
-
-def _get_status(
-    query_info: dict,
-    request_info: RequestInfo,
-    # n_results: int,
-    # total_results_requested: int,
-    # done_batches: list[Batch],
-    # all_batches: list[Batch],
-    search_all: bool = False,
-    # time_so_far: float = 0.0,
-) -> str:
-    """
-    Is a query finished, or do we need to do another iteration?
-
-        finished: no more batches available
-        overtime: query with time limitation ran out of time
-        partial: currently fewer than total_results_requested
-        satisfied: >= total_results_requested
-    """
-    n_results = query_info.get("total_results_so_far", 0)
-    done_batches = query_info.get("done_batches", [])
-    all_batches = query_info.get("all_batches", [])
-    time_so_far = query_info.get("total_duration", 0.0)
-    total_results_requested = request_info.get("total_results_requested", 0)
-    full = request_info.get("full", False)
-
-    if len(done_batches) == len(all_batches):
-        return "finished"
-    allowed_time = float(os.getenv("QUERY_ALLOWED_JOB_TIME", 0.0))
-    too_long: bool = time_so_far > allowed_time
-    if allowed_time > 0.0 and search_all and too_long and not full:
-        return "overtime"
-    if search_all:
-        return "partial"
-    if total_results_requested in {-1, False, None}:
-        return "partial"
-    if n_results >= total_results_requested and not full:
-        return "satisfied"
-    return "partial"
-
-
 def _get_redis_obj(connection: RedisConnection, key: str) -> dict[str, Any]:
     obj = json.loads(connection.get(key) or "{}")
     return obj
@@ -600,7 +549,7 @@ def _filter_corpora(
     corpora: dict[str, CorpusConfig] = {
         idx: corpus
         for idx, corpus in config.items()
-        if authenticator.check_corpus_allowed(idx, corpus, user_data, app_type, get_all)
+        if authenticator.check_corpus_allowed(idx, user_data, app_type, get_all)
     }
     return corpora
 
@@ -846,75 +795,6 @@ def format_query_params(
     return query, tuple(out)
 
 
-def format_meta_lines(
-    query: str, result: list[dict[int, str | dict[Any, Any]]]
-) -> dict[str, Any] | None:
-    if not result:
-        return {}
-    # replace this with actual upstream handling of column names
-    pre_columns = re.match(META_QUERY_REGEXP, query)
-    if not pre_columns:
-        return None
-    columns: list[str] = [
-        p.split(" AS ")[1].strip() for p in pre_columns[1].split(", ")
-    ]  # [seg_id, layer1, layer2, etc.]
-    layers: dict[str, None] = {
-        c.split("_")[0]: None for c in columns if not c.endswith("_id")
-    }
-    formatted: dict[str, Any] = {}
-    for res in result:
-        seg_id = "0"
-        segment: dict[str, dict[Any, Any]] = {layer: {} for layer in layers}
-        for n, layer_prop in enumerate(columns):
-            if not res[n + 1]:
-                continue
-            if layer_prop == "seg_id":
-                seg_id = cast(str, res[n + 1])
-            else:
-                m = re.match(rf"^([^_]+)_(.+)$", layer_prop)
-                if not m:
-                    continue
-                layer, prop = m.groups()
-                if prop == "meta":
-                    meta: str | dict[Any, Any]
-                    if isinstance(res[n + 1], str):
-                        meta = json.loads(cast(str, res[n + 1]))
-                    else:
-                        meta = res[n + 1]
-                    if not isinstance(meta, dict):
-                        continue
-                    segment[layer] = {**(segment[layer]), **meta}
-                else:
-                    if isinstance(res[n + 1], Range):
-                        segment[layer][prop] = [
-                            cast(Range, res[n + 1]).lower,
-                            cast(Range, res[n + 1]).upper,
-                        ]
-                    elif isinstance(res[n + 1], Box):
-                        segment[layer][prop] = [
-                            cast(Box, res[n + 1]).low.x,
-                            cast(Box, res[n + 1]).low.y,
-                            cast(Box, res[n + 1]).high.x,
-                            cast(Box, res[n + 1]).high.y,
-                        ]
-                    elif any(
-                        isinstance(res[n + 1], typ)
-                        for typ in [int, str, bool, list, tuple, UUID, date]
-                    ):
-                        segment[layer][prop] = str(res[n + 1])
-                    elif isinstance(res[n + 1], dict):
-                        segment[layer][prop] = json.dumps(res[n + 1])
-        segment = {
-            layer: props
-            for layer, props in segment.items()
-            if props and [x for x in props if x != "id"]
-        }
-        if not segment:
-            continue
-        formatted[str(seg_id)] = segment
-    return formatted
-
-
 def range_to_array(sql_ref: str) -> str:
     return f"jsonb_build_array(lower({sql_ref}), upper({sql_ref}))"
 
@@ -930,6 +810,24 @@ def _layer_contains(config: CorpusConfig, parent: str, child: str) -> bool:
             return True
         parent_layer = conf_layers.get(parents_child)
     return False
+
+
+def _get_iso639_3(lang: str) -> str:
+    if lang == "en":
+        return "eng"
+    if lang == "de":
+        return "deu"
+    if lang == "fr":
+        return "fra"
+    if lang == "it":
+        return "ita"
+    if lang == "rm":
+        return "roh"
+    if lang == "ro":
+        return "ron"
+    if lang == "gs":
+        return "gsw"
+    return ""
 
 
 def _determine_language(batch: str) -> str | None:
@@ -980,7 +878,7 @@ def _get_table(layer: str, config: Any, batch: str, lang: str) -> str:
 
 def _get_all_attributes(layer: str, config: Any, lang: str = "") -> dict:
     """
-    Look up the config to get all the attributes of a given layer
+    Look up the config to get all the attributes of a given layer (name + props)
     including those of the passed language partition or all partitions
     """
     if layer not in config["layer"]:
@@ -1016,6 +914,9 @@ def _get_all_attributes(layer: str, config: Any, lang: str = "") -> dict:
 
 
 def _get_all_labels(json_query: dict | list) -> dict[str, str]:
+    """
+    Recursively scan the JSON query and return all the label to layer mappings
+    """
     ret = {}
     is_list = isinstance(json_query, list)
     for k in json_query:
@@ -1039,76 +940,9 @@ def _time_remaining(status: str, total_duration: float, use: float) -> float:
     return max(0.0, round(timed, 3))
 
 
-def _get_progress(job: Job, query_info: dict, request_info: RequestInfo) -> dict:
-    allowed_time = float(os.getenv("QUERY_ALLOWED_JOB_TIME", 0.0))
-    do_full = request_info.get("full", False)
-    status = _get_status(query_info, request_info)
-    total_requested = request_info["total_results_requested"]
-    total_found = query_info["total_results_so_far"]
-    done_batches = query_info["done_batches"]
-    total_words_processed_so_far = sum([x[-1] for x in query_info["done_batches"]]) or 1
-    use = total_words_processed_so_far * 100.0 / query_info["word_count"]
-    total_duration = query_info.get("total_duration", 0.0)
-    time_remaining = _time_remaining(status, total_duration, use)
-    ended_at = cast(datetime, job.ended_at)
-    started_at = cast(datetime, job.started_at)
-    duration: float = round((ended_at - started_at).total_seconds(), 3)
-    time_perc = 0.0
-    if allowed_time > 0.0 and do_full:
-        time_perc = total_duration * 100.0 / allowed_time
-    batches_done_string = f"{len(done_batches)}/{len(query_info['all_batches'])}"
-    total_words_processed_so_far = sum([x[-1] for x in done_batches]) or 1
-    proportion_that_matches = total_found / total_words_processed_so_far
-    projected_results = int(query_info["word_count"] * proportion_that_matches)
-    if status == "finished":
-        projected_results = total_found if do_full else -1
-        perc_words = 100.0
-        perc_matches = 100.0
-        if do_full:
-            perc_matches = time_perc
-        query_info["percentage_done"] = 100.0
-    elif status in {"partial", "satisfied", "overtime"}:
-        done_batches = query_info["done_batches"]
-        total_words_processed_so_far = sum([x[-1] for x in done_batches]) or 1
-        proportion_that_matches = total_found / total_words_processed_so_far
-        projected_results = int(query_info["word_count"] * proportion_that_matches)
-        if not do_full:
-            projected_results = -1
-        perc_words = total_words_processed_so_far * 100.0 / query_info["word_count"]
-        perc_matches = (
-            min(total_found, total_requested) * 100.0 / (total_requested or total_found)
-        )
-        if do_full:
-            perc_matches = time_perc
-        query_info["percentage_done"] = round(perc_matches, 3)
-    if request_info.get("from_memory"):
-        projected_results = query_info["projected_results"]
-        perc_matches = query_info["percentage_done"]
-        perc_words = query_info["percentage_words_done"]
-        total_found = query_info["total_results_so_far"]
-        batches_done_string = query_info["batches_done_string"]
-        status = query_info["status"]
-        total_duration = query_info["total_duration"]
-    return {
-        "remaining": time_remaining,
-        "job": job.id,
-        "first_job": query_info.get("hash", ""),
-        "user": request_info.get("user", ""),
-        "room": request_info.get("room", ""),
-        "duration": duration,
-        "batches_done": batches_done_string,
-        "total_duration": total_duration,
-        "projected_results": projected_results,
-        "percentage_done": round(perc_matches, 3),
-        "percentage_words_done": round(perc_words, 3),
-        "total_results_so_far": total_found,
-        "action": "background_job_progress",
-    }
-
-
 def _sign_payload(
     payload: dict[str, Any] | JSONObject | SentJob,
-    kwargs: dict[str, Any] | RequestInfo | SentJob,
+    kwargs: dict[str, Any] | SentJob,
 ) -> None:
     to_export = kwargs.get("to_export")
     kwargs_to_payload_keys = (
@@ -1221,6 +1055,7 @@ def _get_query_batches(
 def get_segment_meta_script(
     config: dict, languages: list[str], batch_name: str
 ) -> tuple[str, list[str]]:
+    # TODO: use sql_str here
     schema = config["schema_path"]
     layers: dict = config["layer"]
     doc: str = config["document"]
@@ -1242,8 +1077,7 @@ def get_segment_meta_script(
     prep_table: str = seg_mapping.get("prepared", {}).get(
         "relation", f"prepared_{seg_table}"
     )
-    # seg_script = f"SELECT {seg}_id, id_offset, content, annotations FROM {schema}.{prep_table} WHERE {seg}_id IN ({sids})"
-    seg_script = f"SELECT {seg}_id, id_offset, content{annotations} FROM {schema}.{prep_table} WHERE {seg}_id = ANY(:sids)"
+    prep_cte = f"SELECT {seg}_id, id_offset, content{annotations} FROM {schema}.{prep_table} WHERE {seg}_id = ANY(:sids)"
 
     # META
     has_media = config.get("meta", config).get("mediaSlots", {})
@@ -1257,117 +1091,94 @@ def get_segment_meta_script(
     # Make sure to always include Document in there
     parents_with_attributes[doc] = 1
 
-    selects = []
-    joins: dict[str, int] = {}
-    group_by = []
+    selects: dict[str, int] = {}
+    group_by: dict[str, int] = {}
+    joins: dict[str, dict[str, int]] = {}
+    meta_select_labels: dict[str, int] = {}
+    seg_stream_ref = ""
+    sqlc = SQLCorpus(config, schema, batch_name, lang)
     for layer in parents_with_attributes:
-        alias = "s" if layer == seg else layer
-        layer_mapping = config["mapping"]["layer"].get(layer, {})
-        mapping_attrs = layer_mapping.get("attributes", {})
-        partitions = None if layer == seg else layer_mapping.get("partitions")
-        alignment = layer_mapping.get("alignment", {})
-        alignment_relation = {} if layer == seg else alignment.get("relation", None)
-        relation = alignment_relation
-        if not relation and layer != seg:
-            relation = layer_mapping.get("relation", layer.lower())
-        if not relation and lang and partitions:
-            relation = partitions.get(lang, {}).get("relation")
-        prefix_id: str = layer.lower()
-        if layer != seg and alignment:
-            prefix_id = "alignment"
-        # Select the ID
-        iddotref = f"{alias}.{prefix_id}_id"
-        selects.append(f"{iddotref} AS {layer}_id")
-        group_by.append(iddotref)
-        joins_later: dict[str, Any] = {}
-        attributes: dict[str, Any] = layers[layer].get("attributes", {})
-        relational_attributes = {
-            k: v
-            for k, v in attributes.items()
-            if mapping_attrs.get(k, {}).get("type") == "relation"
-        }
-        # Make sure one gets the data in a pure JSON format (not just a string representation of a JSON object)
-        selects += [
-            f"{alias}.\"{attr}\"{'::jsonb' if attr=='meta' else ''} AS {layer}_{attr}"
-            for attr, v in attributes.items()
-            if attr not in relational_attributes and v.get("type") != "vector"
-        ]
-        for attr, v in relational_attributes.items():
-            # Quote attribute name (is arbitrary)
-            attr_mapping = mapping_attrs.get(attr, {})
-            # Mapping is "relation" for dict-like attributes (eg ufeat or agent)
-            attr_table = attr_mapping.get("name", "")
-            alias_attr_table = f"{layer}_{attr}_{attr_table}"
-            attr_table_key = attr_mapping.get("key", attr)
-            attr_name = f'"{attr_table_key}"'
-            on_cond = f"{alias}.{attr}_id = {alias_attr_table}.{attr_table_key}_id"
-            dotref = f"{alias_attr_table}.{attr_name}"
-            sel = f"{dotref} AS {layer}_{attr}"
-            if v.get("type") == "labels":
-                nbit: int = cast(int, attributes[attr].get("nlabels", 1))
-                on_cond = (
-                    f"get_bit({alias}.{attr}, {nbit-1}-{alias_attr_table}.bit) > 0"
-                )
-                sel = f"array_agg({alias_attr_table}.label) AS {layer}_{attr}"
-            else:
-                group_by.append(dotref)
-            # Join the lookup table
-            joins_later[f"{schema}.{attr_table} {alias_attr_table} ON {on_cond}"] = None
-            # Select the attribute from the lookup table
-            selects.append(sel)
-
-        # Join the segment table on preps
-        if layer == seg:
-            joins[f"{schema}.{seg_table} {alias} ON s.{seg}_id = preps.{seg}_id"] = 1
-
-        # Will get char_range from the appropriate table
-        char_range_table: str = alias
-        # join tables
-        if lang and partitions:
-            interim_relation = partitions.get(lang, {}).get("relation")
-            if not interim_relation:
-                # This should never happen?
+        entity_lab = layer  # .lower()
+        entity_ref = sqlc.layer(entity_lab, layer, pointer=True)
+        for tab, conds in entity_ref.joins.items():
+            conditions = [c for c in conds]
+            if tab.endswith(sql_str(" {}", entity_ref.alias)):
+                if layer == seg:
+                    seg_stream_ref = sqlc.anchor(entity_lab, layer, "stream").ref
+                    conditions.insert(
+                        0,
+                        sql_str(f"{entity_ref.ref} = preps.{LR}", f"{seg.lower()}_id"),
+                    )
+                else:
+                    layer_stream_ref = sqlc.anchor(entity_lab, layer, "stream")
+                    conditions.insert(0, f"{layer_stream_ref} @> {seg_stream_ref}")
+            joins[tab] = {**joins.get(tab, {}), **{c: 1 for c in conditions}}
+        layer_alias = entity_ref.alias
+        if not layer_alias.endswith("_id"):
+            layer_alias += "_id"
+        selects[sql_str(f"{entity_ref.ref} AS {LR}", layer_alias)] = 1
+        meta_select_labels[layer_alias] = 1
+        for anchor in ("stream", "time", "location"):
+            if not _is_anchored(layers[layer], config, anchor):
                 continue
-            if alignment_relation:
-                # The partition table is aligned to a main document table
-                joins[
-                    f"{schema}.{interim_relation} {alias}_{lang} ON {alias}_{lang}.char_range @> s.char_range"
-                ] = 1
-                joins[
-                    f"{schema}.{alignment_relation} {alias} ON {alias}_{lang}.alignment_id = {alias}.alignment_id"
-                ] = 1
-                char_range_table = f"{alias}_{lang}"
-            else:
-                # This is the main document table for this partition
-                joins[
-                    f"{schema}.{interim_relation} {layer} ON {alias}.char_range @> s.char_range"
-                ] = 1
-        elif relation:
-            joins[
-                f"{schema}.{relation} {alias} ON {layer}.char_range @> s.char_range"
+            layer_anchor_ref = sqlc.anchor(entity_lab, layer, anchor)
+            selects[
+                sql_str(f"{layer_anchor_ref.ref} AS {LR}", layer_anchor_ref.alias)
             ] = 1
-        for k in joins_later:
-            joins[k] = 1
-        # Get char_range from the main table
-        chardotref = char_range_table + '."char_range"'
-        selects.append(f"{chardotref} AS {layer}_char_range")
-        group_by.append(chardotref)
-        # And frame_range if applicable
-        if _is_time_anchored(layers[layer], config):
-            selects.append(f'{char_range_table}."frame_range" AS {layer}_frame_range')
-        # And xy_box if applicable
-        if _is_xy_anchored(layers[layer], config):
-            selects.append(f'{char_range_table}."xy_box" AS {layer}_xy_box')
-
-    # Add code here to add "media" if dealing with a multimedia corpus
-    if has_media:
-        selects.append(f"{doc}.media::jsonb AS {doc}_media")
-        selects = [s for s in selects if not s.endswith(f"AS {doc}_name")]
-        selects.append(f"{doc}.name::text AS {doc}_name")
+            meta_select_labels[layer_anchor_ref.alias] = 1
+        if layer == doc and has_media:
+            doc_media_ref = sqlc.not_attribute(
+                entity_lab, layer, "media", cast="::jsonb"
+            )
+            doc_name_ref = sqlc.not_attribute(entity_lab, layer, "name", cast="::text")
+            filt_aliases = (doc_media_ref.alias, doc_name_ref.alias)
+            selects = {
+                s: 1
+                for s in selects
+                if not any(s.endswith(sql_str(" AS {}", x)) for x in filt_aliases)
+            }
+            selects[sql_str(f"{doc_media_ref.ref} AS {LR}", doc_media_ref.alias)] = 1
+            selects[sql_str(f"{doc_name_ref.ref} AS {LR}", doc_name_ref.alias)] = 1
+            meta_select_labels[doc_media_ref.alias] = 1
+            meta_select_labels[doc_name_ref.alias] = 1
+        group_by[entity_ref.ref] = 1
+        meta_attrs = layers[layer].get("attributes", {}).get("meta", {})
+        for attr_name, attr_props in _get_all_attributes(layer, config, lang).items():
+            if attr_props.get("type") == "vector":
+                continue
+            attr_ref = sqlc.attribute(entity_lab, layer, attr_name)
+            attr_alias = attr_ref.alias
+            is_meta = attr_name in meta_attrs
+            if is_meta:
+                attr_ref = sqlc.attribute(entity_lab, layer, "meta")
+                if not attr_ref.ref.endswith("::jsonb"):
+                    attr_ref.ref += "::jsonb"
+                attr_alias = f"{layer}_meta"
+            for tab, conds in attr_ref.joins.items():
+                joins[tab] = {**joins.get(tab, {}), **{c: 1 for c in conds}}
+            if attr_props.get("type") == "labels" and not is_meta:
+                nbit = attr_props.get("nlabels", 1)
+                labels_map = _get_mapping(layer, config, batch_name, lang)
+                attr_map = labels_map.get("attributes", {}).get(attr_name, {})
+                labels_rel = attr_map.get("name", f"{layer}_labels")
+                labels_tab = sql_str("{}.{} {}", schema, labels_rel, attr_ref.alias)
+                labels_cond = sql_str(
+                    f"get_bit({attr_ref}, {nbit-1}-{LR}.bit) > 0", attr_ref.alias
+                )
+                joins[labels_tab] = {**joins.get(tab, {}), labels_cond: 1}
+                selects[
+                    sql_str("array_agg({}.label) AS {}", attr_ref.alias, attr_ref.alias)
+                ] = 1
+            else:
+                selects[sql_str(f"{attr_ref.ref} AS {LR}", attr_alias)] = 1
+            meta_select_labels[attr_alias] = 1
+            group_by[attr_ref.ref] = 1
 
     selects_formed = ", ".join(selects)
     # left join = include non-empty entities even if other ones are empty
-    joins_formed = f"\n    LEFT JOIN ".join(joins)
+    joins_formed = f"\n    LEFT JOIN ".join(
+        f"{t} ON {' AND '.join(c)}" for t, c in joins.items()
+    )
     joins_formed = "" if not joins_formed else f"LEFT JOIN {joins_formed}"
     group_by_formed = ", ".join(group_by)
     meta_script = META_QUERY.format(
@@ -1375,19 +1186,18 @@ def get_segment_meta_script(
         joins_formed=joins_formed,
         group_by_formed=group_by_formed,
     )
-    meta_select_labels = [sl.split(" AS ")[-1] for sl in selects]
 
     # SEGMENTS + META
     preps_annotations = ", preps.annotations" if annotations else ""
-    meta_array = ", ".join(f"meta.{lb}" for lb in meta_select_labels)
-    script = f"""WITH preps AS ({seg_script}),
+    meta_array = ", ".join(sql_str("meta.{}", lb) for lb in meta_select_labels)
+    script = f"""WITH preps AS ({prep_cte}),
     meta AS ({meta_script})
 SELECT -1::int2 AS rstype, jsonb_build_array(preps.{seg.lower()}_id, preps.id_offset, preps.content{preps_annotations}) FROM preps
 UNION ALL
 SELECT -2::int2 AS rstype, jsonb_build_array({meta_array}) FROM meta;
     """
     print("segment_meta_script", script)
-    return script, meta_select_labels
+    return script, [msl for msl in meta_select_labels]
 
 
 async def copy_to_table(

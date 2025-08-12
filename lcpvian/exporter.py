@@ -6,6 +6,7 @@ import re
 import shutil
 
 from aiohttp import web
+from base64 import b64decode as btoa
 from functools import cmp_to_key
 from io import TextIOWrapper
 from lxml.builder import E
@@ -21,7 +22,7 @@ from .callbacks import _general_failure
 from .jobfuncs import _handle_export
 from .query_classes import Request, QueryInfo
 from .typed import CorpusConfig
-from .utils import _get_mapping, _publish_msg, sanitize_filename
+from .utils import _get_iso639_3, _get_mapping, _publish_msg, sanitize_filename
 
 EXPORT_TTL = 5000
 RESULTS_DIR = os.getenv("RESULTS", "results")
@@ -610,27 +611,64 @@ class Exporter:
             output.write('<?xml version="1.0" encoding="UTF-8"?>\n')
             output.write("<results>\n")
             config = self._config
-            last_payload = {}
-            for batch_hash in req.lines_batch:
-                batch_name = self._qi.get_batch_from_hash(batch_hash)
-                last_payload = req.get_payload(self._qi, batch_name)
-                if last_payload["status"] == "finished":
-                    break
+            meta = {
+                k: v
+                for k, v in config["meta"].items()
+                if k not in ("sample_query", "swissubase")
+            }
+            try:
+                meta["userLicense"] = btoa(meta["userLicense"]).decode("utf-8")  # type: ignore
+            except:
+                pass
+            partitions = config.get("partitions", {}).get("values", [])
+            tok = config["token"].lower()
+            tok_map = config["mapping"]["layer"][config["token"]]
+            tok_counts = config["token_counts"]
+            if len(partitions) > 1:
+                tok_map = tok_map.get("partitions", {})
+                meta["total_tokens"] = {
+                    lg: tok_counts.get(
+                        tok_map.get(lg, {})
+                        .get("relation", f"{tok}_{lg}")
+                        .replace("<batch>", "")
+                        + "0",
+                        "-1",
+                    )
+                    for lg in partitions
+                }
+            else:
+                tok0 = tok_map.get("relation", tok).replace("<batch>", "") + "0"
+                meta["total_tokens"] = tok_counts.get(tok0, "-1")
             corpus_node = E.corpus(
                 *[
-                    getattr(E, k)(str(v))
-                    for k, v in config["meta"].items()
-                    if k not in ("sample_query",)
+                    x
+                    for k, v in meta.items()
+                    for x in (
+                        # multilingual field
+                        [
+                            getattr(E, k)(escape(str(vv)), lang=vk)
+                            for vk, vv in v.items()
+                        ]
+                        if (isinstance(v, dict) and all(_get_iso639_3(vk) for vk in v))
+                        # monolingual field
+                        else [getattr(E, k)(escape(str(v)))]
+                    )
                 ]
             )
             output.write(_node_to_string(corpus_node, prefix="  "))
+            batch_names = [self._qi.get_batch_from_hash(bh) for bh in req.lines_batch]
+            percentage_words_done = max(
+                req.get_payload(self._qi, bn)["percentage_words_done"]
+                for bn in batch_names
+            )
             query_node = E.query(
                 E.date(str(datetime.datetime.now(datetime.UTC))),
+                E.languages(*[E.language(lg) for lg in req.languages]),
                 E.offset(str(req.offset)),
                 E.requested(str(req.requested)),
                 E.full(str(req.full)),
                 E.delivered(str(req.lines_sent_so_far)),
-                E.coverage(str(last_payload["percentage_done"])),
+                E.coverage(str(percentage_words_done)),
                 E.json("\n" + json.dumps(self._qi.json_query, indent=2) + "\n  "),
             )
             output.write(_node_to_string(query_node, prefix="  "))

@@ -2,11 +2,212 @@ import json
 import re
 
 from dataclasses import dataclass, field
+from psycopg import sql
 from typing import Any, cast
 
-from .typed import Joins, LabelLayer, QueryType
+from .typed import Joins, LabelLayer, QueryType, SQLRef
 
 SUFFIXES = {".*", ".+", ".*?", ".?", ".+?", "."}
+LR = "{}"
+
+
+def unique_label(
+    label: str = "anonymous",
+    layer="__internal",
+    references: LabelLayer | None = None,
+    obj: dict = dict({}),
+) -> str:
+    """
+    Return label if not already in references
+    otherwise return a unique variation on it
+    """
+    references = references or {}
+    label = label or "anonymous"
+    new_label: str = label
+    n: int = 1
+    while new_label in references:
+        n += 1
+        new_label = f"{label}{str(n)}"
+    references[new_label] = (layer, obj)
+    return new_label
+
+
+def sql_str(template: str, *args, **kwargs) -> str:
+    prep_args = [sql.Identifier(a) for a in args]
+    return sql.SQL(template).format(*prep_args, **kwargs).as_string()  # type: ignore
+
+
+class SQLCorpus:
+    def __init__(
+        self,
+        conf: dict,
+        schema: str,
+        batch: str,
+        lang: str,
+    ):
+        self.refs: dict[tuple[str, str, bool], SQLRef] = {}
+        self.conf = conf
+        self.schema = schema
+        self.batch = batch
+        self.lang = lang
+        self.used_refs: dict = {}
+        self.used_aliases: dict = {}
+
+    def add_ref(
+        self,
+        key: tuple[str, str, bool],
+        entity: str,
+        ref: str,
+        alias: str,
+        joins: dict[str, dict[str, int]],
+    ) -> SQLRef:
+        self.refs[key] = SQLRef(entity, ref, alias, joins)
+        return self.refs[key]
+
+    def layer(self, entity: str, layer: str, pointer: bool = False) -> SQLRef:
+        """
+        Reference to a layer.
+        If pointer is True, ref and alias target the primary key instead of the table.
+        """
+        key = (entity, "", pointer)
+        if key not in self.refs:
+            ref = unique_label(entity, layer, self.used_refs)
+            layer_table = _get_table(layer, self.conf, self.batch, self.lang).lower()
+            table = sql_str("{}.{} {}", self.schema, layer_table, ref)
+            joins: dict[str, dict[str, int]] = {table: {}}
+            if pointer:
+                layer_map = self.conf["mapping"]["layer"].get(layer, {})
+                aligned = "alignment" in layer_map and not layer_map["alignment"].get(
+                    "indirect"
+                )
+                id_prefix = "alignment" if aligned else layer.lower()
+                ref = sql_str("{}.{}", ref, f"{id_prefix}_id")
+            else:
+                ref = sql_str("{}", ref)
+            alias = unique_label(entity, layer, self.used_aliases)
+            self.add_ref(key, entity, ref, alias, joins)
+        return self.refs[key]
+
+    def attribute(
+        self, entity: str, layer: str, attribute: str, pointer: bool = False
+    ) -> SQLRef:
+        """
+        Reference to an entity's attribute.
+        If the attribute uses a lookup table and pointer is True, ref and alias target the foreign key instead of the value.
+        """
+        key = (entity, attribute, pointer)
+        if key in self.refs:
+            return self.refs[key]
+        used_refs = self.used_refs
+        joins: dict[str, dict[str, int]] = {}
+        entity_key = (entity, "", False)
+        entity_ref: SQLRef
+        if entity_key in self.refs:
+            entity_ref = self.refs[entity_key]
+        else:
+            entity_ref = self.layer(entity, layer)
+        for k, v in entity_ref.joins.items():
+            joins[k] = {**joins.get(k, {}), **v}
+        entity_label = entity_ref.ref
+        entity_alias = entity_ref.alias
+        layer_info = self.conf["layer"][layer]
+        info_attributes = layer_info.get("attributes", {})
+        layer_mapping = _get_mapping(layer, self.conf, self.batch, self.lang)
+        mapping_attributes = layer_mapping.get("attributes", {})
+        meta = info_attributes.get("meta", None)
+        attr_type = info_attributes.get(attribute, {}).get("type", "categorical")
+        rel_table = (
+            self.conf["mapping"]["layer"]
+            .get(layer, {})
+            .get("alignment", {})
+            .get("relation")
+        )
+        if rel_table:
+            rel_ent_label = unique_label(f"{entity_alias}_aligned", layer, used_refs)
+            table = sql_str("{}.{} {}", self.schema, rel_table, rel_ent_label)
+            condition = sql_str(
+                f"{entity_label}.alignment_id = {LR}.alignment_id", rel_ent_label
+            )
+            joins[table] = {**joins.get(table, {}), condition: 1}
+            entity_alias = rel_ent_label
+            entity_label = sql_str("{}", entity_alias)
+        is_glob = info_attributes.get(attribute, {}).get("ref", "") in self.conf.get(
+            "globalAttributes", {}
+        )
+        alias = unique_label(f"{entity_alias}_{attribute}", layer, self.used_aliases)
+        ref: str = ""
+        if layer_info.get("layerType") == "relation":
+            ref = next(
+                (
+                    attribute
+                    for k, v in info_attributes.items()
+                    if "entity" in v and v.get("name") == attribute
+                ),
+                "",
+            )
+            ref = sql_str(f"{entity_label}.{LR}", ref) if ref else ""
+        elif isinstance(meta, dict) and attribute in meta:
+            accessor = "->" if attr_type in ("dict", "jsonb") else "->>"
+            attr_ph = "{attribute}"
+            ref = sql_str(
+                f"{entity_label}.{LR}{accessor}{attr_ph}",
+                "meta",
+                attribute=sql.Literal(attribute),
+            )
+        elif attr_type in ("categorical", "number", "labels", "image") and not is_glob:
+            ref = sql_str(f"{entity_label}.{LR}", attribute)
+        if ref:
+            return self.add_ref(key, entity, ref, alias, joins)
+        ref = unique_label(f"{entity}_{attribute}", layer, used_refs)
+        attr_map = mapping_attributes.get(attribute, {})
+        rel_key = attr_map.get("key") or attribute
+        rel_tab = attr_map.get("name")
+        if not rel_tab and not is_glob and attr_type not in ("dict", "jsonb"):
+            ref = sql_str(f"{entity_label}.{LR}", attribute)
+            return self.add_ref(key, entity, ref, alias, joins)
+        rel_tab = rel_tab or (
+            f"global_attribute_{attribute}" if is_glob else f"{layer}_{attribute}"
+        )
+        if pointer:
+            rel_key += "_id"
+        else:
+            table = sql_str("{}.{} {}", self.schema, rel_tab, ref)
+            condition = sql_str(
+                f"{LR}.{LR} = {entity_label}.{LR}",
+                ref,
+                f"{rel_key}_id",
+                f"{rel_key}_id",
+            )
+            joins[table] = {**joins.get(table, {}), condition: 1}
+        ref = sql_str("{}.{}", ref, rel_key)
+        return self.add_ref(key, entity, ref, alias, joins)
+
+    def not_attribute(
+        self, entity: str, layer: str, what: str, cast: str = ""
+    ) -> SQLRef:
+        """
+        Column of a layer table that is not an attribute reported in corpus_template.
+        """
+        key = (entity, what, False)
+        entity_ref = self.layer(entity, layer)
+        entity_alias = entity_ref.alias
+        if key not in self.refs:
+            alias = unique_label(f"{entity_alias}_{key[1]}", layer, self.used_aliases)
+            ref = sql_str(f"{LR}.{LR}{cast}", entity_alias, key[1])
+            self.add_ref(key, entity, ref, alias, entity_ref.joins)
+        return self.refs[key]
+
+    def anchor(self, entity: str, layer: str, range: str) -> SQLRef:
+        """
+        Reference to an anchor. stream -> char_range; time -> frame_range; location -> xy_box
+        """
+        return self.not_attribute(
+            entity,
+            layer,
+            {"stream": "char_range", "time": "frame_range", "location": "xy_box"}[
+                range
+            ],
+        )
 
 
 @dataclass
@@ -36,6 +237,14 @@ class QueryData:
     set_objects: set[str] = field(default_factory=set)
     # the main sequences in the query; note that these aren't hashable, so QueryData cannot be shared across threads
     sqlsequences: list[Any] = field(default_factory=list)
+    # all the entity-label-to-attribute references in the query
+    all_refs: dict[str, list[str]] = field(default_factory=dict)
+    # the SQL interface to get SQL references
+    _sql_corpus: SQLCorpus | None = None
+
+    @property
+    def sql(self) -> SQLCorpus:
+        return self._sql_corpus or SQLCorpus({}, "", "", "")
 
     def unique_label(
         self,
@@ -44,16 +253,7 @@ class QueryData:
         references: LabelLayer | None = None,
         obj: dict = dict({}),
     ) -> str:
-        if references is None:
-            references = self.label_layer
-        label = label or "anonymous"
-        new_label: str = label
-        n: int = 1
-        while new_label in references:
-            n += 1
-            new_label = f"{label}{str(n)}"
-        references[new_label] = (layer, obj)
-        return new_label
+        return unique_label(label, layer, references or self.label_layer, obj)
 
     def add_labels(self, query_json: list | dict, references: dict) -> list | dict:
         is_dict = isinstance(query_json, dict)

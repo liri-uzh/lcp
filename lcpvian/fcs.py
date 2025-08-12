@@ -11,7 +11,7 @@ from .cql_to_json import CqlToJson
 from .textsearch_to_json import textsearch_to_json
 from .query_classes import QueryInfo, Request
 from .query import process_query
-from .utils import LCPApplication
+from .utils import _get_iso639_3, LCPApplication
 
 FCS_HOST = "catchphrase.linguistik.uzh.ch"
 FCS_PORT = "443"
@@ -39,24 +39,6 @@ def _get_lg_from_pid(pid: str) -> str:
         or "en"
     )
     return lg
-
-
-def _get_iso639_3(lang: str) -> str:
-    if lang == "en":
-        return "eng"
-    if lang == "de":
-        return "deu"
-    if lang == "fr":
-        return "fra"
-    if lang == "it":
-        return "ita"
-    if lang == "rm":
-        return "roh"
-    if lang == "ro":
-        return "ron"
-    if lang == "gs":
-        return "gsw"
-    return ""
 
 
 def _get_languages(partitions: dict, main_language: str = "") -> str:
@@ -221,7 +203,7 @@ async def search_retrieve(
             "values", [conf.get("meta", {}).get("language", "en")]
         )
         if (not resources or ((cid, lg) in resources))
-        and authenticator.check_corpus_allowed(cid, conf, {}, "lcp", get_all=False)
+        and authenticator.check_corpus_allowed(cid, {}, "lcp", get_all=False)
     ]
     try:
         requested: int = int(maximumRecords)
@@ -233,12 +215,6 @@ async def search_retrieve(
         startRecord = max(0, startRecord)
     except:
         startRecord = 0
-
-    try:
-        query_buffers = app["query_buffers"]
-    except:
-        query_buffers = {}
-        app.addkey("query_buffers", dict[str, dict], query_buffers)
 
     request_ids: dict[str, dict] = {}
     async with asyncio.TaskGroup() as tg:
@@ -265,7 +241,6 @@ async def search_retrieve(
                     "synchronous": True,
                 },
             )
-            query_buffers[req.id] = {}
             request_ids[req.id] = {
                 "cid": cid,
                 "conf": conf,
@@ -277,7 +252,10 @@ async def search_retrieve(
                 _check_request_complete(qi, req, app, request_ids, requested)
             )
     return _make_search_response(
-        query_buffers, request_ids, startRecord=startRecord, requested=requested
+        app["query_buffers"],
+        request_ids,
+        startRecord=startRecord,
+        requested=requested,
     )
 
 
@@ -325,7 +303,7 @@ async def explain(app: LCPApplication, **extra_params) -> str:
             for lg in conf.get("partitions", {}).get(
                 "values", [conf.get("meta", {}).get("language", "")]
             )
-            if authenticator.check_corpus_allowed(cid, conf, {}, "lcp", get_all=False)
+            if authenticator.check_corpus_allowed(cid, {}, "lcp", get_all=False)
         ]
         resources_str = "\n        ".join(resources_list)
         second_half = f"""  <sru:echoedExplainRequest>

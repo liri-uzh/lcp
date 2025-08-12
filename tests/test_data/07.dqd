@@ -1,0 +1,12 @@
+# test year fn
+
+Session e
+    year(date) > 1999
+
+Segment@e s
+
+myKWIC1 => plain
+    context
+        s
+    entities
+        *

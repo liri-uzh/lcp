@@ -1,4 +1,4 @@
- WITH preps AS (SELECT Segment_id, id_offset, content FROM sparcling1.prepared_segment_en WHERE Segment_id = ANY(:sids)),
+WITH preps AS (SELECT Segment_id, id_offset, content FROM sparcling1.prepared_segment_en WHERE Segment_id = ANY(:sids)),
     meta AS (SELECT
     "Segment"."segment_id" AS "Segment_id", "Segment"."char_range" AS "Segment_char_range", "Turn"."alignment_id" AS "Turn_id", "Turn"."char_range" AS "Turn_char_range", "Turn_aligned"."meta"::jsonb AS "Turn_meta", "Session"."alignment_id" AS "Session_id", "Session"."char_range" AS "Session_char_range", "Session_aligned"."meta"::jsonb AS "Session_meta", "Chapter"."alignment_id" AS "Chapter_id", "Chapter"."char_range" AS "Chapter_char_range"
 FROM

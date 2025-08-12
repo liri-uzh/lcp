@@ -11,7 +11,7 @@ import logging
 
 from json.decoder import JSONDecodeError
 
-from .utils import _filter_corpora, ensure_authorised
+from .utils import _filter_corpora
 from .utils import _remove_sensitive_fields_from_corpora
 from .typed import JSONObject
 
@@ -21,7 +21,6 @@ from rq.job import Job
 from typing import cast
 
 
-@ensure_authorised
 async def corpora(request: web.Request) -> web.Response:
     """
     Return config to frontend (as HTTP response, not WS message!)
@@ -62,15 +61,24 @@ async def corpora(request: web.Request) -> web.Response:
     return web.json_response({"config": corpora})
 
 
-@ensure_authorised
 async def corpora_meta_update(request: web.Request) -> web.Response:
     """
     Updates metadata for a given corpus
     """
+    authenticator = request.app["auth_class"](request.app)
+    user_data: dict = await authenticator.user_details(request)
+
     corpora_id: int = int(request.match_info["corpora_id"])
     request_data: JSONObject = await request.json()
     metadata: dict = cast(dict, request_data.get("metadata", {}))
     descriptions: dict = cast(dict, request_data.get("descriptions", {}))
+
+    if not authenticator.check_corpus_allowed(
+        str(corpora_id),
+        user_data,
+        "lcp",
+    ):
+        raise PermissionError("This user is not authorized to modify this corpus")
 
     # When apiAccessToken is hidden (less then 20 chars), get the original one from the config
     swissubase = metadata.get("swissubase", {})
@@ -78,10 +86,9 @@ async def corpora_meta_update(request: web.Request) -> web.Response:
         corpora = request.app["config"]
         corpus = corpora.get(str(corpora_id))
         access_token = (
-            corpus.get("meta", {})
-            .get("swissubase", {})
-            .get("apiAccessToken")
-            if corpus else None
+            corpus.get("meta", {}).get("swissubase", {}).get("apiAccessToken")
+            if corpus
+            else None
         )
         swissubase["apiAccessToken"] = access_token
 
@@ -130,12 +137,11 @@ async def corpora_meta_update(request: web.Request) -> web.Response:
 
     jobs_payload = [str(job_meta.id), str(job_desc.id)]
     if "projects" in request_data:
-        authenticator = request.app["auth_class"](request.app)
-        user_details: dict = await authenticator.user_details(request)
-        user: dict = user_details.get("user") or {}
-        assert user.get("superAdmin"), PermissionError(
-            "User is not authorized to update the project of this corpus"
-        )
+        user: dict = user_data.get("user") or {}
+        if not user.get("superAdmin"):
+            raise PermissionError(
+                "User is not authorized to update the project of this corpus"
+            )
         pids = request_data["projects"] or ["00000000-0000-0000-0000-000000000000"]
         job_update_projects: Job = request.app["query_service"].update_projects(
             corpora_id, pids

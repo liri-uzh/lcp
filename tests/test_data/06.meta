@@ -1,0 +1,305 @@
+{
+    "schema": "cineminds_video_topic__0538f19753ba4303873463b0d6b3dace_3",
+    "idx": 127,
+    "batch": "tokenrest",
+    "wordcount": 1,
+    "meta": {
+        "date": "2024-05-24",
+        "name": "CineMINDS Video Topic",
+        "author": "LiRI",
+        "version": 3,
+        "mediaSlots": {
+            "video": {
+                "mediaType": "video",
+                "isOptional": false
+            }
+        },
+        "corpusDescription": "Video-only sample of the CineMINDS corpus with named entities and topics"
+    },
+    "document": "Document",
+    "segment": "Segment",
+    "token": "Token",
+    "layer": {
+        "Token": {
+            "abstract": false,
+            "anchoring": {
+                "time": true,
+                "stream": true,
+                "location": false
+            },
+            "layerType": "unit",
+            "attributes": {
+                "form": {
+                    "type": "text",
+                    "isGlobal": false,
+                    "nullable": true
+                },
+                "upos": {
+                    "type": "categorical",
+                    "isGlobal": true,
+                    "nullable": true
+                },
+                "xpos": {
+                    "type": "categorical",
+                    "values": [
+                        ",",
+                        ":",
+                        ".",
+                        "''''",
+                        "``",
+                        "$",
+                        "AFX",
+                        "CC",
+                        "CD",
+                        "DT",
+                        "EX",
+                        "FW",
+                        "HYPH",
+                        "IN",
+                        "JJ",
+                        "JJR",
+                        "JJS",
+                        "MD",
+                        "NN",
+                        "NNP",
+                        "NNPS",
+                        "NNS",
+                        "PDT",
+                        "POS",
+                        "PRP",
+                        "PRP$",
+                        "RB",
+                        "RBR",
+                        "RBS",
+                        "RP",
+                        "SYM",
+                        "TO",
+                        "UH",
+                        "VB",
+                        "VBD",
+                        "VBG",
+                        "VBN",
+                        "VBP",
+                        "VBZ",
+                        "WDT",
+                        "WP",
+                        "WP$",
+                        "WRB"
+                    ],
+                    "isGlobal": false,
+                    "nullable": true
+                },
+                "lemma": {
+                    "type": "text",
+                    "isGlobal": false,
+                    "nullable": false
+                },
+                "ufeat": {
+                    "type": "dict",
+                    "isGlobal": false,
+                    "nullable": true
+                }
+            }
+        },
+        "Topic": {
+            "nlabels": 328,
+            "abstract": false,
+            "contains": "Segment",
+            "layerType": "span",
+            "attributes": {
+                "name": {
+                    "type": "text",
+                    "isGlobal": false,
+                    "nullable": false
+                },
+                "urls": {
+                    "type": "text",
+                    "isGlobal": false,
+                    "nullable": true
+                },
+                "keywords": {
+                    "type": "labels",
+                    "nlabels": 328,
+                    "isGlobal": false,
+                    "nullable": true
+                }
+            }
+        },
+        "DepRel": {
+            "abstract": true,
+            "layerType": "relation",
+            "attributes": {
+                "udep": {
+                    "type": "categorical",
+                    "isGlobal": true,
+                    "nullable": false
+                },
+                "source": {
+                    "name": "dependent",
+                    "entity": "Token",
+                    "nullable": false
+                },
+                "target": {
+                    "name": "head",
+                    "entity": "Token",
+                    "nullable": true
+                }
+            }
+        },
+        "Segment": {
+            "abstract": false,
+            "contains": "Token",
+            "layerType": "span",
+            "attributes": {
+                "meta": {
+                    "end": {
+                        "type": "text"
+                    },
+                    "text": {
+                        "type": "text"
+                    },
+                    "start": {
+                        "type": "text"
+                    },
+                    "speaker": {
+                        "type": "text"
+                    }
+                }
+            }
+        },
+        "Document": {
+            "abstract": false,
+            "contains": "Segment",
+            "layerType": "span",
+            "attributes": {
+                "meta": {
+                    "end": {
+                        "type": "number"
+                    },
+                    "name": {
+                        "type": "text"
+                    },
+                    "audio": {
+                        "type": "text",
+                        "isOptional": true
+                    },
+                    "start": {
+                        "type": "number"
+                    },
+                    "video": {
+                        "type": "text",
+                        "isOptional": true
+                    }
+                }
+            }
+        },
+        "NamedEntity": {
+            "abstract": false,
+            "contains": "Token",
+            "layerType": "span",
+            "attributes": {
+                "type": {
+                    "type": "categorical",
+                    "values": [
+                        "PER",
+                        "LOC",
+                        "MISC",
+                        "ORG"
+                    ],
+                    "isGlobal": false,
+                    "nullable": true
+                }
+            }
+        }
+    },
+    "tracks": {
+        "layers": {
+            "Topic": {},
+            "Segment": {},
+            "NamedEntity": {}
+        }
+    },
+    "project": "0538f197-53ba-4303-8734-63b0d6b3dace/cineminds_video_topic__0538f19753ba4303873463b0d6b3dace_3",
+    "projects": [
+        "0538f197-53ba-4303-8734-63b0d6b3dace"
+    ],
+    "uploaded": true,
+    "firstClass": {
+        "token": "Token",
+        "segment": "Segment",
+        "document": "Document"
+    },
+    "schema_path": "cineminds_video_topic__0538f19753ba4303873463b0d6b3dace_3",
+    "mapping": {
+        "layer": {
+            "Token": {
+                "batches": 10,
+                "relation": "token<batch>",
+                "attributes": {
+                    "form": {
+                        "name": "token_form",
+                        "type": "relation"
+                    },
+                    "lemma": {
+                        "name": "token_lemma",
+                        "type": "relation"
+                    },
+                    "ufeat": {
+                        "name": "token_ufeat",
+                        "type": "relation"
+                    }
+                }
+            },
+            "Topic": {
+                "relation": "topic",
+                "attributes": {
+                    "name": {
+                        "name": "topic_name",
+                        "type": "relation"
+                    },
+                    "urls": {
+                        "name": "topic_urls",
+                        "type": "relation"
+                    },
+                    "keywords": {
+                        "name": "topic_labels",
+                        "type": "relation"
+                    }
+                }
+            },
+            "DepRel": {
+                "relation": "deprel"
+            },
+            "Segment": {
+                "hasMeta": true,
+                "prepared": {
+                    "relation": "prepared_Segment",
+                    "columnHeaders": [
+                        "form",
+                        "lemma",
+                        "ufeat",
+                        "upos",
+                        "xpos",
+                        "head"
+                    ]
+                },
+                "relation": "segment<batch>"
+            },
+            "Document": {
+                "hasMeta": true,
+                "relation": "document"
+            },
+            "NamedEntity": {
+                "relation": "namedentity"
+            }
+        },
+        "hasFTS": true,
+        "FTSvectorCols": {
+            "1": "form",
+            "2": "lemma",
+            "3": "upos",
+            "4": "xpos",
+            "5": "ufeat"
+        }
+    }
+}

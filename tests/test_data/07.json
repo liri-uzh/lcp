@@ -1,0 +1,54 @@
+{
+  "query": [
+    {
+      "unit": {
+        "layer": "Session",
+        "label": "e",
+        "constraints": [
+          {
+            "comparison": {
+              "left": {
+                "function": {
+                  "functionName": "year",
+                  "arguments": [
+                    {
+                      "entity": "date"
+                    }
+                  ]
+                }
+              },
+              "comparator": ">",
+              "right": {
+                "math": "1999"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "unit": {
+        "layer": "Segment",
+        "partOf": [
+          {
+            "partOfStream": "e"
+          }
+        ],
+        "label": "s"
+      }
+    }
+  ],
+  "results": [
+    {
+      "label": "myKWIC1",
+      "resultsPlain": {
+        "context": [
+          "s"
+        ],
+        "entities": [
+          "*"
+        ]
+      }
+    }
+  ]
+}

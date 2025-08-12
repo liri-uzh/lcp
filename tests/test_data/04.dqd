@@ -1,3 +1,5 @@
+# test anonymous token in sequence, main disjunctions and star in plain
+
 Segment s
 
 Token@s tv

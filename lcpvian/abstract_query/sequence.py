@@ -11,8 +11,10 @@ from automathon import NFA  # type: ignore
 from .constraint import _get_constraints, _get_table
 from .prefilter import Prefilter
 from .sequence_members import Member, Disjunction, Sequence, Unit
-from .typed import JSONObject, LabelLayer
-from .utils import Config
+from .typed import JSONObject, LabelLayer, SQLRef
+from .utils import Config, SQLCorpus, _is_anchored, sql_str
+
+LR = "{}"
 
 
 # Helper function to retrieve a string of coordinated conditions for a token
@@ -23,6 +25,7 @@ def _where_conditions_from_constraints(
     entities: set[str] = set(),
     part_of: list[dict[str, str]] = [],
     label_layer: LabelLayer = {},
+    sql_corpus: SQLCorpus | None = None,
 ) -> tuple[list[str], list[str], dict[str, list[str]]]:
     """
     Return a list of WHEREs to be conjoined and a list of LEFT JOINs to be conjoined
@@ -33,17 +36,19 @@ def _where_conditions_from_constraints(
             continue
         label_layer[e] = (conf.config["token"], {})
 
+    assert sql_corpus
+
     cons = _get_constraints(
         cast(JSONObject, constraints),
         conf.config["token"],
         label,
         conf,
+        sql_corpus,
         entities=entities,
         part_of=part_of,
         label_layer=label_layer,
     )
     if cons is None:
-        # return ([f"{label}.{conf.config['token'].lower()}_id > 0"], [])
         return (["1 = 1"], [], {})
     all_conditions: list[str] = []
     inner_conditions = cons.conditions()
@@ -110,6 +115,12 @@ class Cte:
         self.next_fixed_token: Unit | None
         self.no_transition: bool = False
         self.closed: bool = False
+        self.query_data = sequence.sequence.query_data
+        self.lab_lay = self.query_data.label_layer
+        self.tok = sequence.sequence.conf.config["token"]
+        self.tok_lab: str = self.query_data.unique_label(
+            "token", self.tok, self.lab_lay
+        )
 
     def add_member(self, m: Member) -> None:
         self.members.append(m)
@@ -135,7 +146,10 @@ class Cte:
         # effectivelty create indices (n) to refer to states
         state_map: dict[State, tuple[str, bool]] = {}
         for n, state in enumerate(self.states):
-            state_map[state] = (str(n), not state.constraints)
+            part_of = (
+                state.unit.obj.get("unit", {}).get("partOf") if state.unit else None
+            )
+            state_map[state] = (str(n), not state.constraints and not part_of)
         delta: dict[str, dict[str, set[str]]] = {}
         for state, (i, epsilon) in state_map.items():
             entry: dict[str, Any] = {}
@@ -270,6 +284,8 @@ class Cte:
 
         delta_items: list[tuple] = [x for x in automaton.delta.items()]
 
+        tok_ref = self.sequence.sql.layer(self.tok_lab, self.tok, pointer=True)
+
         if which == "start":
             delta_items = [
                 (k, v) for k, v in delta_items if k == automaton.initial_state
@@ -281,26 +297,30 @@ class Cte:
             nl: str = (
                 self.next_fixed_token.internal_label if self.next_fixed_token else ""
             )
+            pl_ref = self.sequence.sql.layer(pl, self.tok, pointer=True) if pl else None
+            nl_ref = self.sequence.sql.layer(pl, self.tok, pointer=True) if nl else None
 
-            if pl:
-                infixwheres.append(f"token.{tok}_id = {from_table}.{pl} + 1")
-            elif nl:
+            if pl_ref:
                 infixwheres.append(
-                    f"token.{tok}_id < {from_table}.{nl}"
+                    sql_str(f"{tok_ref} = {LR}.{LR} + 1", from_table, pl_ref.alias)
+                )
+            elif nl_ref:
+                infixwheres.append(
+                    sql_str(f"{tok_ref} < {LR}.{LR}", from_table, nl_ref.alias)
                 )  # In case this is the beginning of the segment
 
             if self.optional:
                 # void_transition: str = f"transition{self.n}.dest_state = {max_n}"
                 void_transition: str = f"transition{self.n}.dest_state = -1"
                 if nl:
-                    void_transition += f" AND token.{tok}_id = {from_table}.{nl} AND transition{self.n}.label = 'void'"
+                    void_transition += f" AND {tok_ref} = {from_table}.{nl} AND transition{self.n}.label = 'void'"
                     # Make sure the previous and next fixed tokens are adjacent!
                     if pl:
                         void_transition += (
                             f" AND {from_table}.{nl} = {from_table}.{pl} + 1"
                         )
-                elif pl:
-                    void_transition += f" AND token.{tok}_id = {from_table}.{pl} AND transition{self.n}.label = 'void'"
+                elif pl_ref:
+                    void_transition += f" AND {tok_ref} = {pl_ref} AND transition{self.n}.label = 'void'"
                 else:
                     raise RuntimeError(
                         f"Cannot query a fully optional sequence ({self.sequence.sequence.label})"
@@ -323,14 +343,45 @@ class Cte:
                 destination_n = next(x for x in destinations)
                 override_references: dict[str, str] = {}
                 for k, v in self.sequence._internal_references.items():
-                    override_references[k] = f"{from_table}.{v}"
-                override_references[state.label] = "token"
+                    override_references[k] = sql_str("{}.{}", from_table, v)
+                override_references[state.label] = sql_str("{}", self.tok_lab)
+                current_depth = int(
+                    state.unit.obj.get("_depth", 0) if state.unit else 0
+                )
+                for ll_label, (ll_layer, ll_obj) in self.sequence.label_layer.items():
+                    if cast(int, ll_obj.get("_depth", 1)) < current_depth:
+                        continue
+                    ll_stream_ref, ll_time_ref, ll_loc_ref = [
+                        self.sequence.sql.anchor(ll_label, ll_layer, a)
+                        for a in ("stream", "time", "location")
+                    ]
+                    for po in ll_obj.get("partOf", []):
+                        if "partOfStream" in po:
+                            override_references[ll_stream_ref.ref] = sql_str(
+                                "{}", ll_stream_ref.alias
+                            )
+                        if "partOfTime" in po:
+                            override_references[ll_time_ref.ref] = sql_str(
+                                "{}", ll_time_ref.alias
+                            )
+                        if "partOfLocation" in po:
+                            override_references[ll_loc_ref.ref] = sql_str(
+                                "{}", ll_loc_ref.alias
+                            )
+                        ll_ref = self.sequence.sql.layer(
+                            ll_label, ll_layer, pointer=True
+                        )
+                        override_references[ll_ref.ref] = sql_str("{}", ll_ref.alias)
                 where_conditions, ljs, _ = self.sequence.get_constraints(
-                    label="token",
+                    label=self.tok_lab,
                     constraints=[c for c in state.constraints if isinstance(c, dict)],
-                    entities={"token"},
+                    entities={self.tok_lab},
                     override=override_references,
-                    part_of=state.unit.obj.get("partOf", []) if state.unit else [],
+                    part_of=(
+                        state.unit.obj.get("unit", {}).get("partOf", [])
+                        if state.unit
+                        else []
+                    ),
                 )
                 constraints = f"{' AND '.join(where_conditions)} AND transition{self.n}.label = '{state.label}'"
                 state_left_joins = state_left_joins.union({ls for ls in ljs})
@@ -363,6 +414,51 @@ class Cte:
             )"""
 
         big_disjunction = big_disjunction.lstrip().rstrip()
+        # Hack to replace references to s.segment_id with just s
+        all_refs = self.sequence.sequence.query_data.all_refs
+        for lab, attrs in all_refs.items():
+            lay, _ = self.sequence.label_layer.get(lab, (None, None))
+            if not lay:
+                continue
+            rgx = rf"\b({lab})\.{lay}_id\b"
+            big_disjunction = re.sub(rgx, "\\1", big_disjunction, flags=re.IGNORECASE)
+            state_left_joins = {
+                re.sub(rgx, "\\1", slj, flags=re.IGNORECASE) for slj in state_left_joins
+            }
+            for anchname, anchatt in (
+                ("stream", "char_range"),
+                ("time", "frame_range"),
+                ("location", "xy_box"),
+            ):
+                if not _is_anchored(self.sequence.config.config, lay, anchname):
+                    continue
+                anch_rgx = rf"\b({lab})\.({anchatt})\b"
+                big_disjunction = re.sub(
+                    anch_rgx, "\\1_\\2", big_disjunction, flags=re.IGNORECASE
+                )
+                state_left_joins = {
+                    re.sub(anch_rgx, "\\1_\\2", slj, flags=re.IGNORECASE)
+                    for slj in state_left_joins
+                }
+            for attr in attrs:
+                # direct or meta attr refs
+                att_rgx = rf"\b({lab})\.(meta->')?({attr})'?\b"
+                big_disjunction = re.sub(
+                    att_rgx, "\\1_\\3", big_disjunction, flags=re.IGNORECASE
+                )
+                state_left_joins = {
+                    re.sub(att_rgx, "\\1_\\3", slj, flags=re.IGNORECASE)
+                    for slj in state_left_joins
+                }
+                # lookup attr refs
+                att_rgx = rf"\b({lab})_{attr}\.({attr})\b"
+                big_disjunction = re.sub(
+                    att_rgx, "\\1_\\2", big_disjunction, flags=re.IGNORECASE
+                )
+                state_left_joins = {
+                    re.sub(att_rgx, "\\1_\\2", slj, flags=re.IGNORECASE)
+                    for slj in state_left_joins
+                }
 
         return (big_disjunction, state_left_joins)
 
@@ -391,9 +487,7 @@ class Cte:
                 name_seq: str = (
                     state.unit.parent_member.label
                     if state.unit and isinstance(state.unit.parent_member, Sequence)
-                    else self.sequence.sequence.query_data.unique_label(
-                        references=references
-                    )
+                    else self.query_data.unique_label(references=references)
                 )
                 for d in sorted(destination):
                     dict_table[f"({source}, {d}, '{state.label}', '{name_seq}')"] = None
@@ -415,15 +509,22 @@ class Cte:
         additional_selects: list[str] = [],
     ) -> str:
         n: str = str(self.n)
-        part_of: str = self.sequence.get_first_stream_part_of()
-        join_first_token: str = (
-            f"{schema}.{tok}{batch_suffix} token ON token.{seg}_id = prev_cte.{part_of}"
+        sqlc = self.sequence.sql
+        part_of_lab: str = self.sequence.get_first_stream_part_of()
+        part_of_lay, _ = self.lab_lay[part_of_lab]
+        part_of: str = sqlc.layer(part_of_lab, part_of_lay).alias
+        token_ref = sqlc.layer(self.tok_lab, self.tok, pointer=True)
+        token_tab = next(x for x in token_ref.joins)
+        token_alias = token_ref.alias
+        token_seg = sql_str(f"{LR}.{seg}_id", token_alias)
+        join_first_token: str = sql_str(
+            f"{token_tab} ON {token_seg} = prev_cte.{LR}", part_of
         )
         if self.prev_fixed_token:
             pl: str = self.prev_fixed_token.internal_label
-            joins: list[str] = [f"token.{tok}_id = prev_cte.{pl} + 1"]
+            joins: list[str] = [f"{token_ref} = prev_cte.{pl} + 1"]
             if self.optional:
-                join_void: str = f"token.{tok}_id = prev_cte.{pl}"
+                join_void: str = f"{token_ref} = prev_cte.{pl}"
                 # Make sure the previous and next fixed tokens are adjacent!
                 if self.next_fixed_token:
                     nl: str = self.next_fixed_token.internal_label
@@ -435,10 +536,10 @@ class Cte:
 
         # We keep track of the traversed tokens in this CTE, but also across CTEs
         token_list: str = (
-            f"jsonb_build_array(jsonb_build_array(token.token_id, transition{n}.label, transition{n}.sequence))"
+            f"jsonb_build_array(jsonb_build_array({token_ref}, transition{n}.label, transition{n}.sequence))"
         )
         # We keep track of the very first token also across CTEs
-        start_id: str = f"token.{tok}_id"
+        start_id: str = token_ref.ref
 
         if not (from_table == "fixed_parts" or from_table.startswith("subseq")):
             # We need to make sure the previous CTE was run before selecting from it!
@@ -456,7 +557,7 @@ class Cte:
                 WHERE {from_table}.state IN ({','.join([str(s) for s in state_prev_cte])}){orderby}
             )"""
             # Append to the list of tokens from the previous CTE
-            token_list = f"prev_cte.token_list || jsonb_build_array(jsonb_build_array(token.{tok}_id, transition{n}.label, transition{n}.sequence))"
+            token_list = f"prev_cte.token_list || jsonb_build_array(jsonb_build_array({token_ref}, transition{n}.label, transition{n}.sequence))"
             # Fetch start_id from the previous table
             start_id = f"prev_cte.start_id"
 
@@ -477,33 +578,27 @@ class Cte:
         else:
             where_union = f"WHERE {where_union}" if where_union else ""
 
-        select_fixed_tokens = (
-            "\n"
-            + ", ".join(
-                [
-                    "{table}." + t.internal_label + " AS " + t.internal_label
-                    for t, _, _, _ in self.sequence.fixed_tokens
-                ]
-            )
-            + ","
-            if self.sequence.fixed_tokens
-            else ""
-        )
+        fixed_labs_to_select: dict[str, int] = {
+            sql_str("{}", sqlc.layer(t.internal_label, tok).alias): 1
+            for t, *_ in self.sequence.fixed_tokens
+        }
         for slc in additional_selects:
             if slc in [
                 x
                 for u, *_ in self.sequence.fixed_tokens
                 for x in (u.label, u.internal_label)
             ]:
+                # skip if additional_select already in fixed_tokens
                 continue
-            select_fixed_tokens += (
-                ("\n, " if not select_fixed_tokens else " ") + "{table}." + slc + ","
-            )
+            fixed_labs_to_select[slc] = 1
 
+        select_fixed_tokens = ", ".join("{table}." + x for x in fixed_labs_to_select)
+        if fixed_labs_to_select:
+            select_fixed_tokens += ", "
         retval: str = f"""traversal{n} AS (
         SELECT  prev_cte.{part_of},{select_fixed_tokens.format(table='prev_cte')}
                 {start_id}           start_id,
-                token.{tok}_id           id,
+                {token_ref}          id,
                 transition{n}.dest_state    state,
                 {token_list} token_list
         FROM {from_table} prev_cte
@@ -517,12 +612,12 @@ class Cte:
         UNION ALL
         SELECT  traversal{n}.{part_of},{select_fixed_tokens.format(table='traversal'+str(n))}
                 traversal{n}.start_id,
-                token.token_id   id,
+                {token_ref}   id,
                 transition{n}.dest_state,
-                traversal{n}.token_list || jsonb_build_array(jsonb_build_array(token.{tok}_id, transition{n}.label, transition{n}.sequence))
+                traversal{n}.token_list || jsonb_build_array(jsonb_build_array({token_ref}, transition{n}.label, transition{n}.sequence))
         FROM traversal{n} traversal{n}
         JOIN transition{n} ON transition{n}.source_state = traversal{n}.state
-        JOIN {schema}.{tok}{batch_suffix} token ON token.{tok}_id = traversal{n}.id + 1 AND token.{seg}_id = traversal{n}.{part_of}
+        JOIN {token_tab} ON {token_ref} = traversal{n}.id + 1 AND {token_seg} = traversal{n}.{sql_str('{}', part_of)}
         {where_union}
     )
     SEARCH DEPTH FIRST BY id SET ordercol"""
@@ -540,6 +635,7 @@ class SQLSequence:
         self.sequence: Sequence = sequence
         label_layer = self.sequence.query_data.label_layer
         config = self.sequence.conf
+        self.sql: SQLCorpus = sequence.query_data.sql
         entities = label_layer.keys()
         self.part_of: list[dict[str, str]] = []
         if "partOf" in sequence.obj.get("sequence", {}):
@@ -582,6 +678,9 @@ class SQLSequence:
         self.label_layer: LabelLayer = label_layer
 
     def get_first_stream_part_of(self) -> str:
+        """
+        Return the JSON label of the unit that the sequence is a part of
+        """
         return next(
             (p["partOfStream"] for p in self.part_of if "partOfStream" in p), "s"
         )
@@ -719,6 +818,7 @@ class SQLSequence:
             entities=entities,
             part_of=part_of,
             label_layer=self.label_layer,
+            sql_corpus=self.sql,
         )
         # This hack needs to be handled upstream:
         # override is only set when the table in not the main one (fixed_parts)
@@ -767,16 +867,10 @@ class SQLSequence:
                     new_joins.append(new_j)
                 joins = new_joins
 
-        refs_to_replace = "|".join(
-            [
-                f"{e}.{self.label_layer[e][0].lower()}_id"
-                for e in override
-                if e in self.label_layer
-            ]
-        )
-        replacer = lambda m: m[1].split(".")[0]
+        refs_to_replace: str = "|".join(r.replace(".", "\\.") for r in override)
+        replacer = lambda m: override.get(m[1], m[1]) or m[1]
         ret: list[list[str]] = [
-            [re.sub(rf"\b({refs_to_replace})\b", replacer, x) for x in conds]
+            [re.sub(rf"({refs_to_replace})", replacer, x) for x in conds]
             for conds in [wheres, joins]
         ]
         return (ret[0], ret[1], refs)
@@ -933,19 +1027,19 @@ class SQLSequence:
             )
             if token_left_joins:
                 left_joins += token_left_joins
+            tok_ref = self.sql.layer(l, tok, pointer=True)
             conds: list[str] = [*token_conds]
             if n > 0:
                 pl: str = self.fixed_tokens[n - 1][0].internal_label
+                pl_ref = self.sql.layer(pl, tok, pointer=True)
                 if min_sep == max_sep:
-                    conds.append(f"{l}.{tok}_id - {pl}.{tok}_id = {str(min_sep)}")
+                    conds.append(f"{tok_ref} - {pl_ref} = {str(min_sep)}")
                 else:
-                    conds.append(f"{l}.{tok}_id - {pl}.{tok}_id > {str(min_sep-1)}")
+                    conds.append(f"{tok_ref} - {pl_ref} > {str(min_sep-1)}")
                     if max_sep > min_sep:
-                        conds.append(f"{l}.{tok}_id - {pl}.{tok}_id < {str(max_sep+1)}")
+                        conds.append(f"{tok_ref} - {pl_ref} < {str(max_sep+1)}")
                     if modulo >= 0:
-                        conds.append(
-                            f"({l}.{tok}_id - {pl}.{tok}_id - 1) % {modulo} = 0"
-                        )
+                        conds.append(f"({tok_ref} - {pl_ref} - 1) % {modulo} = 0")
             wheres += conds
 
         return (wheres, left_joins)
@@ -1021,28 +1115,29 @@ class SQLSequence:
                     part_of=(sub_member_part_of or []),
                     in_subsequence=joins_for_refs_from_prev_table,
                 )
-                # Replace dotted references to attributes of entities from fixed table
-                # with underscored labels + add those labels to the fixed table's selects
-                select_labels_from_fixed = [
-                    x.lower().split(" as ")[1] for x in self.sequence.query_data.selects
-                ]
-                for lbl, attrs in refs.items():
-                    if lbl not in select_labels_from_fixed:
-                        continue
-                    for attr in attrs:
-                        new_lbl_attr = self.sequence.query_data.unique_label(
-                            f"{lbl}_{attr}",
-                            obj={**m.obj, "partOf": sub_member_part_of},
-                        )
-                        token_conds = [
-                            x.replace(f"{lbl}.{attr}", new_lbl_attr)
-                            for x in token_conds
-                        ]
-                        ljs = [x.replace(f"{lbl}.{attr}", new_lbl_attr) for x in ljs]
-                        add_to_fixed_selects.add(f"{lbl}.{attr} as {new_lbl_attr}")
-                        fixed_part_ts += (
-                            f",\n{from_table}.{new_lbl_attr} AS {new_lbl_attr}"
-                        )
+                # Inherited from when subsequences created separate CTEs?
+                # # Replace dotted references to attributes of entities from fixed table
+                # # with underscored labels + add those labels to the fixed table's selects
+                # select_labels_from_fixed = [
+                #     x.lower().split(" as ")[1] for x in self.sequence.query_data.selects
+                # ]
+                # for lbl, attrs in refs.items():
+                #     if lbl not in select_labels_from_fixed:
+                #         continue
+                #     for attr in attrs:
+                #         new_lbl_attr = self.sequence.query_data.unique_label(
+                #             f"{lbl}_{attr}",
+                #             obj={**m.obj, "partOf": sub_member_part_of},
+                #         )
+                #         token_conds = [
+                #             x.replace(f"{lbl}.{attr}", new_lbl_attr)
+                #             for x in token_conds
+                #         ]
+                #         ljs = [x.replace(f"{lbl}.{attr}", new_lbl_attr) for x in ljs]
+                #         add_to_fixed_selects.add(f"{lbl}.{attr} as {new_lbl_attr}")
+                #         fixed_part_ts += (
+                #             f",\n{from_table}.{new_lbl_attr} AS {new_lbl_attr}"
+                #         )
                 if ljs or joins_for_refs_from_prev_table:
                     from_cross += f"\n                LEFT JOIN "
                     combined_joins: list[str] = [

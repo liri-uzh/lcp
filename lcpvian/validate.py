@@ -11,20 +11,39 @@ from .typed import JSONObject
 from .utils import _get_all_attributes, _get_all_labels
 
 
-def check_layer(
-    conf: dict, obj: list | dict, labels: dict = {}, recent_layer: str = ""
-):
+def process_refs(
+    conf: dict,
+    obj: list | dict,
+    labels: dict = {},
+    recent_layer: str = "",
+    recent_label: str = "",
+) -> dict[str, set[str]]:
+    """
+    Check all the unit references in the list/dict (ultimately the JSON query)
+    and map all the unit labels to their attribute references
+    """
+    ret: dict[str, set[str]] = {}
     if isinstance(obj, list):
         for x in obj:
             if not isinstance(x, (dict, list)):
                 continue
-            check_layer(conf, x, labels=labels, recent_layer=recent_layer)
-        return
+            for l, l_attrs in process_refs(
+                conf,
+                x,
+                labels=labels,
+                recent_layer=recent_layer,
+                recent_label=recent_label,
+            ).items():
+                ret[l] = ret.get(l, set()).union(l_attrs)
+        return ret
     if "unit" in obj:
         recent_layer = obj["unit"].get("layer", "")
+        recent_label = obj["unit"].get("label", "")
         assert recent_layer in conf["layer"], ReferenceError(
             f"Could not find a layer named '{recent_layer}' in this corpus"
         )
+        if obj_l := obj["unit"].get("label"):
+            ret[obj_l] = set()
     if "reference" in obj and recent_layer:
         ref = obj["reference"]
         # attrs = conf["layer"].get(recent_layer, {}).get("attributes", {})
@@ -49,10 +68,14 @@ def check_layer(
             assert not dict_keys or reffield in dict_keys, ReferenceError(
                 f"No sub-attribute named '{reffield}' on attribute '{refname}' of layer {recent_layer}"
             )
+            if refname and reffield not in (refs := ret.get(refname, set())):
+                ret[refname] = refs.union({reffield})
         else:
             assert ref in attrs or ref in labels, ReferenceError(
                 f"Could not find an attribute named '{ref}' on layer {recent_layer}"
             )
+            if recent_label and ref not in (refs := ret.get(recent_label, set())):
+                ret[recent_label] = refs.union({ref})
     if obj.get("attribute", "").count(".") == 1:
         _, aname = obj["attribute"].split(".")
         assert any(
@@ -60,18 +83,21 @@ def check_layer(
         ), ReferenceError(
             f"Could not find an attribute named '{aname}' on any layer ({obj['attribute']})"
         )
+        if recent_label and ref not in (refs := ret.get(recent_label, set())):
+            ret[recent_label] = refs.union({aname})
     for x in obj.values():
         if not isinstance(x, (dict, list)):
             continue
-        check_layer(conf, x, labels=labels, recent_layer=recent_layer)
+        for l, l_attrs in process_refs(
+            conf, x, labels=labels, recent_layer=recent_layer, recent_label=recent_label
+        ).items():
+            ret[l] = ret.get(l, set()).union(l_attrs)
+    return ret
 
 
 async def validate(
-    user: str | None = None,
-    room: str | None = None,
     query: str = "",
     kind: str = "json",
-    query_name: str | None = None,
     **kwargs: dict[str, Any],
 ) -> JSONObject:
     """
@@ -190,7 +216,8 @@ async def validate(
     if result.get("valid"):
         try:
             all_labels = _get_all_labels(json_query)
-            check_layer(conf, json_query, labels=all_labels)
+            all_refs = process_refs(conf, json_query, labels=all_labels)
+            result["all_refs"] = {k: sorted(v) for k, v in all_refs.items()}  # type: ignore
         except Exception as e:
             result = {
                 "kind": kind,

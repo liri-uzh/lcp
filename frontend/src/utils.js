@@ -158,6 +158,16 @@ const Utils = {
           )
         );
     },
+    isAnchored(layer, conf, anchor) {
+      if (!(layer in conf))
+        return false;
+      if (conf[layer].anchoring && conf[layer].anchoring[anchor] == true)
+        return true;
+      const contains = typeof(conf[layer].contains) == "string" ? [conf[layer].contains] : conf[layer].contains;
+      if (contains && contains instanceof Array && contains.length > 0)
+        return contains.some(c=>Utils.isAnchored(c, conf, anchor));
+      return false;
+    },
     calculateSum(array) {
       return array.reduce((accumulator, value) => {
         return accumulator + value;

@@ -201,7 +201,8 @@ async def upload(request: web.Request) -> web.Response:
         return await _status_check(request, job_id)
 
     user_data = await authenticator.user_details(request)
-    assert user_data, PermissionError("Could not authenticate the user")
+    if not user_data:
+        raise PermissionError("Could not authenticate the user")
 
     gui_mode = request.rel_url.query.get("gui", False)
 

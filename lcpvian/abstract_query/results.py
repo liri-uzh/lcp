@@ -19,6 +19,8 @@ from .typed import (
 from .utils import (
     Config,
     QueryData,
+    SQLCorpus,
+    sql_str,
     _flatten_coord,
     _get_table,
     _bound_label,
@@ -40,13 +42,17 @@ COUNTER = f"""
 
 ANCHORINGS = ("stream", "time", "location")
 
+LR = "{}"
+
 
 class ResultsMaker:
     """
     A class to manage the creation of results SQL, data and metadata
     """
 
-    def __init__(self, query_json: QueryJSON, conf: Config) -> None:
+    def __init__(
+        self, query_json: QueryJSON, conf: Config, all_refs: dict[str, list[str]]
+    ) -> None:
         self.conf: Config = conf
         self.config: ConfigJSON = conf.config
         self.schema: str = conf.schema
@@ -57,6 +63,8 @@ class ResultsMaker:
         self.document = cast(str, self.config["document"])
         self.conf_layer = cast(JSONObject, self.config["layer"])
         self.r = QueryData()
+        self.r.all_refs = all_refs
+        self.r._sql_corpus = SQLCorpus(self.config, self.schema, self.batch, self.lang)
         tmp_label_layer = _label_layer(query_json.get("query", query_json))
         new_query_json = cast(dict, self.r.add_labels(query_json, tmp_label_layer))
         lifted_quants = cast(list, self.lift_quantifiers(new_query_json["query"]))
@@ -69,9 +77,6 @@ class ResultsMaker:
         self.r.label_layer = _label_layer(self.query_json.get("query", self.query_json))
         self._n = 1
         self._underlang = _get_underlang(self.lang, self.config)
-        self._label_mapping: dict[str, str] = (
-            dict()
-        )  # Map entities' labels to potentially internal labels
 
     def lift_conjunctions(self, query_list: list) -> list:
         return [  # lift and flatten conjunctions
@@ -134,7 +139,6 @@ class ResultsMaker:
                     original_label: str = cast(str, t.obj["unit"].get("label", ""))
                     if original_label:
                         self.r.entities.add(original_label)
-                        self._label_mapping[original_label] = t.internal_label
                         if original_label in self.r.label_layer:
                             self.r.label_layer[t.internal_label] = self.r.label_layer[
                                 original_label
@@ -165,7 +169,6 @@ class ResultsMaker:
                 ).lower() == self.token.lower() and cast(str, unit.get("label", "")):
                     lab: str = unit["label"].lower()
                     self.r.entities.add(lab)
-                    self._label_mapping[lab] = lab
         return None
 
     def add_set_objects(self, query_json: dict[str, Any]) -> None:
@@ -311,37 +314,37 @@ class ResultsMaker:
         """
         # TODO: support a list of references as "space"
         # space = result.get("space", [])
+        sql: SQLCorpus = self.r.sql
         space = result.get("space", "")
         feat = cast(str, result.get("attribute", "lemma"))
-        attribs = cast(JSONObject, self.conf_layer[self.token])["attributes"]
-        assert isinstance(attribs, dict)
-        att_feat = cast(JSONObject, cast(JSONObject, attribs)[feat])
-        is_text = cast(str, att_feat.get("type", "")) == "text"
-        need_id = feat in attribs and is_text
 
         if not space:
             center = result["center"]
             if center in self.r.set_objects:
                 raise ValueError(f"center cannot be set ({center})")
             else:
-                # is this use of _id correct? is feat correct?
-                idx = "_id"  # if need_id else "" # always append id here
-                formed = f"{center}.{self.token}{idx} as {center}"
-                self.r.selects.add(formed.lower())
-                self.r.entities.add(center)
+                center_ref = sql.layer(center, self.token, pointer=True)
+                formed = sql_str(f"{center_ref} AS {LR}", center_ref.alias)
+                self.r.selects.add(formed)
+                self.r.entities.add(center_ref.alias)
             return None
 
-        feat_maybe_id = f"{feat}_id" if need_id and not feat.endswith("_id") else feat
         # in_entities = False if not space else space[0].lower() in self.r.entities
         layer, _ = self.r.label_layer[space]
-        attr = f"{self.token.lower()}_id"
+        attr_ref = sql.attribute(
+            space or result.get("center", ""), layer, feat, pointer=True
+        )
+        # feat_maybe_id = f"{feat}_id" if need_id and not feat.endswith("_id") else feat
+        assert layer == self.token, TypeError("Cannot use a space that is not a token")
+        space_ref = sql.layer(space, self.token, pointer=True)
+        formed = sql_str(f"{space_ref} AS {LR}", space_ref.alias)
         self._n += 1
-        formed = f"{space}.{attr} AS {space}"
 
         if space not in self.r.set_objects:
-            self.r.selects.add(formed.lower())
-            self.r.entities.add(space)
-            formed = f"{space}.{feat_maybe_id} AS {space}_{feat_maybe_id}"
+            self.r.selects.add(formed)
+            self.r.entities.add(space_ref.alias)
+            # formed = f"{space}.{feat_maybe_id} AS {space}_{feat_maybe_id}"
+            formed = sql_str(f"{attr_ref} AS {LR}", attr_ref.alias)
         # thead.lemma_id AS thead_lemma_id
         else:
             formed = process_set(
@@ -356,9 +359,9 @@ class ResultsMaker:
                 attribute=feat,
             )
 
-        self.r.selects.add(formed.lower())
+        self.r.selects.add(formed)
         # add entity: thead_lemma_id
-        self.r.entities.add(f"{space}_{feat_maybe_id}".lower())
+        self.r.entities.add(attr_ref.alias)
 
     def _update_context(self, context: str) -> None:
         """
@@ -370,9 +373,10 @@ class ResultsMaker:
         keys = {first_class[f].lower() for f in {"token", "segment", "document"}}
         err = f"Context not allowed: {lay.lower()} not in {keys}"
         assert lay.lower() in keys, err
-        select = f"{context}.{lay.lower()}_id AS {context}"
-        self.r.selects.add(select.lower())
-        self.r.entities.add(context.lower())
+        context_ref = self.r.sql.layer(context, lay, pointer=True)
+        select = sql_str(f"{context_ref} AS {LR}", context_ref.alias)
+        self.r.selects.add(select)
+        self.r.entities.add(context_ref.alias)
         return None
 
     def _process_entity(self, ent: str) -> tuple[list[str], list[Details]]:
@@ -423,10 +427,10 @@ class ResultsMaker:
             else:
                 lay, _ = self.r.label_layer[label]
             if lay == self.token:
-                field = f"{self.token}_id"
                 if label not in self.r.set_objects:
-                    formed = f"{label}.{field} as {label}"
-                    self.r.selects.add(formed.lower())
+                    ent_ref = self.r.sql.layer(label, lay, pointer=True)
+                    formed = sql_str(f"{ent_ref} AS {LR}", ent_ref.alias)
+                    self.r.selects.add(formed)
                     if label not in self.r.entities:
                         self.r.entities.add(label)
                 piece: Details = {"name": label, "type": lay, "multiple": False}
@@ -554,7 +558,7 @@ class ResultsMaker:
                 )
                 # cannot be lowercased because it is a subquery and may have WHERE
                 self.r.selects.add(select)
-                self.r.entities.add(e.lower())
+                self.r.entities.add(e)
                 continue
 
             if lay == self.token:
@@ -564,9 +568,10 @@ class ResultsMaker:
                     for m in seq.get_members()
                 )
                 if not is_fixed_token_in_sequence and e not in self.r.set_objects:
-                    select = f"{e}.{self.token}_id as {e}"
-                    self.r.selects.add(select.lower())
-                    self.r.entities.add(e.lower())
+                    ent_ref = self.r.sql.layer(e, lay, pointer=True)
+                    select = sql_str(f"{ent_ref} AS {LR}", ent_ref.alias)
+                    self.r.selects.add(select)
+                    self.r.entities.add(ent_ref.alias)
 
         for e in ents:
             entities_list, attributes = self._process_entity(e)
@@ -581,16 +586,25 @@ class ResultsMaker:
                 entout += [cast(dict, attributes[0]).get("name", "")]
                 # entout += [f"ARRAY[{', '.join(entities_list)}]"]
             elif conf_layer_info.get("contains", "").lower() == self.token.lower():
-                select = """(SELECT array_agg(contained_token.{token_lay}_id)
-FROM {schema}.{token_table} contained_token
-WHERE {entity}.char_range && contained_token.char_range
-) AS {entity}_container""".format(
-                    schema=self.schema,
-                    token_lay=self.token.lower(),
-                    token_table=self.batch,
-                    entity=e,
+                container_lab = self.r.unique_label(
+                    f"{e}_container", "_internal", self.r.sql.used_aliases
                 )
-                container_lab = f"{e}_container"
+                cont_tok_ref = self.r.sql.layer(
+                    "contained_token", self.token, pointer=True
+                )
+                cont_tok_stream_ref = self.r.sql.anchor(
+                    "contained_token", self.token, "stream"
+                )
+                ent_lay, _ = self.r.label_layer[e]
+                ent_stream_ref = self.r.sql.anchor(e, ent_lay, "stream")
+                cont_tok_tab: str = next(x for x in cont_tok_ref.joins)
+                select = sql_str(
+                    f"""(SELECT array_agg({cont_tok_ref})
+FROM {cont_tok_tab}
+WHERE {ent_stream_ref} && {cont_tok_stream_ref}
+) AS {LR}""",
+                    container_lab,
+                )
                 self.r.selects.add(select)
                 self.r.entities.add(container_lab)
                 entout += [container_lab]
@@ -600,31 +614,30 @@ WHERE {entity}.char_range && contained_token.char_range
 
         ents_form: str = ", ".join(entout)
         doc_join = ""
-        frame_range_base = "array[lower(match_list.{fr}), upper(match_list.{fr})]"
         extras: list[str] = []
-        extra_meta: list[str] = []
         frame_ranges: list[dict[str, Any]] = []
 
         if _is_anchored(self.config, context_layer, "time"):
-            out_name = f"{context}_frame_range"
-            formed = f"{context}.frame_range AS {out_name}"
-            self.r.selects.add(formed.lower())
-            self.r.entities.add(out_name.lower())
-            fr = frame_range_base.format(fr=out_name)
+            out_ref = self.r.sql.anchor(context, context_layer, "time")
+            self.r.selects.add(sql_str(f"{out_ref} AS {LR}", out_ref.alias))
+            self.r.entities.add(out_ref.alias)
+            fr = sql_str(
+                "array[lower(match_list.{}), upper(match_list.{})]",
+                out_ref.alias,
+                out_ref.alias,
+            )
             extras.append(fr)
-            extra_meta.append(lay)
-
-            for ex in extra_meta:
-                obj = {
-                    "name": f"{ex}_frame_range",
+            frame_ranges.append(
+                {
+                    "name": out_ref.alias,
                     "type": "list[int]",
                     "multiple": True,
                 }
-                frame_ranges.append(obj)
+            )
 
-            if extras:
-                formed = ", ".join(extras)
-                select_extra = ", " + formed
+        if extras:
+            formed = ", ".join(extras)
+            select_extra = ", " + formed
 
         attribs = self._make_attribs(context, context_layer, tokens, frame_ranges)
 
@@ -836,6 +849,7 @@ WHERE {entity}.char_range && contained_token.char_range
                     self.r.conditions.add(c)
             for condition in constraint._conditions:
                 self.r.conditions.add(condition)
+            # TODO: use sql here
             alias = (ref_info.get("meta") or {}).get("str", ref)
             alias = re.sub("[^a-zA-Z0-9_]", "_", alias)
             alias = alias.lstrip("_").rstrip("_")
@@ -950,6 +964,7 @@ WHERE {entity}.char_range && contained_token.char_range
             lay,
             item,
             self.conf,
+            self.r.sql,
             n=self._n,
             label_layer=self.r.label_layer,
             entities=self.r.entities,
