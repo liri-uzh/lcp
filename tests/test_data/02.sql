@@ -7,7 +7,7 @@ WITH RECURSIVE fixed_parts AS
           "t1"."char_range" AS "t1_char_range",
           "t1"."token_id" AS "t1",
           "t1"."upos" AS "t1_upos",
-          "t1_lemma"."lemma" AS t1_lemma,
+          "t1_lemma"."lemma" AS "t1_lemma",
           "t2"."char_range" AS "t2_char_range",
           "t2"."token_id" AS "t2",
           "t2"."upos" AS "t2_upos",
@@ -48,6 +48,7 @@ WITH RECURSIVE fixed_parts AS
           "s_char_range",
           "t1",
           "t1_char_range",
+          "t1_lemma",
           "t1_upos",
           "t2",
           "t2_char_range",
@@ -55,8 +56,7 @@ WITH RECURSIVE fixed_parts AS
           "t3",
           "t3_char_range",
           "t3_upos",
-          "t3_xpos",
-          t1_lemma
+          "t3_xpos"
    FROM fixed_parts) ,
                match_list AS
   (SELECT gather."e" AS "e",
@@ -66,6 +66,7 @@ WITH RECURSIVE fixed_parts AS
           gather."s_char_range" AS "s_char_range",
           gather."t1" AS "t1",
           gather."t1_char_range" AS "t1_char_range",
+          gather."t1_lemma" AS "t1_lemma",
           gather."t1_upos" AS "t1_upos",
           gather."t2" AS "t2",
           gather."t2_char_range" AS "t2_char_range",
@@ -73,8 +74,7 @@ WITH RECURSIVE fixed_parts AS
           gather."t3" AS "t3",
           gather."t3_char_range" AS "t3_char_range",
           gather."t3_upos" AS "t3_upos",
-          gather."t3_xpos" AS "t3_xpos",
-          gather.t1_lemma AS t1_lemma
+          gather."t3_xpos" AS "t3_xpos"
    FROM gather),
                res1 AS
   (SELECT DISTINCT 1::int2 AS rstype,

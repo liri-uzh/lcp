@@ -95,6 +95,7 @@ async def corpora_meta_update(request: web.Request) -> web.Response:
     to_store_meta = dict(
         name=metadata["name"],
         source=metadata.get("source", ""),
+        url=metadata.get("url", ""),
         authors=metadata.get("authors", ""),
         institution=metadata.get("institution", ""),
         revision=metadata.get("revision", ""),

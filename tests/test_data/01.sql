@@ -14,7 +14,7 @@ WITH RECURSIVE fixed_parts AS
           "t3"."char_range" AS "t3_char_range",
           "t3"."token_id" AS "t3",
           "t3"."xpos2" AS "t3_xpos2",
-          "t3_lemma"."lemma" AS t3_lemma
+          "t3_lemma"."lemma" AS "t3_lemma"
    FROM
      (SELECT Segment_id
       FROM bnc1.fts_vectorrest vec
@@ -55,8 +55,8 @@ WITH RECURSIVE fixed_parts AS
           "t2_xpos2",
           "t3",
           "t3_char_range",
-          "t3_xpos2",
-          t3_lemma
+          "t3_lemma",
+          "t3_xpos2"
    FROM fixed_parts) ,
                match_list AS
   (SELECT gather."d" AS "d",
@@ -73,8 +73,8 @@ WITH RECURSIVE fixed_parts AS
           gather."t2_xpos2" AS "t2_xpos2",
           gather."t3" AS "t3",
           gather."t3_char_range" AS "t3_char_range",
-          gather."t3_xpos2" AS "t3_xpos2",
-          gather.t3_lemma AS t3_lemma
+          gather."t3_lemma" AS "t3_lemma",
+          gather."t3_xpos2" AS "t3_xpos2"
    FROM gather),
                res1 AS
   (SELECT DISTINCT 1::int2 AS rstype,
