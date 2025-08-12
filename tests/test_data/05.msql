@@ -1,0 +1,17 @@
+WITH preps AS (SELECT Utterance_id, id_offset, content, annotations FROM ofrom.prepared_Utterance WHERE Utterance_id = ANY(:sids)),
+    meta AS (SELECT
+    "Utterance"."utterance_id" AS "Utterance_id", "Utterance"."char_range" AS "Utterance_char_range", "Utterance"."frame_range" AS "Utterance_frame_range", "Utterance"."ana" AS "Utterance_ana", "Utterance_text"."text" AS "Utterance_text", "Utterance_agent"."agent" AS "Utterance_agent", "Utterance_xmlid"."xmlid" AS "Utterance_xmlid", "Interview"."interview_id" AS "Interview_id", "Interview"."char_range" AS "Interview_char_range", "Interview"."frame_range" AS "Interview_frame_range", "Interview"."media"::jsonb AS "Interview_media", "Interview"."name"::text AS "Interview_name", "Interview_audio"."audio" AS "Interview_audio", "Interview_filename"."filename" AS "Interview_filename"
+FROM
+    preps
+    LEFT JOIN "ofrom"."utterancerest" "Utterance" ON "Utterance"."utterance_id" = preps."utterance_id"
+    LEFT JOIN "ofrom"."utterance_text" "Utterance_text" ON "Utterance_text"."text_id" = "Utterance"."text_id"
+    LEFT JOIN "ofrom"."global_attribute_agent" "Utterance_agent" ON "Utterance_agent"."agent_id" = "Utterance"."agent_id"
+    LEFT JOIN "ofrom"."utterance_xmlid" "Utterance_xmlid" ON "Utterance_xmlid"."xmlid_id" = "Utterance"."xmlid_id"
+    LEFT JOIN "ofrom"."interview" "Interview" ON "Interview"."char_range" @> "Utterance"."char_range"
+    LEFT JOIN "ofrom"."interview_audio" "Interview_audio" ON "Interview_audio"."audio_id" = "Interview"."audio_id"
+    LEFT JOIN "ofrom"."interview_filename" "Interview_filename" ON "Interview_filename"."filename_id" = "Interview"."filename_id"
+GROUP BY
+    "Utterance"."utterance_id", "Utterance"."ana", "Utterance_text"."text", "Utterance_agent"."agent", "Utterance_xmlid"."xmlid", "Interview"."interview_id", "Interview_audio"."audio", "Interview_filename"."filename")
+SELECT -1::int2 AS rstype, jsonb_build_array(preps.utterance_id, preps.id_offset, preps.content, preps.annotations) FROM preps
+UNION ALL
+SELECT -2::int2 AS rstype, jsonb_build_array(meta."Utterance_id", meta."Utterance_char_range", meta."Utterance_frame_range", meta."Utterance_ana", meta."Utterance_text", meta."Utterance_agent", meta."Utterance_xmlid", meta."Interview_id", meta."Interview_char_range", meta."Interview_frame_range", meta."Interview_media", meta."Interview_name", meta."Interview_audio", meta."Interview_filename") FROM meta;

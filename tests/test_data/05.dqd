@@ -1,0 +1,23 @@
+# Test audio corpus + overlaps + agents
+
+Utterance interruptee
+
+Utterance interruptor
+    interruptor overlaps interruptee
+    interruptor != interruptee
+    start(interruptor) < end(interruptee) - 1
+
+Token@interruptor t
+
+res => plain
+    context
+        interruptor
+    entities
+        t
+
+ana => analysis
+    attributes
+        interruptee.agent.region
+        interruptor.agent.region
+    functions
+        frequency

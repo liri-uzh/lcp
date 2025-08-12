@@ -1,5 +1,6 @@
 {
     "schema": "ofrom",
+    "schema_path": "ofrom",
     "idx": 407,
     "batch": "tokenrest",
     "wordcount": 1,

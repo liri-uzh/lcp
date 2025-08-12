@@ -482,7 +482,10 @@ class QueryMaker:
                 anch_select = sql_str(f"{anch_ref} AS {LR}", anch_ref.alias)
                 if not any(sl.lower() == anch_select for sl in self.selects):
                     self.selects.add(anch_select)
+            all_attrs = _get_all_attributes(ref_lay, self.config, self.lang or "")
             for attr in ref_attrs:
+                if attr not in all_attrs:
+                    continue
                 attr_ref = sqlc.attribute(ref_lab, ref_lay, attr)
                 if not attr_ref.ref or not attr_ref.alias:
                     continue

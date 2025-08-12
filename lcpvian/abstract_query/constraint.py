@@ -492,7 +492,10 @@ class Constraint:
 
         left, left_info = self.get_sql_expr(self.left)
         right, right_info = self.get_sql_expr(self.right)
-
+        left_lab, right_lab = [
+            cast(SQLRef, x["sql"]).entity if "sql" in x else y
+            for x, y in ((left_info, left), (right_info, right))
+        ]
         left_type = left_info.get("type", "")
         right_type = right_info.get("type", "")
 
@@ -517,37 +520,37 @@ class Constraint:
                 formed_condition = f"{left} {self.op} {right}"
             elif left_type == "entity":
                 left_layer = left_info.get("layer", self.layer)
-                left_ref = self.sql_corpus.layer(left, left_layer, pointer=True)
+                left_ref = self.sql_corpus.layer(left_lab, left_layer, pointer=True)
                 formed_condition = f"{left_ref} {self.op} {right}"
             elif right_type == "entity":
                 right_layer = right_info.get("layer", self.layer)
-                right_ref = self.sql_corpus.layer(right, right_layer, pointer=True)
+                right_ref = self.sql_corpus.layer(right_lab, right_layer, pointer=True)
                 formed_condition = f"{left} {self.op} {right_ref}"
             else:
                 raise TypeError(f"Cannot compare {left} to {right}")
 
         elif left_type == "entity" and right_type == "entity":
             if self.op.endswith("overlaps"):
-                assert left in (self.label_layer or {}), ReferenceError(
-                    f"{left} cannot overlap anything since it is not a label"
+                assert left_lab in (self.label_layer or {}), ReferenceError(
+                    f"{left_lab} cannot overlap anything since it is not a label"
                 )
-                assert right in (self.label_layer or {}), ReferenceError(
-                    f"{right} cannot overlap anything since it is not a label"
+                assert right_lab in (self.label_layer or {}), ReferenceError(
+                    f"{right_lab} cannot overlap anything since it is not a label"
                 )
                 assert _is_anchored(
                     self.config, left_info.get("layer", ""), "time"
                 ), TypeError(
-                    f"Entity {left} cannot overlap because it is not time-anchored"
+                    f"Entity {left_lab} cannot overlap because it is not time-anchored"
                 )
                 assert _is_anchored(
                     self.config, right_info.get("layer", ""), "time"
                 ), TypeError(
-                    f"Entity {right} cannot overlap because it is not time-anchored"
+                    f"Entity {right_lab} cannot overlap because it is not time-anchored"
                 )
                 left_layer = left_info.get("layer", self.layer)
                 right_layer = right_info.get("layer", self.layer)
-                left_ref = self.sql_corpus.anchor(left, left_layer, "time")
-                right_ref = self.sql_corpus.anchor(right, right_layer, "time")
+                left_ref = self.sql_corpus.anchor(left_lab, left_layer, "time")
+                right_ref = self.sql_corpus.anchor(right_lab, right_layer, "time")
                 formed_condition = f"{left_ref} && {right_ref}"
                 if self.op != "overlaps":
                     formed_condition = f"NOT({formed_condition})"
@@ -557,8 +560,8 @@ class Constraint:
                 )
                 left_layer = left_info.get("layer", self.layer).lower()
                 right_layer = right_info.get("layer", self.layer).lower()
-                left_ref = self.sql_corpus.layer(left, left_layer, pointer=True)
-                right_ref = self.sql_corpus.layer(right, right_layer, pointer=True)
+                left_ref = self.sql_corpus.layer(left_lab, left_layer, pointer=True)
+                right_ref = self.sql_corpus.layer(right_lab, right_layer, pointer=True)
                 formed_condition = f"{left_ref} {self.op} {right_ref}"
 
         elif "labels" in (left_type, right_type):
@@ -664,10 +667,18 @@ class Constraint:
             mapping=mapping,
         )
 
+        if not prefix and ref in lab_lay:
+            prefix = ref
+            layer = lab_lay[ref][0] or layer
+            if post_dots:
+                ref = post_dots[0]
+                post_dots = post_dots[1:]
+                sub_ref = ".".join(post_dots)
+
         attributes = _get_all_attributes(layer, self.config, self.lang or "")
 
         # Undotted attribute reference
-        if ref in attributes and prefix:
+        if ref in attributes:
             glob_attr = self.config.get("globalAttributes", {}).get(
                 attributes[ref].get("ref", ""), {}
             )
@@ -679,7 +690,9 @@ class Constraint:
                 accessor = (
                     "->>" if ref_type in ("string", "text", "categorical") else "->"
                 )
-                ref = accessor.join([sql_ref.ref, f"'{sub_ref}'"])
+                ref = accessor.join(
+                    [sql_ref.ref, sql_str("{att}", att=sql.Literal(sub_ref))]
+                )
             elif glob_attr:  # pointer ref to global attribute
                 ref_info["type"] = "id"
                 sql_ref = self.sql_corpus.attribute(prefix, layer, ref, pointer=True)

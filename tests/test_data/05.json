@@ -1,0 +1,115 @@
+{
+    "query": [
+        {
+            "unit": {
+                "layer": "Utterance",
+                "label": "interruptee"
+            }
+        },
+        {
+            "unit": {
+                "layer": "Utterance",
+                "label": "interruptor",
+                "constraints": [
+                    {
+                        "comparison": {
+                            "left": {
+                                "reference": "interruptor"
+                            },
+                            "comparator": "overlaps",
+                            "right": {
+                                "reference": "interruptee"
+                            }
+                        }
+                    },
+                    {
+                        "comparison": {
+                            "left": {
+                                "reference": "interruptor"
+                            },
+                            "comparator": "!=",
+                            "right": {
+                                "reference": "interruptee"
+                            }
+                        }
+                    },
+                    {
+                        "comparison": {
+                            "left": {
+                                "function": {
+                                    "functionName": "start",
+                                    "arguments": [
+                                        {
+                                            "entity": "interruptor"
+                                        }
+                                    ]
+                                }
+                            },
+                            "comparator": "<",
+                            "right": {
+                                "math": {
+                                    "operation": {
+                                        "left": {
+                                            "function": {
+                                                "functionName": "end",
+                                                "arguments": [
+                                                    {
+                                                        "entity": "interruptee"
+                                                    }
+                                                ]
+                                            }
+                                        },
+                                        "operator": "-",
+                                        "right": {
+                                            "math": "1"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                ]
+            }
+        },
+        {
+            "unit": {
+                "layer": "Token",
+                "partOf": [
+                    {
+                        "partOfStream": "interruptor"
+                    }
+                ],
+                "label": "t"
+            }
+        }
+    ],
+    "results": [
+        {
+            "label": "res",
+            "resultsPlain": {
+                "context": [
+                    "interruptor"
+                ],
+                "entities": [
+                    "t"
+                ]
+            }
+        },
+        {
+            "label": "ana",
+            "resultsAnalysis": {
+                "attributes": [
+                    {
+                        "attribute": "interruptee.agent.region"
+                    },
+                    {
+                        "attribute": "interruptor.agent.region"
+                    }
+                ],
+                "functions": [
+                    "frequency"
+                ]
+            }
+        }
+    ]
+}
