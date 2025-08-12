@@ -854,8 +854,9 @@ WHERE {ent_stream_ref} && {cont_tok_stream_ref}
             alias = (ref_info.get("meta") or {}).get("str", ref)
             alias = re.sub("[^a-zA-Z0-9_]", "_", alias)
             alias = alias.lstrip("_").rstrip("_")
-            if "sql" in ref_info:
-                alias = cast(SQLRef, ref_info["sql"]).alias
+            # The method below does not work for sub-attributes of global attributes
+            # if "sql" in ref_info:
+            #     alias = cast(SQLRef, ref_info["sql"]).alias
             self.r.selects.add(ref + sql_str(" AS {}", alias))
             self.r.entities.add(alias)
             parsed_attributes.append((alias, ref_info))
