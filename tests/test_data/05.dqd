@@ -2,9 +2,8 @@
 
 Utterance interruptee
 
-Utterance interruptor
-    interruptor overlaps interruptee
-    interruptor != interruptee
+Utterance%interruptee interruptor
+    agent != interruptee.agent
     start(interruptor) < end(interruptee) - 1
 
 Token@interruptor t

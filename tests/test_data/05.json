@@ -9,27 +9,21 @@
         {
             "unit": {
                 "layer": "Utterance",
+                "partOf": [
+                    {
+                        "partOfTime": "interruptee"
+                    }
+                ],
                 "label": "interruptor",
                 "constraints": [
                     {
                         "comparison": {
                             "left": {
-                                "reference": "interruptor"
-                            },
-                            "comparator": "overlaps",
-                            "right": {
-                                "reference": "interruptee"
-                            }
-                        }
-                    },
-                    {
-                        "comparison": {
-                            "left": {
-                                "reference": "interruptor"
+                                "reference": "agent"
                             },
                             "comparator": "!=",
                             "right": {
-                                "reference": "interruptee"
+                                "reference": "interruptee.agent"
                             }
                         }
                     },

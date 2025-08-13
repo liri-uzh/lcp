@@ -655,11 +655,7 @@ class Constraint:
                 "reference", reference.get("entity", reference.get("attribute", ""))
             ),
         )
-        post_dots: list[str] = []
-        sub_ref: str = ""
-        if "." in ref:
-            ref, *post_dots = ref.strip().split(".")
-            sub_ref = ".".join(post_dots)
+        ref, *post_dots = ref.strip().split(".")
 
         ref_info = RefInfo(
             type="string",
@@ -667,26 +663,28 @@ class Constraint:
             mapping=mapping,
         )
 
-        if not prefix and ref in lab_lay:
-            prefix = ref
-            layer = lab_lay[ref][0] or layer
-            if post_dots:
-                ref = post_dots[0]
-                post_dots = post_dots[1:]
-                sub_ref = ".".join(post_dots)
-
         attributes = _get_all_attributes(layer, self.config, self.lang or "")
+        attr = ""
+        if ref not in attributes and ref in lab_lay:
+            prefix = ref
+            layer = lab_lay[prefix][0] or layer
+            attributes = _get_all_attributes(layer, self.config, self.lang or "")
+            if post_dots:
+                ref, *post_dots = post_dots
 
-        # Undotted attribute reference
-        if ref in attributes:
+        attr = ref if ref in attributes else ""
+        sub_ref = ".".join(post_dots)
+
+        if attr:
+            attr_info = attributes[attr]
             glob_attr = self.config.get("globalAttributes", {}).get(
-                attributes[ref].get("ref", ""), {}
+                attr_info.get("ref", ""), {}
             )
-            if post_dots:  # sub-attributes
-                keys = (glob_attr or attributes[ref]).get("keys", {})
+            if sub_ref:
+                keys = (glob_attr or attr_info).get("keys", {})
                 ref_type = keys.get(sub_ref, {}).get("type", "string")
                 ref_info["type"] = ref_type
-                sql_ref = self.sql_corpus.attribute(prefix, layer, ref)
+                sql_ref = self.sql_corpus.attribute(prefix, layer, attr)
                 accessor = (
                     "->>" if ref_type in ("string", "text", "categorical") else "->"
                 )
@@ -701,20 +699,9 @@ class Constraint:
                 if ref_info["type"] == "labels":
                     ref_info["meta"] = {"nbit": attributes[ref].get("nlabels", 1)}
                 sql_ref = self.sql_corpus.attribute(prefix, layer, ref)
-        # Layer or dotted-attribute reference
-        elif ref in lab_lay:
-            layer = lab_lay[ref][0]
-            if post_dots:
-                attributes = _get_all_attributes(layer, self.config, self.lang or "")
-                sql_ref = self.sql_corpus.attribute(ref, layer, sub_ref)
-                ref_info["type"] = attributes[sub_ref].get("type", "string")
-                if ref_info["type"] == "labels":
-                    ref_info["meta"] = {"nbit": attributes[sub_ref].get("nlabels", 1)}
-            else:
-                sql_ref = self.sql_corpus.layer(ref, layer)
-                ref_info = RefInfo(
-                    type="entity", layer=layer, mapping=mapping, sql=sql_ref
-                )
+        else:
+            sql_ref = self.sql_corpus.layer(ref, layer)
+            ref_info = RefInfo(type="entity", layer=layer, mapping=mapping, sql=sql_ref)
 
         try:
             assert sql_ref

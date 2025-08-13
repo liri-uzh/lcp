@@ -11,8 +11,8 @@ WITH RECURSIVE fixed_parts AS
              OR (vec.vector @@ '1a'
                  AND vec.vector @@ '1cat'
                  AND vec.vector @@ '1a <1> 1cat'))) AS fts_vector_s
-   CROSS JOIN "bnc1"."segmentrest" "s"
    CROSS JOIN "bnc1"."tokenrest" "tv"
+   CROSS JOIN "bnc1"."segmentrest" "s"
    WHERE "fts_vector_s"."segment_id" = "s"."segment_id"
      AND "s"."segment_id" = "tv"."segment_id"
      AND ("tv"."xpos2")::text = ('VERB')::text ),

@@ -4,75 +4,55 @@
     "idx": 407,
     "batch": "tokenrest",
     "wordcount": 1,
-    "meta": {
-        "url": "placeholder",
-        "date": "placeholder",
-        "name": "OFROM",
-        "authors": "placeholder",
-        "version": 119,
-        "revision": 1,
-        "mediaSlots": {
-            "audio": {
-                "mediaType": "audio",
-                "isOptional": false
-            }
-        },
-        "sample_query": "# Find all the utterrances...\nUtterance u\n    # ... by a speaker from Berne\n    agent.region = \"Berne\"\n    # ... that last at least 1s\n    end(u) > start(u) + 1\n\n# Look for sequences of tokens in that utterrance...\nsequence@u seq\n    # ... that contain a token whose pos is 'CON' or 'PRO'\n    Token\n        pos = /CON|PRO/\n    # ... followed by a token whose form is \"euh\"\n    Token\n        form = \"euh\"\n\n# Display the sequences within their segment\nresults => plain\n    context\n        u\n    entities\n        seq",
-        "corpusDescription": "Le corpus Oral de Français de Suisse Romande. Université de Neuchâtel"
-    },
     "document": "Interview",
     "segment": "Utterance",
     "token": "Token",
-    "layer": {
-        "Mwu": {
-            "contains": "Token",
-            "anchoring": {
-                "time": true,
-                "stream": true,
-                "location": false
-            },
-            "layerType": "span",
-            "attributes": {
-                "pos": {
-                    "type": "categorical",
-                    "values": [
-                        "CON:sub",
-                        "ADV:deg",
-                        "ADV",
-                        "ADV:int",
-                        "NUM:crd:nom",
-                        "INTROD",
-                        "VER:pres",
-                        "ADV:comp",
-                        "NOM:com",
-                        "PRO:ind",
-                        "NUM:crd:det",
-                        "CON:coo",
-                        "PRO:pos",
-                        "PRO:rel",
-                        "DET:ind",
-                        "ADV:neg",
-                        "ITJ",
-                        "PRP",
-                        "NOM:pro",
-                        "PRO:ref",
-                        "PRO:dem",
-                        "ADJ",
-                        "VER:impe",
-                        "MD",
-                        "NUM:ord:adj",
-                        "VER:inf",
-                        "PRO:per:ton"
-                    ],
-                    "nullable": false
-                },
-                "form": {
-                    "type": "text",
-                    "nullable": false
-                }
+    "meta": {
+        "url": "https://ofrom.unine.ch/",
+        "date": " 2012-2023",
+        "name": "OFROM",
+        "author": "Avanzi Mathieu, Béguelin Marie-José, Corminboeuf Gilles, Diémoz Federica & Johnsen Laure Anne",
+        "source": "",
+        "authors": "",
+        "license": "cc-by-nc",
+        "version": 113,
+        "dataType": "",
+        "language": "fr",
+        "revision": "",
+        "mediaSlots": {
+            "audio": {
+                "nullable": false,
+                "mediaType": "audio"
             }
         },
+        "swissubase": {
+            "licence": null,
+            "keywords": "",
+            "projectId": "",
+            "requestDoi": false,
+            "versionNote": "",
+            "datasetTitle": {
+                "de": "",
+                "en": "",
+                "fr": "",
+                "it": ""
+            },
+            "resourceType": 1,
+            "apiAccessToken": null,
+            "datasetLanguage": "en",
+            "datasetDescription": "",
+            "resourceDescription": "",
+            "documentationRemarks": "",
+            "validationInformation": ""
+        },
+        "institution": "",
+        "userLicense": "",
+        "sample_query": "Utterance interruptee\n\nUtterance interruptor\n    agent != interruptee.agent\n    start(interruptor) < end(interruptee) - 1\n\nToken@interruptor t\n\nres => plain\n    context\n        interruptor\n    entities\n        t\n\nana => analysis\n    attributes\n        interruptee.agent.region\n        interruptor.agent.region\n    functions\n        frequency",
+        "corpusDescription": "Le corpus Oral de Français de Suisse Romande. Université de Neuchâtel"
+    },
+    "layer": {
         "Token": {
+            "abstract": false,
             "anchoring": {
                 "time": true,
                 "stream": true,
@@ -80,244 +60,104 @@
             },
             "layerType": "unit",
             "attributes": {
-                "pos": {
-                    "type": "categorical",
-                    "values": [
-                        "ADV",
-                        "CON:sub",
-                        "VER:pres",
-                        "DET:dem",
-                        "PRO:per:sjt",
-                        "PRP",
-                        "DET:pos",
-                        "ADJ",
-                        "NOM:com",
-                        "PRO:per:ton",
-                        "VER:inf",
-                        "DET:ind",
-                        "ADV:deg",
-                        "VER:ppas",
-                        "PRO:dem",
-                        "PRO:rel",
-                        "VER:impf",
-                        "DET:def",
-                        "PRP:det",
-                        "VER:cond",
-                        "VER:subp",
-                        "PRO:ref",
-                        "DET:par",
-                        "CON:coo",
-                        "VER:pres:aux",
-                        "VER:ppas:aux",
-                        "NOM:pro",
-                        "ADV:neg",
-                        "NUM:crd:det",
-                        "ITJ",
-                        "0",
-                        "PRO:per:obji",
-                        "NUM:crd:nom",
-                        "VER:impe",
-                        "PRO:ind",
-                        "ADV:int",
-                        "PRO:per:objd",
-                        "_",
-                        "PNC",
-                        "VER:fut",
-                        "NUM:ord:adj",
-                        "VER:cond:aux",
-                        "VER:impf:aux",
-                        "PRO:int",
-                        "VER:pres:entatif",
-                        "DET:int",
-                        "ADV:comp",
-                        "VER:inf:aux",
-                        "VER:fut:aux",
-                        "VER:subi",
-                        "NOM:acr",
-                        "PFX",
-                        "VER:simp",
-                        "VER:ppre",
-                        "VER:ppre:aux",
-                        "VER:impe:aux",
-                        "VER:subp:aux",
-                        "FRG",
-                        "VER:impf:pred:aux",
-                        "NOM:com:aux",
-                        "ITJ:ono",
-                        "PRO:prp|VER:pres",
-                        "VER:fut:pred:aux",
-                        "VER:simp:aux",
-                        "VER:subp:pred:aux"
-                    ],
-                    "nullable": false
-                },
                 "form": {
                     "type": "text",
+                    "isGlobal": false,
                     "nullable": false
                 },
                 "misc": {
-                    "keys": {
-                        "key": {
-                            "type": "text"
-                        },
-                        "filler": {
-                            "type": "text"
-                        },
-                        "agreement": {
-                            "type": "text"
-                        },
-                        "conjunction": {
-                            "type": "text"
-                        }
-                    },
                     "type": "dict",
+                    "isGlobal": false,
+                    "nullable": true
+                },
+                "xpos": {
+                    "type": "categorical",
+                    "values": [
+                        "PRO",
+                        "VER",
+                        "ADJ",
+                        "PFX",
+                        "ITJ",
+                        "PRP",
+                        "0",
+                        "NUM",
+                        "NOM",
+                        "CON",
+                        "FRG",
+                        "ADV",
+                        "DET",
+                        "PNC"
+                    ],
+                    "isGlobal": false,
                     "nullable": false
                 },
                 "lemma": {
                     "type": "text",
+                    "isGlobal": false,
                     "nullable": true
                 }
             }
         },
         "Interview": {
+            "abstract": false,
             "contains": "Utterance",
-            "anchoring": {
-                "time": true,
-                "stream": true,
-                "location": false
-            },
             "layerType": "span",
             "attributes": {
-                "audio": {
-                    "type": "text",
-                    "nullable": false
-                },
-                "filename": {
-                    "type": "text",
-                    "nullable": false
+                "meta": {
+                    "end": {
+                        "type": "text",
+                        "nullable": false
+                    },
+                    "name": {
+                        "type": "text",
+                        "nullable": false
+                    },
+                    "audio": {
+                        "type": "text",
+                        "nullable": false
+                    },
+                    "start": {
+                        "type": "text",
+                        "nullable": false
+                    },
+                    "filename": {
+                        "type": "text",
+                        "nullable": false
+                    }
                 }
             }
         },
         "Utterance": {
+            "abstract": false,
             "contains": "Token",
-            "anchoring": {
-                "time": true,
-                "stream": true,
-                "location": false
-            },
             "layerType": "span",
             "attributes": {
-                "ana": {
-                    "type": "categorical",
-                    "values": [
-                        "#SPK1",
-                        "#SPK2",
-                        "#SPK3",
-                        "#SPK4",
-                        "#SPK5",
-                        "#SPK6",
-                        "#SPK7",
-                        "#SPK8"
-                    ],
-                    "nullable": false
-                },
-                "text": {
-                    "type": "text",
-                    "nullable": false
+                "meta": {
+                    "end": {
+                        "type": "text",
+                        "nullable": true
+                    },
+                    "text": {
+                        "type": "text",
+                        "nullable": true
+                    },
+                    "start": {
+                        "type": "text",
+                        "nullable": true
+                    },
+                    "sent_id": {
+                        "type": "text",
+                        "nullable": false
+                    },
+                    "speaker": {
+                        "type": "text",
+                        "nullable": true
+                    }
                 },
                 "agent": {
                     "ref": "agent"
-                },
-                "xmlid": {
-                    "type": "text",
-                    "nullable": false
                 }
             }
-        }
-    },
-    "mapping": {
-        "layer": {
-            "Mwu": {
-                "relation": "mwu",
-                "attributes": {
-                    "form": {
-                        "key": "form",
-                        "name": "mwu_form",
-                        "type": "relation"
-                    }
-                }
-            },
-            "Token": {
-                "batches": 10,
-                "relation": "token<batch>",
-                "attributes": {
-                    "form": {
-                        "key": "form",
-                        "name": "token_form",
-                        "type": "relation"
-                    },
-                    "misc": {
-                        "name": "token_misc",
-                        "type": "relation"
-                    },
-                    "lemma": {
-                        "key": "lemma",
-                        "name": "token_lemma",
-                        "type": "relation"
-                    }
-                }
-            },
-            "Interview": {
-                "relation": "interview",
-                "attributes": {
-                    "audio": {
-                        "key": "audio",
-                        "name": "interview_audio",
-                        "type": "relation"
-                    },
-                    "filename": {
-                        "key": "filename",
-                        "name": "interview_filename",
-                        "type": "relation"
-                    }
-                }
-            },
-            "Utterance": {
-                "prepared": {
-                    "relation": "prepared_Utterance",
-                    "columnHeaders": [
-                        "form",
-                        "lemma",
-                        "misc",
-                        "pos"
-                    ]
-                },
-                "relation": "utterance<batch>",
-                "attributes": {
-                    "text": {
-                        "key": "text",
-                        "name": "utterance_text",
-                        "type": "relation"
-                    },
-                    "agent": {
-                        "key": "agent",
-                        "name": "global_attribute_agent",
-                        "type": "relation"
-                    },
-                    "xmlid": {
-                        "key": "xmlid",
-                        "name": "utterance_xmlid",
-                        "type": "relation"
-                    }
-                }
-            }
-        },
-        "hasFTS": true,
-        "FTSvectorCols": {
-            "1": "form",
-            "2": "pos",
-            "3": "lemma",
-            "4": "misc"
         }
     },
     "tracks": {
@@ -332,19 +172,18 @@
             "agent"
         ]
     },
-    "project": "829aa7d7-aa34-4e97-8177-d26f7b693deb",
-    "projects": [
-        "829aa7d7-aa34-4e97-8177-d26f7b693deb"
-    ],
     "firstClass": {
         "token": "Token",
         "segment": "Utterance",
         "document": "Interview"
     },
-    "schema_name": "636639ce-7eb3-4828-8927-8739f1a832da",
+    "schema_name": "59079a3d-258c-4f0e-bbb6-b0317d0df93e",
     "globalAttributes": {
         "agent": {
             "keys": {
+                "id": {
+                    "type": "text"
+                },
                 "nom": {
                     "type": "text"
                 },
@@ -369,18 +208,6 @@
                 "langage": {
                     "type": "text"
                 },
-                "extr_deb": {
-                    "type": "text"
-                },
-                "extr_fin": {
-                    "type": "text"
-                },
-                "latitude": {
-                    "type": "text"
-                },
-                "longitude": {
-                    "type": "text"
-                },
                 "departement": {
                     "type": "text"
                 },
@@ -402,9 +229,6 @@
                 "statut_familial": {
                     "type": "text"
                 },
-                "geo_location_ref": {
-                    "type": "text"
-                },
                 "domicile_jeunesse": {
                     "type": "text"
                 },
@@ -413,6 +237,61 @@
                 }
             },
             "type": "dict"
+        }
+    },
+    "mapping": {
+        "layer": {
+            "Token": {
+                "batches": 10,
+                "relation": "token<batch>",
+                "attributes": {
+                    "form": {
+                        "key": "form",
+                        "name": "token_form",
+                        "type": "relation"
+                    },
+                    "misc": {
+                        "name": "token_misc",
+                        "type": "relation"
+                    },
+                    "lemma": {
+                        "key": "lemma",
+                        "name": "token_lemma",
+                        "type": "relation"
+                    }
+                }
+            },
+            "Interview": {
+                "hasMeta": true,
+                "relation": "interview"
+            },
+            "Utterance": {
+                "hasMeta": true,
+                "prepared": {
+                    "relation": "prepared_Utterance",
+                    "columnHeaders": [
+                        "form",
+                        "lemma",
+                        "misc",
+                        "xpos"
+                    ]
+                },
+                "relation": "utterance<batch>",
+                "attributes": {
+                    "agent": {
+                        "key": "agent",
+                        "name": "global_attribute_agent",
+                        "type": "relation"
+                    }
+                }
+            }
+        },
+        "hasFTS": true,
+        "FTSvectorCols": {
+            "1": "form",
+            "2": "lemma",
+            "3": "xpos",
+            "4": "misc"
         }
     }
 }

@@ -492,6 +492,11 @@ class QueryMaker:
                 attr_select = sql_str(f"{attr_ref} AS {LR}", attr_ref.alias)
                 if not any(sl.lower() == attr_select for sl in self.selects):
                     self.selects.add(attr_select)
+                for tab, conds in attr_ref.joins.items():
+                    tab_set: set | bool = self.joins.get(tab) or set()
+                    self.joins[tab] = (
+                        tab_set if isinstance(tab_set, set) else {tab_set}
+                    ).union({c for c in conds})
 
         # print(
         #    "Debug -- data carried over from query:",
