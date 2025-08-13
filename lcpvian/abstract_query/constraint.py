@@ -520,11 +520,11 @@ class Constraint:
                 formed_condition = f"{left} {self.op} {right}"
             elif left_type == "entity":
                 left_layer = left_info.get("layer", self.layer)
-                left_ref = self.sql_corpus.layer(left_lab, left_layer, pointer=True)
+                left_ref = cast(SQLRef, left_info.get("sql"))
                 formed_condition = f"{left_ref} {self.op} {right}"
             elif right_type == "entity":
                 right_layer = right_info.get("layer", self.layer)
-                right_ref = self.sql_corpus.layer(right_lab, right_layer, pointer=True)
+                right_ref = cast(SQLRef, right_info.get("sql"))
                 formed_condition = f"{left} {self.op} {right_ref}"
             else:
                 raise TypeError(f"Cannot compare {left} to {right}")
@@ -560,8 +560,8 @@ class Constraint:
                 )
                 left_layer = left_info.get("layer", self.layer).lower()
                 right_layer = right_info.get("layer", self.layer).lower()
-                left_ref = self.sql_corpus.layer(left_lab, left_layer, pointer=True)
-                right_ref = self.sql_corpus.layer(right_lab, right_layer, pointer=True)
+                left_ref = cast(SQLRef, left_info.get("sql"))
+                right_ref = cast(SQLRef, right_info.get("sql"))
                 formed_condition = f"{left_ref} {self.op} {right_ref}"
 
         elif "labels" in (left_type, right_type):
@@ -618,6 +618,9 @@ class Constraint:
             elif left_type == right_type:
                 formed_condition = f"({left})::text {self.op} ({right})::text"
             else:
+                import pdb
+
+                pdb.set_trace()
                 raise TypeError(
                     f"Could not resolve comparison {left} {self.op} {right}"
                 )
@@ -695,12 +698,16 @@ class Constraint:
                 ref_info["type"] = "id"
                 sql_ref = self.sql_corpus.attribute(prefix, layer, ref, pointer=True)
             else:
-                ref_info["type"] = attributes[ref].get("type", "string")
+                ref_info["type"] = (
+                    "entity"
+                    if "entity" in attr_info
+                    else attr_info.get("type", "string")
+                )
                 if ref_info["type"] == "labels":
-                    ref_info["meta"] = {"nbit": attributes[ref].get("nlabels", 1)}
+                    ref_info["meta"] = {"nbit": attr_info.get("nlabels", 1)}
                 sql_ref = self.sql_corpus.attribute(prefix, layer, ref)
         else:
-            sql_ref = self.sql_corpus.layer(ref, layer)
+            sql_ref = self.sql_corpus.layer(ref, layer, pointer=True)
             ref_info = RefInfo(type="entity", layer=layer, mapping=mapping, sql=sql_ref)
 
         try:

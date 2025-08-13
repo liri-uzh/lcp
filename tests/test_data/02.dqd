@@ -1,4 +1,4 @@
-# test date, regular expressions
+# test date, regular expressions and deprels
 
 Session e
     date = /^2000/
@@ -13,6 +13,11 @@ sequence np
     Token@s t3
         upos = "NOUN"
         xpos = "NP"
+
+DepRel
+    head = t1
+    dependent = t3
+    udep = "dobj"
 
 myKWIC1 => plain
     context

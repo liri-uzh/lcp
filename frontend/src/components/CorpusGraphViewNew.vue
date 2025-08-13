@@ -15,12 +15,16 @@ const WIDTH = 650, HEIGHT = 500;
 function attrColor(props) {
   if (props.ref)
     return "#6264FF";
-  if (props.type == "number")
+  if ("entity" in props)
+    return "#1BE5C3";
+  if (props.type in {number: 1, integer: 1})
     return "#ABF513";
   if (["dict", "jsonb"].includes(props.type))
     return "#6BD5F3";
-  if (props.type == "labels")
+  if (props.type in {labels:1, array: 1})
     return "#3BF5B3";
+  if (props.type == "image")
+    return "#F3906F";
   if (props.type == "_unfolder")
     return "#CCC"
   return "#FBD573"
@@ -83,6 +87,8 @@ export default {
       const nAttrs = Object.keys(attributes).length;
       const folded = nAttrs > NATTR_FOLD;
       for (let [attName, attProps] of Object.entries(attributes)) {
+        if ("entity" in attProps && "name" in attProps)
+          attName = attProps.name;
         entities.push({
           id: `${layerName}_${attName}`,
           parentId: layerName,
@@ -176,13 +182,18 @@ export default {
   props: ["corpus"],
   methods: {
     title(node) {
-      let title = (node.data.props||node.data).description || node.data.label;
+      const props = node.data.props;
+      let title = (props||node.data).description || node.data.label;
+      if (props && props.type && props.type != "_unfolder")
+        title += ` [${node.data.props.type}]`;
       if (node.data.anchors && node.data.anchors.length > 0)
         title += "; " +
                 (node.data.anchors||[]).map(a=>Object({stream:"character-",time:"time-",location:"location-"})[a]).join(" and ") +
                 "aligned";
-      if (node.data.props && node.data.props.values instanceof Array)
+      if (props && props.values instanceof Array)
         title += "; Possible values: " + node.data.props.values.join(" ");
+      if ("entity" in (props||{}))
+        title += `; points to ${props.entity}`
       return title;
     },
     drawTree() {

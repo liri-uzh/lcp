@@ -121,6 +121,46 @@
           }
         ]
       }
+    },
+    {
+      "unit": {
+        "layer": "DepRel",
+        "constraints": [
+          {
+            "comparison": {
+              "left": {
+                "reference": "head"
+              },
+              "comparator": "=",
+              "right": {
+                "reference": "t1"
+              }
+            }
+          },
+          {
+            "comparison": {
+              "left": {
+                "reference": "dependent"
+              },
+              "comparator": "=",
+              "right": {
+                "reference": "t3"
+              }
+            }
+          },
+          {
+            "comparison": {
+              "left": {
+                "reference": "udep"
+              },
+              "comparator": "=",
+              "right": {
+                "string": "dobj"
+              }
+            }
+          }
+        ]
+      }
     }
   ],
   "results": [

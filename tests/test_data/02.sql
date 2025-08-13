@@ -25,6 +25,7 @@ WITH RECURSIVE fixed_parts AS
    CROSS JOIN "sparcling1"."token_enrest" "t2"
    CROSS JOIN "sparcling1"."token_enrest" "t3"
    CROSS JOIN "sparcling1"."segment_enrest" "s"
+   CROSS JOIN "sparcling1"."deprel_en" "anonymous"
    CROSS JOIN "sparcling1"."lemma_en" "t1_lemma"
    WHERE "e"."char_range" && "s"."char_range"
      AND "e".alignment_id = "e_aligned".alignment_id
@@ -39,6 +40,9 @@ WITH RECURSIVE fixed_parts AS
      AND "t1_lemma"."lemma_id" = "t1"."lemma_id"
      AND "t2"."token_id" - "t1"."token_id" = 1
      AND "t3"."token_id" - "t2"."token_id" = 1
+     AND ("anonymous"."dependent" = "t3"."token_id"
+          AND "anonymous"."head" = "t1"."token_id"
+          AND ("anonymous"."udep")::text = ('dobj')::text)
      AND ("e_aligned"."meta"->>'date')::text ~ '^2000' ),
                gather AS
   (SELECT "e",
