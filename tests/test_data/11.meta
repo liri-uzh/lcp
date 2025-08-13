@@ -1,0 +1,591 @@
+{
+    "schema": "candor__5003f209a11e4737ae21a00cb8857736_3",
+    "schema_path": "candor__5003f209a11e4737ae21a00cb8857736_3",
+    "idx": 183,
+    "batch": "tokenrest",
+    "wordcount": 1,
+    "token": "Token",
+    "segment": "Segment",
+    "document": "Document",
+    "meta": {
+        "date": "25.06.2024",
+        "name": "CANDOR",
+        "author": "LiRI",
+        "source": "",
+        "authors": "",
+        "license": "user-defined",
+        "version": 3,
+        "dataType": "",
+        "revision": "",
+        "mediaSlots": {
+            "video": {
+                "mediaType": "video",
+                "isOptional": false
+            }
+        },
+        "institution": "",
+        "userLicense": "eWEnJ1xhIFwnICd5IQ==",
+        "corpusDescription": "The CANDOR corpus"
+    },
+    "layer": {
+        "Turn": {
+            "abstract": false,
+            "contains": "TurnChannel",
+            "anchoring": {
+                "time": true,
+                "stream": false,
+                "location": false
+            },
+            "layerType": "span",
+            "attributes": {
+                "has_backchannel": {
+                    "type": "categorical",
+                    "values": [
+                        "False",
+                        "True"
+                    ],
+                    "isGlobal": false
+                }
+            }
+        },
+        "Token": {
+            "abstract": false,
+            "anchoring": {
+                "time": true,
+                "stream": true,
+                "location": false
+            },
+            "layerType": "unit",
+            "attributes": {
+                "f0": {
+                    "type": "categorical",
+                    "values": [
+                        "HIGH",
+                        "LOW",
+                        "NORMAL"
+                    ],
+                    "isGlobal": false
+                },
+                "form": {
+                    "type": "text",
+                    "isGlobal": false,
+                    "nullable": false
+                },
+                "upos": {
+                    "type": "categorical",
+                    "isGlobal": true,
+                    "nullable": false
+                },
+                "xpos": {
+                    "type": "categorical",
+                    "values": [
+                        "NN",
+                        "VBG",
+                        "MD",
+                        "PRP$",
+                        "JJ",
+                        "VBN",
+                        "VBZ",
+                        "RB",
+                        "JJS",
+                        "VBD",
+                        ".",
+                        "VBP",
+                        "PRP",
+                        "EX",
+                        "CC",
+                        "VB",
+                        "WP",
+                        "RBR",
+                        ",",
+                        "NNP",
+                        "TO",
+                        "RP",
+                        "IN",
+                        "NNS",
+                        "WDT",
+                        "UH",
+                        "NNPS",
+                        "WRB",
+                        "PDT",
+                        "DT",
+                        "CD",
+                        "JJR",
+                        "RBS",
+                        ":",
+                        "HYPH",
+                        "LS",
+                        "WP$",
+                        "FW",
+                        "AFX",
+                        "``",
+                        "SYM"
+                    ],
+                    "isGlobal": false,
+                    "nullable": false
+                },
+                "lemma": {
+                    "type": "text",
+                    "isGlobal": false,
+                    "nullable": true
+                },
+                "ufeat": {
+                    "type": "dict",
+                    "isGlobal": true
+                },
+                "intensity": {
+                    "type": "categorical",
+                    "values": [
+                        "HIGH",
+                        "LOW",
+                        "NORMAL"
+                    ],
+                    "isGlobal": false
+                }
+            }
+        },
+        "Affect": {
+            "abstract": false,
+            "anchoring": {
+                "time": true,
+                "stream": false,
+                "location": false
+            },
+            "layerType": "unit",
+            "attributes": {
+                "score": {
+                    "type": "categorical",
+                    "values": [
+                        "LOW",
+                        "VERY_LOW",
+                        "MODERATE",
+                        "HIGH"
+                    ],
+                    "isGlobal": false
+                },
+                "affect": {
+                    "type": "categorical",
+                    "values": [
+                        "sadness",
+                        "neutral",
+                        "happiness",
+                        "anger",
+                        "contempt",
+                        "surprise",
+                        "disgust",
+                        "fear"
+                    ],
+                    "isGlobal": false
+                },
+                "speaker": {
+                    "ref": "speaker"
+                }
+            }
+        },
+        "DepRel": {
+            "abstract": true,
+            "layerType": "relation",
+            "attributes": {
+                "udep": {
+                    "type": "categorical",
+                    "isGlobal": true,
+                    "nullable": false
+                },
+                "source": {
+                    "name": "dependent",
+                    "entity": "Token",
+                    "nullable": false
+                },
+                "target": {
+                    "name": "head",
+                    "entity": "Token",
+                    "nullable": true
+                }
+            }
+        },
+        "Segment": {
+            "hasMeta": true,
+            "abstract": false,
+            "contains": "Token",
+            "layerType": "span",
+            "attributes": {
+                "meta": {
+                    "end": {
+                        "type": "text",
+                        "nullable": true
+                    },
+                    "text": {
+                        "type": "text",
+                        "nullable": true
+                    },
+                    "start": {
+                        "type": "text",
+                        "nullable": true
+                    },
+                    "channel": {
+                        "type": "categorical",
+                        "values": [
+                            "L",
+                            "R"
+                        ]
+                    }
+                },
+                "f0_avg": {
+                    "type": "categorical",
+                    "values": [
+                        "HIGH",
+                        "LOW",
+                        "NORMAL"
+                    ],
+                    "isGlobal": false
+                },
+                "f0_max": {
+                    "type": "categorical",
+                    "values": [
+                        "HIGH",
+                        "LOW",
+                        "NORMAL"
+                    ],
+                    "isGlobal": false
+                },
+                "f0_min": {
+                    "type": "categorical",
+                    "values": [
+                        "HIGH",
+                        "LOW",
+                        "NORMAL"
+                    ],
+                    "isGlobal": false
+                },
+                "speaker": {
+                    "ref": "speaker"
+                },
+                "intensity_avg": {
+                    "type": "categorical",
+                    "values": [
+                        "HIGH",
+                        "LOW",
+                        "NORMAL"
+                    ],
+                    "isGlobal": false
+                },
+                "intensity_max": {
+                    "type": "categorical",
+                    "values": [
+                        "HIGH",
+                        "LOW",
+                        "NORMAL"
+                    ],
+                    "isGlobal": false
+                },
+                "intensity_min": {
+                    "type": "categorical",
+                    "values": [
+                        "HIGH",
+                        "LOW",
+                        "NORMAL"
+                    ],
+                    "isGlobal": false
+                }
+            }
+        },
+        "Document": {
+            "hasMeta": true,
+            "abstract": false,
+            "contains": "Segment",
+            "layerType": "span",
+            "attributes": {
+                "meta": {
+                    "end": {
+                        "type": "text",
+                        "nullable": false
+                    },
+                    "date": {
+                        "type": "text",
+                        "nullable": false
+                    },
+                    "name": {
+                        "type": "text",
+                        "nullable": false
+                    },
+                    "start": {
+                        "type": "text",
+                        "nullable": false
+                    }
+                },
+                "speaker_L": {
+                    "ref": "speaker"
+                },
+                "speaker_R": {
+                    "ref": "speaker"
+                }
+            }
+        },
+        "Kinesics": {
+            "abstract": false,
+            "anchoring": {
+                "time": true,
+                "stream": false,
+                "location": false
+            },
+            "layerType": "unit",
+            "attributes": {
+                "score": {
+                    "type": "categorical",
+                    "values": [
+                        "No",
+                        "Yes"
+                    ],
+                    "isGlobal": false
+                },
+                "speaker": {
+                    "ref": "speaker"
+                },
+                "kinesics": {
+                    "type": "categorical",
+                    "values": [
+                        "gaze_on",
+                        "nod_yes",
+                        "smile",
+                        "nod_no"
+                    ],
+                    "isGlobal": false
+                }
+            }
+        },
+        "Assessment": {
+            "abstract": false,
+            "anchoring": {
+                "time": true,
+                "stream": false,
+                "location": false
+            },
+            "layerType": "unit",
+            "attributes": {
+                "meta": {
+                    "arousal": {
+                        "type": "number"
+                    },
+                    "i_am_polite": {
+                        "type": "number"
+                    },
+                    "my_agreeable": {
+                        "type": "number"
+                    },
+                    "i_am_agreeable": {
+                        "type": "number"
+                    },
+                    "you_are_polite": {
+                        "type": "number"
+                    },
+                    "your_agreeable": {
+                        "type": "number"
+                    },
+                    "you_are_agreeable": {
+                        "type": "number"
+                    },
+                    "i_am_good_listener": {
+                        "type": "number"
+                    },
+                    "you_are_good_listener": {
+                        "type": "number"
+                    }
+                },
+                "speaker": {
+                    "ref": "speaker"
+                }
+            }
+        },
+        "TurnChannel": {
+            "abstract": false,
+            "anchoring": {
+                "time": true,
+                "stream": false,
+                "location": false
+            },
+            "layerType": "unit",
+            "attributes": {
+                "speaker": {
+                    "ref": "speaker"
+                },
+                "is_backchannel": {
+                    "type": "categorical",
+                    "values": [
+                        "False",
+                        "True"
+                    ],
+                    "isGlobal": false
+                }
+            }
+        }
+    },
+    "tracks": {
+        "layers": {
+            "Affect": {
+                "split": [
+                    "speaker",
+                    "affect"
+                ]
+            },
+            "Segment": {
+                "split": [
+                    "speaker"
+                ]
+            },
+            "Kinesics": {
+                "split": [
+                    "speaker",
+                    "kinesics"
+                ]
+            }
+        },
+        "group_by": [
+            "speaker"
+        ]
+    },
+    "project": "5003f209-a11e-4737-ae21-a00cb8857736",
+    "projects": [
+        "5003f209-a11e-4737-ae21-a00cb8857736"
+    ],
+    "uploaded": true,
+    "firstClass": {
+        "token": "Token",
+        "segment": "Segment",
+        "document": "Document"
+    },
+    "schema_name": "candor__5003f209a11e4737ae21a00cb8857736_3",
+    "globalAttributes": {
+        "speaker": {
+            "keys": {
+                "placeholder": {
+                    "type": "categorical",
+                    "values": [
+                        "placeholder"
+                    ]
+                }
+            },
+            "type": "dict"
+        }
+    },
+    "mapping": {
+        "layer": {
+            "Turn": {
+                "relation": "turn"
+            },
+            "Token": {
+                "batches": 10,
+                "relation": "token<batch>",
+                "attributes": {
+                    "form": {
+                        "key": "form",
+                        "name": "token_form",
+                        "type": "relation"
+                    },
+                    "lemma": {
+                        "key": "lemma",
+                        "name": "token_lemma",
+                        "type": "relation"
+                    },
+                    "ufeat": {
+                        "name": "token_ufeat",
+                        "type": "relation"
+                    }
+                }
+            },
+            "Affect": {
+                "relation": "affect",
+                "attributes": {
+                    "speaker": {
+                        "key": "speaker",
+                        "name": "global_attribute_speaker",
+                        "type": "relation"
+                    }
+                }
+            },
+            "DepRel": {
+                "relation": "deprel"
+            },
+            "Segment": {
+                "hasMeta": true,
+                "prepared": {
+                    "relation": "prepared_Segment",
+                    "columnHeaders": [
+                        "f0",
+                        "form",
+                        "intensity",
+                        "lemma",
+                        "ufeat",
+                        "upos",
+                        "xpos",
+                        "head"
+                    ]
+                },
+                "relation": "segment<batch>",
+                "attributes": {
+                    "speaker": {
+                        "key": "speaker",
+                        "name": "global_attribute_speaker",
+                        "type": "relation"
+                    }
+                }
+            },
+            "Document": {
+                "hasMeta": true,
+                "relation": "document",
+                "attributes": {
+                    "speaker_L": {
+                        "key": "speaker",
+                        "name": "global_attribute_speaker",
+                        "type": "relation"
+                    },
+                    "speaker_R": {
+                        "key": "speaker",
+                        "name": "global_attribute_speaker",
+                        "type": "relation"
+                    }
+                }
+            },
+            "Kinesics": {
+                "relation": "kinesics",
+                "attributes": {
+                    "speaker": {
+                        "key": "speaker",
+                        "name": "global_attribute_speaker",
+                        "type": "relation"
+                    }
+                }
+            },
+            "Assessment": {
+                "hasMeta": true,
+                "relation": "assessment",
+                "attributes": {
+                    "speaker": {
+                        "key": "speaker",
+                        "name": "global_attribute_speaker",
+                        "type": "relation"
+                    }
+                }
+            },
+            "TurnChannel": {
+                "relation": "turnchannel",
+                "attributes": {
+                    "speaker": {
+                        "key": "speaker",
+                        "name": "global_attribute_speaker",
+                        "type": "relation"
+                    }
+                }
+            }
+        },
+        "hasFTS": true,
+        "FTSvectorCols": {
+            "1": "form",
+            "2": "lemma",
+            "3": "upos",
+            "4": "xpos",
+            "5": "ufeat",
+            "6": "f0",
+            "7": "intensity"
+        }
+    }
+}

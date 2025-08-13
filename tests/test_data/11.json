@@ -1,0 +1,76 @@
+{
+    "query": [
+        {
+            "unit": {
+                "layer": "Segment",
+                "label": "s"
+            }
+        },
+        {
+            "quantification": {
+                "quantifier": "NOT EXISTS",
+                "unit": {
+                    "layer": "Kinesics",
+                    "partOf": [
+                        {
+                            "partOfTime": "s"
+                        }
+                    ],
+                    "label": "nod",
+                    "constraints": [
+                        {
+                            "comparison": {
+                                "left": {
+                                    "reference": "kinesics"
+                                },
+                                "comparator": "=",
+                                "right": {
+                                    "regex": {
+                                        "pattern": "nod"
+                                    }
+                                }
+                            }
+                        }
+                    ]
+                }
+            }
+        },
+        {
+            "unit": {
+                "layer": "Token",
+                "partOf": [
+                    {
+                        "partOfStream": "s"
+                    }
+                ],
+                "label": "t",
+                "constraints": [
+                    {
+                        "comparison": {
+                            "left": {
+                                "reference": "upos"
+                            },
+                            "comparator": "=",
+                            "right": {
+                                "string": "DET"
+                            }
+                        }
+                    }
+                ]
+            }
+        }
+    ],
+    "results": [
+        {
+            "label": "kwic",
+            "resultsPlain": {
+                "context": [
+                    "s"
+                ],
+                "entities": [
+                    "t"
+                ]
+            }
+        }
+    ]
+}
