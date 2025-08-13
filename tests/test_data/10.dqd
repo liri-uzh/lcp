@@ -1,0 +1,17 @@
+# Test regex, time alignment, glob attr refs and time functions
+
+Kinesics nod
+    kinesics = /nod/
+
+Segment%nod s
+    speaker != nod.speaker
+
+Token@s t
+    upos = "DET"
+    end(t) + 2.0 <= start(nod)
+
+kwic => plain
+    context
+        s
+    entities
+        t
