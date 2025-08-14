@@ -851,7 +851,6 @@ WHERE {ent_stream_ref} && {cont_tok_stream_ref}
                     self.r.conditions.add(c)
             for condition in constraint._conditions:
                 self.r.conditions.add(condition)
-            # TODO: use sql here
             alias = (ref_info.get("meta") or {}).get("str", ref)
             alias = re.sub("[^a-zA-Z0-9_]", "_", alias)
             alias = alias.lstrip("_").rstrip("_")
@@ -894,16 +893,25 @@ WHERE {ent_stream_ref} && {cont_tok_stream_ref}
                 # join_formed = f"{self.schema}.{prefix_table} {prefix}"
                 # if join_formed != f"{self.schema}.{table} {entity_lab}":
                 #     jjoins.append(join_formed)
+                new_label = self.r.unique_label(
+                    prefix, prefix_layer, self.r.sql.used_aliases
+                )
+                new_anchors = {
+                    a: self.r.sql.anchor(new_label, prefix_layer, a) for a in anchorings
+                }
                 where_anchors = " OR ".join(
-                    sql_str("{} && ", self.r.sql.anchor(prefix, prefix_layer, a).alias)
-                    + self.r.sql.anchor(entity_lab, entity_layer, a).ref
+                    f"{new_anchors[a]} && {self.r.sql.anchor(entity_lab, entity_layer, a)}"
                     for a in anchorings
                 )
                 jwheres.append(where_anchors)
+                new_sql_ref = self.r.sql.layer(new_label, prefix_layer)
+                new_ref = re.sub(
+                    rf'"{prefix}([_"])', lambda m: f'"{new_sql_ref.alias}{m[1]}', ref
+                )
+                jwheres.append(f"{new_ref} = {alias}")
+                jjoins.append(next(t for t in new_sql_ref.joins))
                 # self.r.selects.update({f"{prefix}.{a} AS {prefix}_{a}" for a in anchorings})
-                jgroups = [
-                    self.r.sql.anchor(prefix, prefix_layer, a).alias for a in anchorings
-                ]
+                # jgroups = [new_anchors[a].alias for a in anchorings]
                 self.r.entities.update({x for x in jgroups})
                 # where_anchors = " OR ".join(
                 #     sql_str("{} && ", self.r.sql.anchor(prefix, prefix_layer, a).alias)
