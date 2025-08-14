@@ -384,7 +384,10 @@ class Cte:
                     ),
                 )
                 constraints = f"{' AND '.join(where_conditions)} AND transition{self.n}.label = '{state.label}'"
-                state_left_joins = state_left_joins.union({ls for ls in ljs})
+                # If the join string ends with " ON " it is ill-formed (because it introduces no condition)
+                state_left_joins = state_left_joins.union(
+                    {ls for ls in ljs if not ls.endswith(" ON ")}
+                )
                 source: str = ""
                 if which != "start":
                     source = f"transition{self.n}.source_state = {source_n} AND "

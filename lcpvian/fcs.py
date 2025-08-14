@@ -203,7 +203,7 @@ async def search_retrieve(
             "values", [conf.get("meta", {}).get("language", "en")]
         )
         if (not resources or ((cid, lg) in resources))
-        and authenticator.check_corpus_allowed(cid, {}, "lcp", get_all=False)
+        and authenticator.check_corpus_searchable(cid, {}, "lcp", get_all=False)
     ]
     try:
         requested: int = int(maximumRecords)
@@ -303,7 +303,7 @@ async def explain(app: LCPApplication, **extra_params) -> str:
             for lg in conf.get("partitions", {}).get(
                 "values", [conf.get("meta", {}).get("language", "")]
             )
-            if authenticator.check_corpus_allowed(cid, {}, "lcp", get_all=False)
+            if authenticator.check_corpus_searchable(cid, {}, "lcp", get_all=False)
         ]
         resources_str = "\n        ".join(resources_list)
         second_half = f"""  <sru:echoedExplainRequest>

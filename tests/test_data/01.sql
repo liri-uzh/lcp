@@ -19,10 +19,10 @@ WITH RECURSIVE fixed_parts AS
      (SELECT Segment_id
       FROM bnc1.fts_vectorrest vec
       WHERE vec.vector @@ '7ART <1> (2true & 7ADJ) <1> 7SUBST') AS fts_vector_s
+   CROSS JOIN "bnc1"."tokenrest" "t3"
    CROSS JOIN "bnc1"."document" "d"
    CROSS JOIN "bnc1"."tokenrest" "t1"
    CROSS JOIN "bnc1"."tokenrest" "t2"
-   CROSS JOIN "bnc1"."tokenrest" "t3"
    CROSS JOIN "bnc1"."segmentrest" "s"
    CROSS JOIN "bnc1"."lemma" "t3_lemma"
    CROSS JOIN "bnc1"."lemma" "t2_lemma"

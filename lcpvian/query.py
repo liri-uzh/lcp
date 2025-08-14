@@ -288,7 +288,7 @@ async def post_query(request: web.Request) -> web.Response:
         if app_type not in {"lcp", "videoscope", "soundscript", "catchphrase"}
         else app_type
     )
-    allowed = authenticator.check_corpus_allowed(
+    allowed = authenticator.check_corpus_searchable(
         str(corpus), user_data, app_type, get_all=False
     )
     if not allowed:

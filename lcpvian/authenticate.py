@@ -58,6 +58,17 @@ class Authentication:
     ) -> bool:
         return True
 
+    def check_corpus_searchable(
+        self,
+        corpus_id: str,
+        user_data: JSONObject | None,
+        app_type: str = "lcp",
+        get_all: bool = False,
+    ) -> bool:
+        return self.check_corpus_allowed(
+            corpus_id, user_data, app_type=app_type, get_all=get_all
+        )
+
     ## JSON responses to GET requests
 
     async def user_details(self, request: web.Request) -> JSONObject:

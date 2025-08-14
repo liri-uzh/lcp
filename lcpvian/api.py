@@ -46,9 +46,8 @@ async def search(request: web.Request) -> web.Response:
     authenticator = request.app["auth_class"](request.app)
     user_data = await _get_user(request, authenticator)
     cid: str = request.match_info["corpus_id"]
-    if not authenticator.check_corpus_allowed(cid, user_data, "lcp", get_all=False):
+    if not authenticator.check_corpus_searchable(cid, user_data, "lcp", get_all=False):
         return web.HTTPForbidden(text="Not allowed to access this corpus")
-
     request_data: dict[str, str] = await request.json()
     query = request_data.get("query", "")
     kind = request_data.get("kind", "json")

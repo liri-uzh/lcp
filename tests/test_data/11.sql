@@ -14,7 +14,7 @@ WITH RECURSIVE fixed_parts AS
    CROSS JOIN "candor__5003f209a11e4737ae21a00cb8857736_3"."tokenrest" "t"
    WHERE NOT EXISTS
        (SELECT 1
-        FROM candor__5003f209a11e4737ae21a00cb8857736_3.kinesics nod
+        FROM "candor__5003f209a11e4737ae21a00cb8857736_3"."kinesics" "nod"
         WHERE "s"."frame_range" && "nod"."frame_range"
           AND ("nod"."kinesics")::text ~ 'nod' )
      AND "s"."segment_id" = "t"."segment_id"

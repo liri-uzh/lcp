@@ -24,8 +24,7 @@ from typing import Self
 
 # for (NOT) EXISTS parts of queries
 QUANTOR_TEMPLATE = """
-{quantor} (SELECT 1 FROM {schema}.{base} {label}
-             {joins}
+{quantor} (SELECT 1 FROM {froms}
              {conditions}
            )
 """
@@ -145,16 +144,12 @@ class Constraints:
             for m in member.members:
                 m._quantor_label = self.label
         member.make()
-        not_allowed = f"{self.schema}.{base}".lower()
         joins: Joins = member.joins()
         label_layer = cast(LabelLayer, self.label_layer or dict())
         inner_labels: set[str] = self._inner_labels()
         outer_labels: set[str] = {l for l in label_layer if l not in inner_labels}
-        crossjoins = "\n".join(
-            f"CROSS JOIN {x}"
-            for x in joins
-            if not_allowed not in x.lower() and x.split(" ")[-1] not in outer_labels
-        )
+        fromjoins = [x for x in joins if x.split(" ")[-1] not in outer_labels]
+        froms = "\nCROSS JOIN ".join(fromjoins)
         conds = member.conditions()
         all_conds = [conds]
         for jcs in joins.values():
@@ -165,12 +160,11 @@ class Constraints:
                 continue
             all_conds.append(f"({' AND '.join(str_conds)})")
         conds = "WHERE " + " AND ".join(all_conds)
+        # schema}.{base} {label}
+        #      {joins
         template = self.quantor_template.format(
-            schema=self.schema,
-            base=base,
             quantor=member.quantor,
-            label=member.label,
-            joins=crossjoins,
+            froms=froms,
             conditions=conds,
         )
         return template
@@ -398,8 +392,10 @@ class Constraint:
         if not mapping:
             mapping = _get_mapping(layer, self.config, self.batch, self.lang or "")
 
+        entities = [prefix]
+
         ref = ""
-        ref_info: RefInfo = RefInfo(layer=layer, mapping=mapping)
+        ref_info: RefInfo = RefInfo(layer=layer, mapping=mapping, entities=entities)
         # function string | regex | math | reference | entity
         if "function" in reference:
             ref, ref_info = self.parse_function(reference["function"])
@@ -427,6 +423,10 @@ class Constraint:
             cast(dict, ref_info["meta"])["str"] = reference.get(
                 "reference", reference.get("entity", reference.get("attribute", ""))
             )
+
+        ref_info["entities"] = sorted(
+            list({x for x in (entities + ref_info.get("entities", [])) if x})
+        )
         return (ref, ref_info)
 
     def join_labels_table(
@@ -618,9 +618,6 @@ class Constraint:
             elif left_type == right_type:
                 formed_condition = f"({left})::text {self.op} ({right})::text"
             else:
-                import pdb
-
-                pdb.set_trace()
                 raise TypeError(
                     f"Could not resolve comparison {left} {self.op} {right}"
                 )
@@ -660,12 +657,6 @@ class Constraint:
         )
         ref, *post_dots = ref.strip().split(".")
 
-        ref_info = RefInfo(
-            type="string",
-            layer=layer,
-            mapping=mapping,
-        )
-
         attributes = _get_all_attributes(layer, self.config, self.lang or "")
         attr = ""
         if ref not in attributes and ref in lab_lay:
@@ -674,6 +665,11 @@ class Constraint:
             attributes = _get_all_attributes(layer, self.config, self.lang or "")
             if post_dots:
                 ref, *post_dots = post_dots
+
+        entities = [prefix]
+        ref_info = RefInfo(
+            type="string", layer=layer, mapping=mapping, entities=entities
+        )
 
         attr = ref if ref in attributes else ""
         sub_ref = ".".join(post_dots)
@@ -723,6 +719,9 @@ class Constraint:
         )
 
         for tab, conds in sql_ref.joins.items():
+            if not conds:
+                self._joins[tab] = set()
+                continue
             for cond in conds:
                 self._add_join_on(tab, cond)
 
@@ -731,6 +730,7 @@ class Constraint:
         except:
             ref = sql_ref.ref
 
+        ref_info["entities"] = entities + ref_info.get("entities", [])
         return (ref, ref_info)
 
     def parse_math(
@@ -834,6 +834,9 @@ class Constraint:
                 sql_fn=sql.Literal(sql_fn),
             )
             ref_info = RefInfo(type="number", meta={"str": ref_info_str})
+        ref_info["entities"] = [
+            e for _, ri in parsed_ars for e in ri.get("entities", [])
+        ]
         return (fn_str, ref_info)
 
 

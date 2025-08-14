@@ -44,6 +44,7 @@ class RefInfo(TypedDict, total=False):
     mapping: dict | None
     meta: dict | None
     sql: SQLRef | None
+    entities: list[str]
 
 
 # model corpus config data
