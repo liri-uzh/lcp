@@ -44,7 +44,7 @@ WITH RECURSIVE fixed_parts AS
    FROM match_list) ,
                res2 AS
   (SELECT 2::int2 AS rstype,
-          jsonb_build_array(interruptee_agent_region, interruptor_agent_region, frequency)
+          jsonb_build_array(FALSE, interruptee_agent_region, interruptor_agent_region, frequency)
    FROM
      (SELECT interruptee_agent_region,
              interruptor_agent_region ,

@@ -86,7 +86,7 @@ WITH RECURSIVE fixed_parts AS
    FROM match_list) ,
                res2 AS
   (SELECT 2::int2 AS rstype,
-          jsonb_build_array(t1_lemma, frequency)
+          jsonb_build_array(FALSE, t1_lemma, frequency)
    FROM
      (SELECT t1_lemma ,
              count(*) AS frequency

@@ -172,6 +172,10 @@ def _aggregate_results(
             combined_e = _combine_e(e, preexist_e, current, done)
             precalcs[key][text] = (combined, combined_e)
             continue
+        if key in freqs:
+            if rest[0] is True:
+                continue
+            rest = rest[1:]
         # frequency table:
         attrs: list[dict] = cast(dict, rs[key - 1]).get("attributes", [])
         # body = cast(list, [str(x) for x in rest[:-1]])
