@@ -977,16 +977,14 @@ WHERE {ent_stream_ref} && {cont_tok_stream_ref}
             attribs.append({"name": attr, "type": typed})
         for func in functions:
             attribs.append({"name": func, "type": "aggregate"})
-        if count_entities:
-            count_entity_layer, _ = self.r.label_layer[next(x for x in count_entities)]
-            attribs.append(
-                {"name": f"total_{count_entity_layer.lower()}", "type": "aggregate"}
-            )
         meta: ResultMetadata = {
             "attributes": attribs,
             "name": label,
             "type": "analysis",
         }
+        if count_entities:
+            count_entity_layer, _ = self.r.label_layer[next(x for x in count_entities)]
+            meta["total"] = f"total_{count_entity_layer.lower()}"
         return out, meta, filter_meta
 
     def _space_item(self, item: str) -> tuple[set[str], Joins]:
