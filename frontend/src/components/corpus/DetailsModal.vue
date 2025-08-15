@@ -63,7 +63,7 @@
         {{$t('modal-details-description')}}: {{ corpusModal.description }}
       </p>
       <p class ="word-count mb-0" v-if="corpusModal.meta.language && !(corpusModal.partitions)">
-        {{$t('modal-details-language')}}: {{ corpusModal.meta.language }}
+        {{$t('modal-details-language')}}: <strong>{{ this.getLanguageName(corpusModal.meta.language) }}</strong>
       </p>
       <span v-if="corpusModal.partitions">
         <p class="word-count" v-if="corpusModal.partitions">
@@ -160,6 +160,12 @@
         }
         return "";
       },
+      getLanguageName(languageCode) {
+        const l = this.corpusLanguages.find(cl=>cl.value.toLowerCase() == languageCode.toLowerCase());
+        if (l)
+          return l.name;
+        else return languageCode;
+      },
       corpusDataType: Utils.corpusDataType,
       getURLWithProtocol: Utils.getURLWithProtocol,
       hasAccessToCorpus: Utils.hasAccessToCorpus,
@@ -172,6 +178,10 @@
     },
     computed: {
       ...mapState(useUserStore, ["userData"]),
+      ...mapState(useCorpusStore, {
+        corpusLicenses: "licenses",
+        corpusLanguages: "languages",
+      }),
     },
     components: {
       CorpusGraphViewNew,

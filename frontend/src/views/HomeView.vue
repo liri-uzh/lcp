@@ -370,7 +370,6 @@ import { useSWISSUbaseStore } from "@/stores/swissubaseStore";
 import { useProjectStore } from "@/stores/projectStore";
 import { useUserStore } from "@/stores/userStore";
 import { useNotificationStore } from "@/stores/notificationStore";
-import { availableLanguages } from "@/fluent";
 
 import Title from "@/components/TitleComponent.vue";
 import ProjectNewView from "@/components/project/NewView.vue";
@@ -414,11 +413,10 @@ export default {
   methods: {
     hasAccessToCorpus: Utils.hasAccessToCorpus,
     getLanguage(lg) {
-      const avLg = availableLanguages.find(v=>v.value.toLowerCase() == lg.toLowerCase());
-      if (avLg)
-        return avLg.name;
-      else
-        return lg;
+      const cl = this.corpusLanguages.find(v=>v.value.toLowerCase() == lg.toLowerCase());
+      if (cl)
+        return cl.name;
+      return lg;
     },
     projectIcons(project) {
       let icons = ['fas']
@@ -624,6 +622,10 @@ export default {
   },
   computed: {
     ...mapState(useCorpusStore, ["queryData", "corpora"]),
+    ...mapState(useCorpusStore, {
+      corpusLicenses: "licenses",
+      corpusLanguages: "languages",
+    }),
     ...mapState(useUserStore, ["projects", "userData"]),
     projectsGroups() {
       const isSuperAdmin = useUserStore().isSuperAdmin;

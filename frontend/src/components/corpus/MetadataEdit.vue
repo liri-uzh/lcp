@@ -79,7 +79,7 @@
               <multiselect
                 v-model="selectedLanguage"
                 :options="corpusLanguages"
-                placeholder="Select langauage"
+                placeholder="Select language"
                 :multiple="false"
                 label="name"
                 track-by="value"

@@ -20,7 +20,7 @@
                 <FontAwesomeIcon :icon="['fas', 'circle-info']" />
               </div> -->
             </label>
-            <div class="col-sm-9">
+            <div class="col-sm-8">
               <multiselect
                 v-model="selectedCorpora"
                 :options="corporaOptions"
@@ -30,11 +30,26 @@
                 track-by="value"
               ></multiselect>
             </div>
+            <span
+              class="btn icon-x col-sm-1"
+              @click.stop="openCorpusDetailsModal(selectedCorpora.corpus)"
+              v-if="selectedCorpora && selectedCorpora.corpus"
+            >
+              <FontAwesomeIcon :icon="['fas', 'circle-info']" />
+            </span>
           </div>
-          <div class="form-group row mt-1" v-if="selectedCorpora && availableLanguages.length > 1">
+          <div class="form-group row mt-1">
             <label for="staticEmail" class="col-sm-3 col-form-label">{{ $t('common-languages') }}</label>
             <div class="col-sm-9">
-              <multiselect v-model="selectedLanguages" :options="availableLanguages" :multiple="true"></multiselect>
+              <multiselect
+                v-model="selectedLanguages"
+                :options="availableLanguages"
+                :multiple="true"
+                 v-if="selectedCorpora && availableLanguages.length > 1"
+              ></multiselect>
+              <label class="col-sm-3 col-form-label" v-else-if="selectedCorpora && availableLanguages.length == 1">
+                {{ getLanguageName(availableLanguages[0]) }}
+              </label>
             </div>
           </div>
         </div>
@@ -220,7 +235,7 @@
                   <div class="col-12 col-md-6">
                     <div class="corpus-graph mt-3" v-if="selectedCorpora">
                       <FontAwesomeIcon :icon="['fas', 'expand']" @click="openGraphInModal" data-bs-toggle="modal"
-                        data-bs-target="#corpusDetailsModal" />
+                        data-bs-target="#corpusGraphModal" />
                       <CorpusGraphViewNew :corpus="selectedCorpora.corpus" :key="graphIndex" v-if="showGraph == 'main'"
                         @graphReady="resizeGraph" />
                     </div>
@@ -612,12 +627,12 @@
         </div>
       </div>
     </div>
-    <div class="modal fade" id="corpusDetailsModal" tabindex="-1" aria-labelledby="corpusDetailsModalLabel"
+    <div class="modal fade" id="corpusGraphModal" tabindex="-1" aria-labelledby="corpusGraphModalLabel"
       aria-hidden="true" ref="vuemodal">
       <div class="modal-dialog modal-xl">
         <div class="modal-content">
           <div class="modal-header">
-            <h5 class="modal-title" id="corpusDetailsModalLabel">
+            <h5 class="modal-title" id="corpusGraphModallLabel">
               {{ $t('corpus-structure') }}
             </h5>
             <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
@@ -639,6 +654,30 @@
     <div class="lcp-progress-bar" :title="$t('common-refresh-progress')" v-if="showLoadingBar">
       <div class="lcp-progress-bar-driver" :style="`width: ${navPercentage}%;`"></div>
     </div>
+
+    <div class="modal fade" id="corpusDetailsModal" tabindex="-1" aria-labelledby="corpusDetailsModalLabel"
+      aria-hidden="true" ref="vuemodaldetails">
+      <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="corpusDetailsModalLabel">
+              {{ $t('platform-general-corpus-details') }}
+            </h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body text-start" v-if="corpusModal">
+            <CorpusDetailsModal :corpusModal="corpusModal" :key="modalIndexKey" />
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+              {{ $t('common-close') }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+
   </div>
 </template>
 
@@ -718,10 +757,18 @@ textarea {
   order: 1;
 }
 </style>
+<style>
+#corpus-details-modal div:nth-child(1) {
+  width: 100%;
+}
+#corpus-details-modal div:nth-child(2) {
+  display: none;
+}
+</style>
 
 <script>
 import { mapState } from "pinia";
-
+import { Modal } from "bootstrap";
 import { nextTick } from 'vue'
 
 import { useCorpusStore } from "@/stores/corpusStore";
@@ -729,6 +776,7 @@ import { useNotificationStore } from "@/stores/notificationStore";
 import { useUserStore } from "@/stores/userStore";
 import { useWsStore } from "@/stores/wsStore";
 
+import CorpusDetailsModal from "@/components/corpus/DetailsModal.vue";
 import Title from "@/components/TitleComponent.vue";
 import ResultsTableView from "@/components/results/TableView.vue";
 import ResultsKWICView from "@/components/results/KWICView.vue";
@@ -809,6 +857,8 @@ export default {
       // currentMediaDuration: 0,
       // loadingMedia: false,
       // timelineEntry: null,
+
+      modalIndexKey: 0,
     };
   },
   components: {
@@ -817,6 +867,7 @@ export default {
     ResultsPlainTableView,
     ResultsTableView,
     EditorView,
+    CorpusDetailsModal,
     // CorpusGraphView,
     CorpusGraphViewNew,
     PlayerComponent,
@@ -977,6 +1028,12 @@ export default {
     // },
   },
   methods: {
+    getLanguageName(lg) {
+      const cl = this.corpusLanguages.find(v=>v.value.toLowerCase() == lg.toLowerCase());
+      if (cl)
+        return cl.name;
+      return lg;
+    },
     getSampleQuery() {
       const corpus = this.selectedCorpora;
       if (!corpus) return "";
@@ -1069,6 +1126,12 @@ export default {
       ) {
         window.location.replace("/login");
       }
+    },
+    openCorpusDetailsModal(corpus) {
+      this.corpusModal = { ...corpus };
+      let modal = new Modal(document.getElementById('corpusDetailsModal'));
+      this.modalIndexKey++
+      modal.show()
     },
     // sendLeft() {
     //   this.$socket.sendObj({
@@ -1615,26 +1678,19 @@ export default {
   },
   computed: {
     ...mapState(useCorpusStore, ["queryData", "corpora"]),
+    ...mapState(useCorpusStore, {corpusLanguages: "languages"}),
     ...mapState(useUserStore, ["userData", "roomId", "debug"]),
     ...mapState(useWsStore, ["messages"]),
     availableLanguages() {
       let retval = [];
       if (this.selectedCorpora) {
-        if (
-          this.corpora.filter(
-            (corpus) => corpus.meta.id == this.selectedCorpora.value
-          ).length
-        ) {
-          retval = Object.keys(
-            this.corpora.filter(
-              (corpus) => corpus.meta.id == this.selectedCorpora.value
-            )[0].layer
-          )
+        const corpus = this.corpora.find((c) => c.meta.id == this.selectedCorpora.value);
+        if (corpus) {
+          retval = Object.keys(corpus.layer)
             .filter((key) => key.startsWith("Token@") || key.startsWith("Token:"))
             .map((key) => key.replace(/Token[@:]/, ""));
-          if (retval.length == 0) {
-            retval = ["en"];
-          }
+          if (retval.length == 0)
+            retval = [corpus.meta.language || "en"];
         }
       }
       return retval;
