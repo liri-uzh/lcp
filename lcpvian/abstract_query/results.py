@@ -804,6 +804,7 @@ WHERE {ent_stream_ref} && {cont_tok_stream_ref}
         jjoins: list[str] = []
         jwheres: list[str] = []
         jgroups: list[str] = []
+        jattribs: list[str] = []
         parsed_attributes: list[tuple[str, RefInfo]] = []
         for att in attributes:
             if "entity" in att:
@@ -984,7 +985,7 @@ WHERE {ent_stream_ref} && {cont_tok_stream_ref}
         }
         if count_entities:
             count_entity_layer, _ = self.r.label_layer[next(x for x in count_entities)]
-            meta["total"] = f"total_{count_entity_layer.lower()}"
+            meta["total"] = [*[{"name": g, "type": "."} for g in jgroups], {"name": f"total_{count_entity_layer.lower()}", "type": "aggregate"}]  # type: ignore
         return out, meta, filter_meta
 
     def _space_item(self, item: str) -> tuple[set[str], Joins]:

@@ -80,9 +80,13 @@ def _prepare_existing(
                     pretotal, pree = out[k][text]
                     out[k][text] = (total + pretotal, (e + pree / 2))
         else:
+            total_info = result_set[k - 1].get("total", [])
             attrs = result_set[k - 1].get("attributes", [])
             for r in v:
-                body, totals_this_batch = _body_totals(r, attrs)
+                attrs_to_pass = attrs
+                if r[0] in (True, "True"):
+                    attrs_to_pass = total_info
+                body, totals_this_batch = _body_totals(r, attrs_to_pass)
                 # body = r[:-1]
                 tk = tuple(body)
                 if tk not in out[k]:
@@ -116,12 +120,17 @@ def _unfold(exist: dict, kwics: set[int], colls: set[int]) -> Results:
 
 
 def _body_totals(rest: list, attrs: list[dict]) -> tuple[list, list[int]]:
+    """
+    Called only for stats/frequency
+    """
+    # Include first rest entry (True/False) in the body
+    attrs = [{"type": "totals"}, *attrs]
     body = cast(
-        list,
-        [str(x) for n, x in enumerate(rest) if attrs[n]["type"] != "aggregate"],
+        list, [str(x) for n, x in enumerate(rest) if attrs[n]["type"] != "aggregate"]
     )
-    # body = cast(list, [str(x) for x in rest[:-1]])
-    totals_this_batch = rest[-1 * (len(rest) - len(body)) :]
+    totals_this_batch = [
+        x for n, x in enumerate(rest) if attrs[n]["type"] == "aggregate"
+    ]
     return body, totals_this_batch
 
 
@@ -172,13 +181,10 @@ def _aggregate_results(
             combined_e = _combine_e(e, preexist_e, current, done)
             precalcs[key][text] = (combined, combined_e)
             continue
-        if key in freqs:
-            if rest[0] is True:
-                continue
-            rest = rest[1:]
         # frequency table:
         attrs: list[dict] = cast(dict, rs[key - 1]).get("attributes", [])
-        # body = cast(list, [str(x) for x in rest[:-1]])
+        if rest[0] in (True, "True"):
+            attrs = cast(dict, rs[key - 1]).get("total", [])
         body, totals_this_batch = _body_totals(rest, attrs)
         # need_update = body in precalcs[key]
         preexist = precalcs[key].get(

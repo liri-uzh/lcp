@@ -130,7 +130,7 @@ import PaginationComponent from "@/components/PaginationComponent.vue";
 
 export default {
   name: "ResultsTableView",
-  props: ["data", "languages", "attributes", "corpora", "resultsPerPage", "loading", "type"],
+  props: ["data", "languages", "attributes", "total", "corpora", "resultsPerPage", "loading", "type"],
   data() {
     let attributes = this.getImpovedAttibutes(this.attributes)
     let data = this.calculateAdditionalData(this.data)
@@ -158,20 +158,31 @@ export default {
     calculateAdditionalData(data) {
       if (this.data && this.attributes) {
         data = JSON.parse(JSON.stringify(this.data));
+        const totals = data.filter(d=>d[0]=="True").map(d=>d.slice(1,));
+        const non_totals = data.filter(d=>d[0]=="False").map(d=>d.slice(1,));
         if (this.type == "analysis") {
-          let sum = data.at(-1).at(-1), indexFreq = -2;
-          const all_layers = Object.keys(this.corpora.corpus.layer);
-          const last_at = this.attributes.at(-1);
-          if (!all_layers.find(l=>last_at.name == `total_${l}`.toLowerCase())) {
-            indexFreq = -1;
-            sum = data.reduce((accumulator, row) => {
-              return accumulator + row.at(indexFreq)
-            }, 0);
+          if (totals.length > 0) {
+            const totalMaps = totals.map(
+              t => Object.fromEntries( t.map((x,n)=>[this.total[n].name,x]) )
+            );
+            const totalFreqName = this.total.find(t=>t.type == "aggregate").name;
+            data = non_totals.map(r=>{
+              const rowKeys = Object.fromEntries( r.map(
+                (x,n)=>[this.attributes[n].name,x]
+              ).filter(
+                (x,n)=>x && this.attributes[n].type!="aggregate"
+              ) );
+              // Find the entry in totalMaps where the value of every key also in rowKeys is match
+              const totalEntry = totalMaps.find(t=>Object.keys(rowKeys).filter(k=>k in t).every(k=>t[k] == rowKeys[k]));
+              // const total = rowKeys;
+              const sum = totalEntry[totalFreqName];
+              return [...r, sum, (r.at(-1)/sum*100.).toFixed(4)];
+            });
           }
-          data = this.data.map(row => [
-            ...row,
-            (row.at(indexFreq)/sum*100.).toFixed(4)
-          ])
+          else {
+            const sum = non_totals.reduce((acc,r)=>acc+r.at(-1), 0);
+            data = non_totals.map(r=>[...r, (r.at(-1)/sum*100.).toFixed(4)]);
+          }
         }
         else if (this.type == "collocation") {
           data = this.data.map(row => [
@@ -192,15 +203,20 @@ export default {
       if (this.attributes) {
         attributes = JSON.parse(JSON.stringify(this.attributes));
         if (this.type == "analysis") {
-          attributes.at(-1)["valueType"] = "float"
-          attributes.at(-1)["class"] = "text-right"
+          if (this.total.length > 0)
+            attributes.push({
+              name: this.total.find(t=>t.type=="aggregate").name,
+              type: "aggregate",
+              class: "text-right",
+              valueType: "float",
+            });
           attributes.push({
             name: "relative frequency",
             type: "aggregate",
             textSuffix: " %",
             class: "text-right",
             valueType: "float",
-          })
+          });
         }
         else if (this.type == "collocation") {
           attributes[1]["valueType"] = "float"
