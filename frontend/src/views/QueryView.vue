@@ -96,7 +96,7 @@
                 role="tabpanel" aria-labelledby="nav-query-tab">
                 <div class="mt-3">
                   <button type="button" @click="submit" class="btn btn-primary me-1 mb-1"
-                    :disabled="isSubmitDisabled()">
+                    :disabled="isSubmitDisabled || !currentQuery">
                     <FontAwesomeIcon :icon="['fas', 'magnifying-glass-chart']" />
                     {{ loading == "resubmit" ? $t('common-resubmit') : $t('common-submit') }}
                   </button>
@@ -340,10 +340,10 @@
 
                 <div v-if="percentageDone == 100 && (!WSDataSentences || !WSDataSentences.result)"
                   style="text-align: center" class="mb-3 mt-2">
-                  <div v-if="WSDataResults && WSDataResults.total_results_so_far == 0">
+                  <div v-if="noResults">
                     {{ $t('common-no-results') }}!
                   </div>
-                  <div>
+                  <div v-else>
                     {{ $t('common-loading-results') }}...
                   </div>
                 </div>
@@ -351,7 +351,7 @@
                   <div class="row">
                     <div class="col-12" v-if="WSDataResults && WSDataResults.result">
                       <div
-                        v-if="queryStatus in {'satisfied':1,'finished':1} && !loading && userData.user.anon != true"
+                        v-if="queryStatus in {'satisfied':1,'finished':1} && !loading && userData.user.anon != true && !noResults"
                         data-bs-toggle="modal"
                         data-bs-target="#exportModal"
                         @click="setExportFilename('xml')"
@@ -470,6 +470,10 @@
                       </div>
                     </div>
                   </div>
+                </div>
+
+                <div v-if="dataTabEmpty">
+                  The results of your queries will be displayed here.
                 </div>
 
               </div>
@@ -1205,10 +1209,10 @@ export default {
             this.selectedLanguages = [this.availableLanguages[0]];
           }
           // console.log("Query validation", data);
-          if (data.kind in { dqd: 1, text: 1, cqp: 1 } && data.valid == true) {
-            // console.log("Set query from server");
+          if (data.kind in { dqd: 1, text: 1, cqp: 1 } && data.valid == true)
             this.query = JSON.stringify(data.json, null, 2);
-          }
+          else
+            this.query = "";
           if (data.kind == "cqp" && !data.valid)
             data.error = "Incomplete query or invalid CQP syntax";
           else if (data.error) {
@@ -1261,8 +1265,6 @@ export default {
           } else {
             queries = data["queries"];
           }
-
-          console.log(queries);
           this.userQueries = queries;
           return;
         } else if (data["action"] === "store_query") {
@@ -1473,13 +1475,6 @@ export default {
         this.WSDataResults = data;
       }
     },
-    isSubmitDisabled() {
-      return (this.selectedCorpora && this.selectedCorpora.length == 0) ||
-        this.loading === true ||
-        (this.isQueryValidData != null && this.isQueryValidData.valid == false) ||
-        !this.query ||
-        !this.selectedLanguages
-    },
     openGraphInModal() {
       this.$refs.vuemodal.addEventListener("shown.bs.modal", () => {
         this.showGraph = 'modal';
@@ -1526,6 +1521,9 @@ export default {
       fullSearch = false,
       to_export = false
     ) {
+      const query = this.currentQuery;
+      if (this.isSubmitDisabled || !query)
+        return;
       if (!localStorage.getItem("dontShowResultsNotif"))
         this.showResultsNotification = true;
       if (!to_export && resumeQuery == false) {
@@ -1538,7 +1536,7 @@ export default {
       }
       let data = {
         corpus: this.selectedCorpora.value,
-        query: this.query,
+        query: query,
         user: this.userData.user.id,
         room: this.roomId,
         languages: this.selectedLanguages,
@@ -1658,7 +1656,6 @@ export default {
       else if (this.currentTab == "cqp") {
         this.cqp = selectedQuery.query.query;
       }
-
       return;
     },
     dismissResultsNotification() {
@@ -1735,6 +1732,34 @@ export default {
     },
     saveQueryDisabled() {
        return !this.currentQuery || this.currentQuery.match(/^\s*$/);
+    },
+    dataTabEmpty() {
+      if (this.selectedCorpora && this.showExploreTab())
+        return false;
+      if (this.querySubmitted)
+        return false;
+      if (this.loading)
+        return false;
+      if (this.showResultsNotification && this.queryStatus == "satisfied")
+        return false;
+      if (this.percentageDone == 100)
+        return false;
+      return true;
+    },
+    isSubmitDisabled() {
+      return (this.selectedCorpora && this.selectedCorpora.length == 0) ||
+        this.loading === true ||
+        (this.isQueryValidData != null && this.isQueryValidData.valid == false) ||
+        !this.query ||
+        !this.selectedLanguages
+    },
+    noResults() {
+      const dr = JSON.parse(JSON.stringify(this.WSDataResults)) || {};
+      const ds = JSON.parse(JSON.stringify(this.WSDataSentences)) || {};
+      dr.result = dr.result || {};
+      ds.result = ds.result || {};
+      console.log("dr", dr, "ds", ds);
+      return [dr,ds].every(d=>Object.entries(d.result).every(([k,v])=>k==0 || !v || v.length==0));
     }
   },
   mounted() {
