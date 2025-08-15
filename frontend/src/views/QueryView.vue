@@ -251,7 +251,14 @@
 
                 <hr>
                 <div class="mt-5 row" v-if="querySubmitted">
-                  <div class="col-12 col-md-6">
+                  <div v-if="loading" class="col-12 col-md-1">
+                    <button type="button" @click="stop"
+                      class="btn btn-primary me-1 mb-1">
+                      <FontAwesomeIcon :icon="['fas', 'xmark']" />
+                      {{ $t('common-stop') }}
+                    </button>
+                  </div>
+                  <div :class="`col-12 col-md-${loading ? 5 : 6}`">
                     <h6 class="mb-2">{{ $t('common-query-result') }}</h6>
                     <div class="progress mb-2">
                       <div class="progress-bar" :class="loading ? 'progress-bar-striped progress-bar-animated' : ''
