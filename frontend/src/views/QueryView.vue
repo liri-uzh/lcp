@@ -146,7 +146,7 @@
                           </button>
                           <button class="nav-link" id="nav-json-tab" data-bs-toggle="tab" data-bs-target="#nav-json"
                             type="button" role="tab" aria-controls="nav-json" aria-selected="false"
-                            @click="setTab('json')">
+                            @click="setTab('json')" v-if="local">
                             JSON
                           </button>
                           <button v-if="sqlQuery" class="nav-link" id="nav-sql-tab" data-bs-toggle="tab"
@@ -209,9 +209,9 @@
                         </div>
                       </div>
                     </div>
-                    <div class="mt-3">
+                    <div class="mt-5">
                       <button type="button" v-if="!loading && userData.user.anon != true && userQueryVisible()"
-                        :disabled="isQueryValidData && isQueryValidData.valid != true" class="btn btn-primary me-2 mb-2"
+                        :disabled="saveQueryDisabled" class="btn btn-primary me-2 mb-2"
                         data-bs-toggle="modal" data-bs-target="#saveQueryModal">
                         <FontAwesomeIcon :icon="['fas', 'file-export']" />
                         {{ $t('common-save-query') }}
@@ -596,7 +596,7 @@
             <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
               {{ $t('common-close') }}
             </button>
-            <button type="button" :disabled="!queryName" @click="saveQuery" class="btn btn-primary me-1"
+            <button type="button" :disabled="saveQueryDisabled || !this.queryName" @click="saveQuery" class="btn btn-primary me-1"
               data-bs-dismiss="modal">
               {{ $t('common-save-query') }}
             </button>
@@ -859,6 +859,7 @@ export default {
       // timelineEntry: null,
 
       modalIndexKey: 0,
+      local: window.location.hostname == "localhost"
     };
   },
   components: {
@@ -1586,13 +1587,7 @@ export default {
       });
     },
     validate() {
-      let query = this.query;
-      if (this.currentTab == "text")
-        query = this.textsearch;
-      if (this.currentTab == "dqd")
-        query = this.queryDQD + "\n";
-      if (this.currentTab == "cqp")
-        query = this.cqp;
+      const query = this.currentQuery;
       if (!query || query.match(/^(\s|\n)+$/)) {
         this.isQueryValidData = {valid: true};
         return;
@@ -1603,14 +1598,6 @@ export default {
         kind: this.currentTab,
         corpus: this.selectedCorpora.value
       });
-    },
-    getCurrentQuery() {
-      if (this.currentTab == "text")
-        return this.textsearch;
-      if (this.currentTab == "dqd")
-        return this.queryDQD + "\n";
-      if (this.currentTab == "cqp")
-        return this.cqp;
     },
     userQueryVisible() {
       if (this.currentTab == "text" || this.currentTab == "dqd" || this.currentTab == "cqp") {
@@ -1623,7 +1610,7 @@ export default {
       let data = {
         // corpora: this.selectedCorpora.map((corpus) => corpus.value),
         corpora: this.selectedCorpora.value,
-        query: this.getCurrentQuery(),
+        query: this.currentQuery,
         user: this.userData.user.id,
         room: this.roomId,
         // room: null,
@@ -1719,7 +1706,6 @@ export default {
         query_name: q.query?.query_name || "",
       })).filter((q) => q.query?.query_type === this.currentTab);
     },
-
     nKwics() {
       const kwic_keys = ((this.WSDataResults.result[0]||{}).result_sets||[])
         .map((rs,n)=>rs.type=="plain"?n+1:-1)
@@ -1729,6 +1715,19 @@ export default {
           .filter(r=>kwic_keys.includes(parseInt(r[0])))
           .map(([rkey,results])=>[rkey,results.length])
       );
+    },
+    currentQuery() {
+      let query = this.query;
+      if (this.currentTab == "text")
+        query = this.textsearch;
+      if (this.currentTab == "dqd")
+        query = this.queryDQD + "\n";
+      if (this.currentTab == "cqp")
+        query = this.cqp;
+      return query;
+    },
+    saveQueryDisabled() {
+       return !this.currentQuery || this.currentQuery.match(/^\s*$/);
     }
   },
   mounted() {
