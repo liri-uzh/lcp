@@ -20,7 +20,7 @@
                 <FontAwesomeIcon :icon="['fas', 'circle-info']" />
               </div> -->
             </label>
-            <div class="col-sm-9">
+            <div class="col-sm-8">
               <multiselect
                 v-model="selectedCorpora"
                 :options="corporaOptions"
@@ -30,11 +30,26 @@
                 track-by="value"
               ></multiselect>
             </div>
+            <span
+              class="btn icon-x col-sm-1"
+              @click.stop="openCorpusDetailsModal(selectedCorpora.corpus)"
+              v-if="selectedCorpora && selectedCorpora.corpus"
+            >
+              <FontAwesomeIcon :icon="['fas', 'circle-info']" />
+            </span>
           </div>
-          <div class="form-group row mt-1" v-if="selectedCorpora && availableLanguages.length > 1">
+          <div class="form-group row mt-1">
             <label for="staticEmail" class="col-sm-3 col-form-label">{{ $t('common-languages') }}</label>
             <div class="col-sm-9">
-              <multiselect v-model="selectedLanguages" :options="availableLanguages" :multiple="true"></multiselect>
+              <multiselect
+                v-model="selectedLanguages"
+                :options="availableLanguages"
+                :multiple="true"
+                 v-if="selectedCorpora && availableLanguages.length > 1"
+              ></multiselect>
+              <label class="col-sm-3 col-form-label" v-else-if="selectedCorpora && availableLanguages.length == 1">
+                {{ getLanguageName(availableLanguages[0]) }}
+              </label>
             </div>
           </div>
         </div>
@@ -81,7 +96,7 @@
                 role="tabpanel" aria-labelledby="nav-query-tab">
                 <div class="mt-3">
                   <button type="button" @click="submit" class="btn btn-primary me-1 mb-1"
-                    :disabled="isSubmitDisabled()">
+                    :disabled="isSubmitDisabled || !currentQuery">
                     <FontAwesomeIcon :icon="['fas', 'magnifying-glass-chart']" />
                     {{ loading == "resubmit" ? $t('common-resubmit') : $t('common-submit') }}
                   </button>
@@ -131,7 +146,7 @@
                           </button>
                           <button class="nav-link" id="nav-json-tab" data-bs-toggle="tab" data-bs-target="#nav-json"
                             type="button" role="tab" aria-controls="nav-json" aria-selected="false"
-                            @click="setTab('json')">
+                            @click="setTab('json')" v-if="local">
                             JSON
                           </button>
                           <button v-if="sqlQuery" class="nav-link" id="nav-sql-tab" data-bs-toggle="tab"
@@ -194,9 +209,9 @@
                         </div>
                       </div>
                     </div>
-                    <div class="mt-3">
+                    <div class="mt-5">
                       <button type="button" v-if="!loading && userData.user.anon != true && userQueryVisible()"
-                        :disabled="isQueryValidData && isQueryValidData.valid != true" class="btn btn-primary me-2 mb-2"
+                        :disabled="saveQueryDisabled" class="btn btn-primary me-2 mb-2"
                         data-bs-toggle="modal" data-bs-target="#saveQueryModal">
                         <FontAwesomeIcon :icon="['fas', 'file-export']" />
                         {{ $t('common-save-query') }}
@@ -220,7 +235,7 @@
                   <div class="col-12 col-md-6">
                     <div class="corpus-graph mt-3" v-if="selectedCorpora">
                       <FontAwesomeIcon :icon="['fas', 'expand']" @click="openGraphInModal" data-bs-toggle="modal"
-                        data-bs-target="#corpusDetailsModal" />
+                        data-bs-target="#corpusGraphModal" />
                       <CorpusGraphViewNew :corpus="selectedCorpora.corpus" :key="graphIndex" v-if="showGraph == 'main'"
                         @graphReady="resizeGraph" />
                     </div>
@@ -236,7 +251,14 @@
 
                 <hr>
                 <div class="mt-5 row" v-if="querySubmitted">
-                  <div class="col-12 col-md-6">
+                  <div v-if="loading" class="col-12 col-md-1">
+                    <button type="button" @click="stop"
+                      class="btn btn-primary me-1 mb-1">
+                      <FontAwesomeIcon :icon="['fas', 'xmark']" />
+                      {{ $t('common-stop') }}
+                    </button>
+                  </div>
+                  <div :class="`col-12 col-md-${loading ? 5 : 6}`">
                     <h6 class="mb-2">{{ $t('common-query-result') }}</h6>
                     <div class="progress mb-2">
                       <div class="progress-bar" :class="loading ? 'progress-bar-striped progress-bar-animated' : ''
@@ -318,10 +340,10 @@
 
                 <div v-if="percentageDone == 100 && (!WSDataSentences || !WSDataSentences.result)"
                   style="text-align: center" class="mb-3 mt-2">
-                  <div v-if="WSDataResults && WSDataResults.total_results_so_far == 0">
+                  <div v-if="noResults">
                     {{ $t('common-no-results') }}!
                   </div>
-                  <div>
+                  <div v-else>
                     {{ $t('common-loading-results') }}...
                   </div>
                 </div>
@@ -329,7 +351,7 @@
                   <div class="row">
                     <div class="col-12" v-if="WSDataResults && WSDataResults.result">
                       <div
-                        v-if="queryStatus in {'satisfied':1,'finished':1} && !loading && userData.user.anon != true"
+                        v-if="queryStatus in {'satisfied':1,'finished':1} && !loading && userData.user.anon != true && !noResults"
                         data-bs-toggle="modal"
                         data-bs-target="#exportModal"
                         @click="setExportFilename('xml')"
@@ -442,11 +464,16 @@
                           <ResultsTableView v-else-if="resultSet.type != 'plain'"
                             :data="WSDataResults.result[index + 1]" :languages="selectedLanguages"
                             :attributes="resultSet.attributes" :meta="WSDataMeta" :resultsPerPage="resultsPerPage"
+                            :total="resultSet.total || []"
                             :type="resultSet.type" :corpora="selectedCorpora" />
                         </div>
                       </div>
                     </div>
                   </div>
+                </div>
+
+                <div v-if="dataTabEmpty">
+                  The results of your queries will be displayed here.
                 </div>
 
               </div>
@@ -580,7 +607,7 @@
             <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
               {{ $t('common-close') }}
             </button>
-            <button type="button" :disabled="!queryName" @click="saveQuery" class="btn btn-primary me-1"
+            <button type="button" :disabled="saveQueryDisabled || !this.queryName" @click="saveQuery" class="btn btn-primary me-1"
               data-bs-dismiss="modal">
               {{ $t('common-save-query') }}
             </button>
@@ -611,12 +638,12 @@
         </div>
       </div>
     </div>
-    <div class="modal fade" id="corpusDetailsModal" tabindex="-1" aria-labelledby="corpusDetailsModalLabel"
+    <div class="modal fade" id="corpusGraphModal" tabindex="-1" aria-labelledby="corpusGraphModalLabel"
       aria-hidden="true" ref="vuemodal">
       <div class="modal-dialog modal-xl">
         <div class="modal-content">
           <div class="modal-header">
-            <h5 class="modal-title" id="corpusDetailsModalLabel">
+            <h5 class="modal-title" id="corpusGraphModallLabel">
               {{ $t('corpus-structure') }}
             </h5>
             <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
@@ -638,6 +665,30 @@
     <div class="lcp-progress-bar" :title="$t('common-refresh-progress')" v-if="showLoadingBar">
       <div class="lcp-progress-bar-driver" :style="`width: ${navPercentage}%;`"></div>
     </div>
+
+    <div class="modal fade" id="corpusDetailsModal" tabindex="-1" aria-labelledby="corpusDetailsModalLabel"
+      aria-hidden="true" ref="vuemodaldetails">
+      <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="corpusDetailsModalLabel">
+              {{ $t('platform-general-corpus-details') }}
+            </h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body text-start" v-if="corpusModal">
+            <CorpusDetailsModal :corpusModal="corpusModal" :key="modalIndexKey" />
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+              {{ $t('common-close') }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+
   </div>
 </template>
 
@@ -717,10 +768,18 @@ textarea {
   order: 1;
 }
 </style>
+<style>
+#corpus-details-modal div:nth-child(1) {
+  width: 100%;
+}
+#corpus-details-modal div:nth-child(2) {
+  display: none;
+}
+</style>
 
 <script>
 import { mapState } from "pinia";
-
+import { Modal } from "bootstrap";
 import { nextTick } from 'vue'
 
 import { useCorpusStore } from "@/stores/corpusStore";
@@ -728,6 +787,7 @@ import { useNotificationStore } from "@/stores/notificationStore";
 import { useUserStore } from "@/stores/userStore";
 import { useWsStore } from "@/stores/wsStore";
 
+import CorpusDetailsModal from "@/components/corpus/DetailsModal.vue";
 import Title from "@/components/TitleComponent.vue";
 import ResultsTableView from "@/components/results/TableView.vue";
 import ResultsKWICView from "@/components/results/KWICView.vue";
@@ -808,6 +868,9 @@ export default {
       // currentMediaDuration: 0,
       // loadingMedia: false,
       // timelineEntry: null,
+
+      modalIndexKey: 0,
+      local: window.location.hostname == "localhost"
     };
   },
   components: {
@@ -816,6 +879,7 @@ export default {
     ResultsPlainTableView,
     ResultsTableView,
     EditorView,
+    CorpusDetailsModal,
     // CorpusGraphView,
     CorpusGraphViewNew,
     PlayerComponent,
@@ -976,6 +1040,12 @@ export default {
     // },
   },
   methods: {
+    getLanguageName(lg) {
+      const cl = this.corpusLanguages.find(v=>v.value.toLowerCase() == lg.toLowerCase());
+      if (cl)
+        return cl.name;
+      return lg;
+    },
     getSampleQuery() {
       const corpus = this.selectedCorpora;
       if (!corpus) return "";
@@ -1069,6 +1139,12 @@ export default {
         window.location.replace("/login");
       }
     },
+    openCorpusDetailsModal(corpus) {
+      this.corpusModal = { ...corpus };
+      let modal = new Modal(document.getElementById('corpusDetailsModal'));
+      this.modalIndexKey++
+      modal.show()
+    },
     // sendLeft() {
     //   this.$socket.sendObj({
     //     room: this.roomId,
@@ -1133,10 +1209,10 @@ export default {
             this.selectedLanguages = [this.availableLanguages[0]];
           }
           // console.log("Query validation", data);
-          if (data.kind in { dqd: 1, text: 1, cqp: 1 } && data.valid == true) {
-            // console.log("Set query from server");
+          if (data.kind in { dqd: 1, text: 1, cqp: 1 } && data.valid == true)
             this.query = JSON.stringify(data.json, null, 2);
-          }
+          else
+            this.query = "";
           if (data.kind == "cqp" && !data.valid)
             data.error = "Incomplete query or invalid CQP syntax";
           else if (data.error) {
@@ -1189,8 +1265,6 @@ export default {
           } else {
             queries = data["queries"];
           }
-
-          console.log(queries);
           this.userQueries = queries;
           return;
         } else if (data["action"] === "store_query") {
@@ -1401,13 +1475,6 @@ export default {
         this.WSDataResults = data;
       }
     },
-    isSubmitDisabled() {
-      return (this.selectedCorpora && this.selectedCorpora.length == 0) ||
-        this.loading === true ||
-        (this.isQueryValidData != null && this.isQueryValidData.valid == false) ||
-        !this.query ||
-        !this.selectedLanguages
-    },
     openGraphInModal() {
       this.$refs.vuemodal.addEventListener("shown.bs.modal", () => {
         this.showGraph = 'modal';
@@ -1454,6 +1521,9 @@ export default {
       fullSearch = false,
       to_export = false
     ) {
+      const query = this.currentQuery;
+      if (this.isSubmitDisabled || !query)
+        return;
       if (!localStorage.getItem("dontShowResultsNotif"))
         this.showResultsNotification = true;
       if (!to_export && resumeQuery == false) {
@@ -1466,7 +1536,7 @@ export default {
       }
       let data = {
         corpus: this.selectedCorpora.value,
-        query: this.query,
+        query: query,
         user: this.userData.user.id,
         room: this.roomId,
         languages: this.selectedLanguages,
@@ -1522,13 +1592,7 @@ export default {
       });
     },
     validate() {
-      let query = this.query;
-      if (this.currentTab == "text")
-        query = this.textsearch;
-      if (this.currentTab == "dqd")
-        query = this.queryDQD + "\n";
-      if (this.currentTab == "cqp")
-        query = this.cqp;
+      const query = this.currentQuery;
       if (!query || query.match(/^(\s|\n)+$/)) {
         this.isQueryValidData = {valid: true};
         return;
@@ -1539,14 +1603,6 @@ export default {
         kind: this.currentTab,
         corpus: this.selectedCorpora.value
       });
-    },
-    getCurrentQuery() {
-      if (this.currentTab == "text")
-        return this.textsearch;
-      if (this.currentTab == "dqd")
-        return this.queryDQD + "\n";
-      if (this.currentTab == "cqp")
-        return this.cqp;
     },
     userQueryVisible() {
       if (this.currentTab == "text" || this.currentTab == "dqd" || this.currentTab == "cqp") {
@@ -1559,7 +1615,7 @@ export default {
       let data = {
         // corpora: this.selectedCorpora.map((corpus) => corpus.value),
         corpora: this.selectedCorpora.value,
-        query: this.getCurrentQuery(),
+        query: this.currentQuery,
         user: this.userData.user.id,
         room: this.roomId,
         // room: null,
@@ -1600,7 +1656,6 @@ export default {
       else if (this.currentTab == "cqp") {
         this.cqp = selectedQuery.query.query;
       }
-
       return;
     },
     dismissResultsNotification() {
@@ -1614,26 +1669,19 @@ export default {
   },
   computed: {
     ...mapState(useCorpusStore, ["queryData", "corpora"]),
+    ...mapState(useCorpusStore, {corpusLanguages: "languages"}),
     ...mapState(useUserStore, ["userData", "roomId", "debug"]),
     ...mapState(useWsStore, ["messages"]),
     availableLanguages() {
       let retval = [];
       if (this.selectedCorpora) {
-        if (
-          this.corpora.filter(
-            (corpus) => corpus.meta.id == this.selectedCorpora.value
-          ).length
-        ) {
-          retval = Object.keys(
-            this.corpora.filter(
-              (corpus) => corpus.meta.id == this.selectedCorpora.value
-            )[0].layer
-          )
+        const corpus = this.corpora.find((c) => c.meta.id == this.selectedCorpora.value);
+        if (corpus) {
+          retval = Object.keys(corpus.layer)
             .filter((key) => key.startsWith("Token@") || key.startsWith("Token:"))
             .map((key) => key.replace(/Token[@:]/, ""));
-          if (retval.length == 0) {
-            retval = ["en"];
-          }
+          if (retval.length == 0)
+            retval = [corpus.meta.language || "en"];
         }
       }
       return retval;
@@ -1662,7 +1710,6 @@ export default {
         query_name: q.query?.query_name || "",
       })).filter((q) => q.query?.query_type === this.currentTab);
     },
-
     nKwics() {
       const kwic_keys = ((this.WSDataResults.result[0]||{}).result_sets||[])
         .map((rs,n)=>rs.type=="plain"?n+1:-1)
@@ -1672,6 +1719,47 @@ export default {
           .filter(r=>kwic_keys.includes(parseInt(r[0])))
           .map(([rkey,results])=>[rkey,results.length])
       );
+    },
+    currentQuery() {
+      let query = this.query;
+      if (this.currentTab == "text")
+        query = this.textsearch;
+      if (this.currentTab == "dqd")
+        query = this.queryDQD + "\n";
+      if (this.currentTab == "cqp")
+        query = this.cqp;
+      return query;
+    },
+    saveQueryDisabled() {
+       return !this.currentQuery || this.currentQuery.match(/^\s*$/);
+    },
+    dataTabEmpty() {
+      if (this.selectedCorpora && this.showExploreTab())
+        return false;
+      if (this.querySubmitted)
+        return false;
+      if (this.loading)
+        return false;
+      if (this.showResultsNotification && this.queryStatus == "satisfied")
+        return false;
+      if (this.percentageDone == 100)
+        return false;
+      return true;
+    },
+    isSubmitDisabled() {
+      return (this.selectedCorpora && this.selectedCorpora.length == 0) ||
+        this.loading === true ||
+        (this.isQueryValidData != null && this.isQueryValidData.valid == false) ||
+        !this.query ||
+        !this.selectedLanguages
+    },
+    noResults() {
+      const dr = JSON.parse(JSON.stringify(this.WSDataResults)) || {};
+      const ds = JSON.parse(JSON.stringify(this.WSDataSentences)) || {};
+      dr.result = dr.result || {};
+      ds.result = ds.result || {};
+      console.log("dr", dr, "ds", ds);
+      return [dr,ds].every(d=>Object.entries(d.result).every(([k,v])=>k==0 || !v || v.length==0));
     }
   },
   mounted() {

@@ -29,3 +29,5 @@ sequence%ne seq
 ```
 
 Note that such a query only makes sense in a corpus where tokens, named entities and segments have all been aligned along the time axis, which is not the case for all corpora that define a time axis.
+
+See [the *functions* page](functions.md) to learn how to target more fine-grained time information.

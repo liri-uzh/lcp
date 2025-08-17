@@ -169,14 +169,17 @@ class SQLCorpus:
             f"global_attribute_{attribute}" if is_glob else f"{layer}_{attribute}"
         )
         if pointer:
+            ref = entity_alias
             rel_key += "_id"
         else:
             table = sql_str("{}.{} {}", self.schema, rel_tab, ref)
+            # rel_alias.rel_key_id = entity.attribute_id
+            # e.g. Document_speaker_L.speaker_id = Document.speaker_l_id
             condition = sql_str(
                 f"{LR}.{LR} = {entity_label}.{LR}",
                 ref,
                 f"{rel_key}_id",
-                f"{rel_key}_id",
+                f"{attribute.lower()}_id",
             )
             joins[table] = {**joins.get(table, {}), condition: 1}
         ref = sql_str("{}.{}", ref, rel_key)

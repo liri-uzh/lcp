@@ -482,13 +482,21 @@ class QueryMaker:
                 anch_select = sql_str(f"{anch_ref} AS {LR}", anch_ref.alias)
                 if not any(sl.lower() == anch_select for sl in self.selects):
                     self.selects.add(anch_select)
+            all_attrs = _get_all_attributes(ref_lay, self.config, self.lang or "")
             for attr in ref_attrs:
+                if attr not in all_attrs:
+                    continue
                 attr_ref = sqlc.attribute(ref_lab, ref_lay, attr)
                 if not attr_ref.ref or not attr_ref.alias:
                     continue
                 attr_select = sql_str(f"{attr_ref} AS {LR}", attr_ref.alias)
                 if not any(sl.lower() == attr_select for sl in self.selects):
                     self.selects.add(attr_select)
+                for tab, conds in attr_ref.joins.items():
+                    tab_set: set | bool = self.joins.get(tab) or set()
+                    self.joins[tab] = (
+                        tab_set if isinstance(tab_set, set) else {tab_set}
+                    ).union({c for c in conds})
 
         # print(
         #    "Debug -- data carried over from query:",

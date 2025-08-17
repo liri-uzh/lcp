@@ -13,6 +13,7 @@
         * [`sequence`](sequence.md)
         * [`set`](set.md)
     * [Results](results.md)
+    * [Functions](functions.md)
 * [Data Model](model.md)
 * [Corpora in LCP](corpora_in_lcp.md)
 * [Corpus management](corpus_management.md)

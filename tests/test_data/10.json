@@ -1,0 +1,121 @@
+{
+    "query": [
+        {
+            "unit": {
+                "layer": "Kinesics",
+                "label": "nod",
+                "constraints": [
+                    {
+                        "comparison": {
+                            "left": {
+                                "reference": "kinesics"
+                            },
+                            "comparator": "=",
+                            "right": {
+                                "regex": {
+                                    "pattern": "nod"
+                                }
+                            }
+                        }
+                    }
+                ]
+            }
+        },
+        {
+            "unit": {
+                "layer": "Segment",
+                "partOf": [
+                    {
+                        "partOfTime": "nod"
+                    }
+                ],
+                "label": "s",
+                "constraints": [
+                    {
+                        "comparison": {
+                            "left": {
+                                "reference": "speaker"
+                            },
+                            "comparator": "!=",
+                            "right": {
+                                "reference": "nod.speaker"
+                            }
+                        }
+                    }
+                ]
+            }
+        },
+        {
+            "unit": {
+                "layer": "Token",
+                "partOf": [
+                    {
+                        "partOfStream": "s"
+                    }
+                ],
+                "label": "t",
+                "constraints": [
+                    {
+                        "comparison": {
+                            "left": {
+                                "reference": "upos"
+                            },
+                            "comparator": "=",
+                            "right": {
+                                "string": "DET"
+                            }
+                        }
+                    },
+                    {
+                        "comparison": {
+                            "left": {
+                                "math": {
+                                    "operation": {
+                                        "left": {
+                                            "function": {
+                                                "functionName": "end",
+                                                "arguments": [
+                                                    {
+                                                        "entity": "t"
+                                                    }
+                                                ]
+                                            }
+                                        },
+                                        "operator": "+",
+                                        "right": {
+                                            "math": "2.0"
+                                        }
+                                    }
+                                }
+                            },
+                            "comparator": "<=",
+                            "right": {
+                                "function": {
+                                    "functionName": "start",
+                                    "arguments": [
+                                        {
+                                            "entity": "nod"
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                ]
+            }
+        }
+    ],
+    "results": [
+        {
+            "label": "kwic",
+            "resultsPlain": {
+                "context": [
+                    "s"
+                ],
+                "entities": [
+                    "t"
+                ]
+            }
+        }
+    ]
+}

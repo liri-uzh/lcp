@@ -25,6 +25,7 @@ from .utils import (
     _flatten_coord,
     _get_table,
     _bound_label,
+    _layer_contains,
     _label_layer,
     _get_underlang,
     _is_anchored,
@@ -775,52 +776,35 @@ WHERE {ent_stream_ref} && {cont_tok_stream_ref}
         """
         Produce a frequency table and its JSON metadata
         """
-        count_entities: dict[str, str] = {
-            x["entity"]: "" for x in attributes if "entity" in x
+        count_entities: dict[str, int] = {
+            x["entity"]: 1 for x in attributes if "entity" in x
         }
         assert len(count_entities) < 2, RuntimeError(
             f"Cannot reference more than one entity in the attributes of an analysis {', '.join(count_entities)})"
         )
         counts: list[str] = []
         for func in functions:
-            if func.lower().startswith("freq"):
-                if not count_entities:
-                    counts.append(f"count(*) AS {func.lower()}")
-                    continue
-                count_entity = next(ce for ce in count_entities)
-                counts.append(f"count(DISTINCT {count_entity}) AS {func.lower()}")
-                entity_layer, _ = self.r.label_layer[count_entity]
-                conf_map = cast(dict, self.config["mapping"])
-                token_mapping = conf_map["layer"].get(self.token, {})
-                if "partitions" in token_mapping and self.lang:
-                    token_mapping = token_mapping["partitions"].get(self.lang, {})
-                mapping: dict = conf_map["layer"].get(entity_layer, {})
-                if "partitions" in mapping and self.lang:
-                    mapping = mapping["partitions"].get(self.lang, {})
-                table = _get_table(entity_layer, self.config, self.batch, self.lang)
-                el = entity_layer.lower()
-                lab_n = 1
-                while (el_lab := f"{el[0]}{lab_n}") in self.r.label_layer:
-                    lab_n += 1
-                count_entities[count_entity] = el_lab
-                count_total = (
-                    f"""(SELECT count({el_lab})
-    FROM {self.schema}.{table} {el_lab}"""
-                    + """
-    {joins}
-    WHERE {wheres}) AS {total_label}"""
-                )
-                counts.append(count_total)
-            else:
+            if not func.lower().startswith("freq"):
                 raise NotImplementedError("TODO?")
+            if not count_entities:
+                counts.append(f"count(*) AS {func.lower()}")
+                continue
+            count_entity = next(ce for ce in count_entities)
+            entity_layer, _ = self.r.label_layer[count_entity]
+            entity_alias = self.r.sql.layer(count_entity, entity_layer).alias
+            counts.append(
+                sql_str("count(DISTINCT {}) AS {}", entity_alias, func.lower())
+            )
         if counts:
             jcounts = " , " + " , ".join(counts)
         else:
             jcounts = " "
         funcstr = " , ".join(functions)
+        jselects: list[str] = []
         jjoins: list[str] = []
         jwheres: list[str] = []
         jgroups: list[str] = []
+        jattribs: list[str] = []
         parsed_attributes: list[tuple[str, RefInfo]] = []
         for att in attributes:
             if "entity" in att:
@@ -850,67 +834,97 @@ WHERE {ent_stream_ref} && {cont_tok_stream_ref}
                     self.r.conditions.add(c)
             for condition in constraint._conditions:
                 self.r.conditions.add(condition)
-            # TODO: use sql here
             alias = (ref_info.get("meta") or {}).get("str", ref)
             alias = re.sub("[^a-zA-Z0-9_]", "_", alias)
             alias = alias.lstrip("_").rstrip("_")
-            if "sql" in ref_info:
-                alias = cast(SQLRef, ref_info["sql"]).alias
+            # The method below does not work for sub-attributes of global attributes
+            # if "sql" in ref_info:
+            #     alias = cast(SQLRef, ref_info["sql"]).alias
             self.r.selects.add(ref + sql_str(" AS {}", alias))
             self.r.entities.add(alias)
             parsed_attributes.append((alias, ref_info))
             if (
                 not count_entities
-                or "attribute" not in att
-                or "." not in att["attribute"]
+                # or "attribute" not in att
+                # or "." not in att["attribute"]
             ):
                 continue
-            entity, entity_lab = next(x for x in count_entities.items())
+            entity = next(x for x in count_entities)
             entity_layer, _ = self.r.label_layer[entity]
-            prefix, *_ = att["attribute"].split(".")
-            prefix_layer, _ = self.r.label_layer[prefix]
-            anchorings = [
-                a
-                for a in ANCHORINGS
-                if _is_anchored(self.config, prefix_layer, a)
-                and _is_anchored(self.config, entity_layer, a)
-            ]
-            assert anchorings, RuntimeError(
-                f"Layer {prefix_layer} ({prefix}) does not share an anchoring with layer {entity_layer} ({entity_lab})"
-            )
-            # prefix_table = _get_table(prefix_layer, self.config, self.batch, self.lang)
-            # join_formed = f"{self.schema}.{prefix_table} {prefix}"
-            # if join_formed != f"{self.schema}.{table} {entity_lab}":
-            #     jjoins.append(join_formed)
-            where_anchors = " OR ".join(
-                sql_str("{} && ", self.r.sql.anchor(prefix, prefix_layer, a).alias)
-                + self.r.sql.anchor(entity_lab, entity_layer, a).ref
-                for a in anchorings
-            )
-            jwheres.append(where_anchors)
-            # self.r.selects.update({f"{prefix}.{a} AS {prefix}_{a}" for a in anchorings})
-            jgroups = [
-                self.r.sql.anchor(prefix, prefix_layer, a).alias for a in anchorings
-            ]
-            self.r.entities.update({x for x in jgroups})
+            # prefix, *_ = att["attribute"].split(".")
+            # prefix_layer, _ = self.r.label_layer[prefix]
+            for prefix in ref_info.get("entities", []):
+                prefix_layer, _ = self.r.label_layer.get(prefix, ("", ""))
+                if prefix_layer not in self.conf_layer:
+                    continue
+                if prefix_layer == entity_layer:
+                    continue
+                if not _layer_contains(self.config, prefix_layer, entity_layer):
+                    continue
+                anchorings = [
+                    a
+                    for a in ANCHORINGS
+                    if _is_anchored(self.config, prefix_layer, a)
+                    and _is_anchored(self.config, entity_layer, a)
+                ]
+                if not anchorings:
+                    continue
+                # assert anchorings, RuntimeError(
+                #     f"Layer {prefix_layer} ({prefix}) does not share an anchoring with layer {entity_layer} ({entity_lab})"
+                # )
+                # prefix_table = _get_table(prefix_layer, self.config, self.batch, self.lang)
+                # join_formed = f"{self.schema}.{prefix_table} {prefix}"
+                # if join_formed != f"{self.schema}.{table} {entity_lab}":
+                #     jjoins.append(join_formed)
+                # new_label = self.r.unique_label(
+                #     prefix, prefix_layer, self.r.sql.used_aliases
+                # )
+                anchors = {
+                    a: self.r.sql.anchor(prefix, prefix_layer, a) for a in anchorings
+                }
+                where_anchors = " OR ".join(
+                    f"{anchors[a]} && {self.r.sql.anchor(entity, entity_layer, a)}"
+                    for a in anchorings
+                )
+                jwheres.append(where_anchors)
+                for tab, conds in cast(dict, constraint._joins or {}).items():
+                    if tab not in jjoins:
+                        jjoins.append(tab)
+                    for cond in conds:
+                        if not cond or not isinstance(cond, str):
+                            continue
+                        if cond in jwheres:
+                            continue
+                        jwheres.append(cond)
+                jselect = ref + sql_str(" AS {}", alias)
+                if jselect not in jselects:
+                    jselects.append(jselect)
+                if alias not in jgroups:
+                    jgroups.append(alias)
+                # jwheres.append(f"{ref} = {alias}")
+                # self.r.selects.update({f"{prefix}.{a} AS {prefix}_{a}" for a in anchorings})
+                # jgroups = [new_anchors[a].alias for a in anchorings]
+                # self.r.entities.update({x for x in jgroups})
+                # where_anchors = " OR ".join(
+                #     sql_str("{} && ", self.r.sql.anchor(prefix, prefix_layer, a).alias)
+                #     + self.r.sql.anchor(entity_lab, entity_layer, a).ref
+                #     for a in anchorings
+                # )
+                # jwheres.append(where_anchors)
+                # # self.r.selects.update({f"{prefix}.{a} AS {prefix}_{a}" for a in anchorings})
+                # jgroups = [
+                #     self.r.sql.anchor(prefix, prefix_layer, a).alias for a in anchorings
+                # ]
+                # self.r.entities.update({x for x in jgroups})
         assert parsed_attributes, RuntimeError(
             f"Need at least one *attribute* referenced in the analysis"
         )
-        if count_entities:
-            count_entity_layer, _ = self.r.label_layer[next(x for x in count_entities)]
-            total_label = f"total_{count_entity_layer.lower()}"
-            funcstr += f", {total_label}"
-            jcounts = jcounts.format(
-                joins=" CROSS JOIN " + " CROSS JOIN ".join(jjoins) if jjoins else "",
-                wheres=" AND ".join(jwheres),
-                total_label=total_label,
-            )
         nodes = " , ".join(p for p, _ in parsed_attributes)
         wheres, filter_meta = self._process_filters(filt)
         out = f"""
-            res{i} AS ( SELECT
+            SELECT
                 {i}::int2 AS rstype,
-                jsonb_build_array({nodes}, {funcstr})
+                jsonb_build_array(FALSE, {nodes}, {funcstr})
             FROM
                 (
                     SELECT
@@ -918,9 +932,41 @@ WHERE {ent_stream_ref} && {cont_tok_stream_ref}
                         {jcounts}
                     FROM
                         match_list
-                    GROUP BY {nodes}{', '+','.join(jgroups) if jgroups else ''}
-                ) x {wheres} )
+                    GROUP BY {nodes}
+                ) x {wheres}
         """
+        if count_entities:
+            # only support one for now
+            entity_lab = next(e for e in count_entities)
+            entity_lay, _ = self.r.label_layer[entity_lab]
+            entity_ref = self.r.sql.layer(entity_lab, entity_lay, pointer=True)
+            inner_selects = ", ".join(
+                [f"count({entity_ref.alias}) AS total_{entity_lay.lower()}", *jselects]
+            )
+            inner_from = " CROSS JOIN ".join(
+                [next(t for t in entity_ref.joins), *jjoins]
+            )
+            inner_where = ("WHERE " + " AND ".join(jwheres)) if jwheres else ""
+            inner_group = ("GROUP BY " + ", ".join(jgroups)) if jgroups else ""
+            inner_cte = f"""SELECT {inner_selects}
+            FROM {inner_from}
+            {inner_where}
+            {inner_group}
+            """
+            array_selects = [s.split(" AS ")[-1] for s in jselects]
+            array_selects.append(f"total_{entity_lay.lower()}")
+            out = f"""
+            SELECT
+               {i}::int2 AS rstype,
+               jsonb_build_array(TRUE, {', '.join(array_selects)})
+              FROM (
+                  {inner_cte}
+              ) y
+            UNION ALL
+            {out}"""
+        out = f"""res{i} AS (
+            {out}
+        )"""
         attribs: Attribs = []
         # for att in attributes:
         for attr, info in parsed_attributes:
@@ -932,16 +978,14 @@ WHERE {ent_stream_ref} && {cont_tok_stream_ref}
             attribs.append({"name": attr, "type": typed})
         for func in functions:
             attribs.append({"name": func, "type": "aggregate"})
-        if count_entities:
-            count_entity_layer, _ = self.r.label_layer[next(x for x in count_entities)]
-            attribs.append(
-                {"name": f"total_{count_entity_layer.lower()}", "type": "aggregate"}
-            )
         meta: ResultMetadata = {
             "attributes": attribs,
             "name": label,
             "type": "analysis",
         }
+        if count_entities:
+            count_entity_layer, _ = self.r.label_layer[next(x for x in count_entities)]
+            meta["total"] = [*[{"name": g, "type": "."} for g in jgroups], {"name": f"total_{count_entity_layer.lower()}", "type": "aggregate"}]  # type: ignore
         return out, meta, filter_meta
 
     def _space_item(self, item: str) -> tuple[set[str], Joins]:

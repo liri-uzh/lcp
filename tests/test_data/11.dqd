@@ -1,0 +1,16 @@
+# test NOT EXISTS
+
+Segment s
+
+NOT EXISTS
+    Kinesics%s nod
+        kinesics = /nod/
+
+Token@s t
+    upos = "DET"
+
+kwic => plain
+    context
+        s
+    entities
+        t

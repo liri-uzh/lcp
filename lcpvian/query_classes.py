@@ -943,11 +943,11 @@ class QueryInfo:
         post_processes: dict = self.post_processes
         batch_hash, _ = self.query_batches[batch_name]
         res: list = self.get_from_cache(batch_hash)
-        lines_so_far, n_res = self.get_lines_batch(batch_name)
-        if n_res == 0 or lines_so_far + n_res < offset:
-            # Indicate we have processed this batch
-            self.set_cache(stats_key, [new_stats_batches, stats_results])
-            return
+        # lines_so_far, n_res = self.get_lines_batch(batch_name)
+        # if n_res == 0 or lines_so_far + n_res < offset:
+        #     # Indicate we have processed this batch
+        #     self.set_cache(stats_key, [new_stats_batches, stats_results])
+        #     return
         (_, to_send, _, _, _) = _aggregate_results(
             res,
             stats_results,

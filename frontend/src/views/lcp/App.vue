@@ -22,7 +22,7 @@
                 {{ $t('menu-home') }}
               </router-link>
             </li>
-            <li class="nav-item">
+            <!-- <li class="nav-item">
               <router-link class="nav-link" to="/query">
                 <FontAwesomeIcon
                   :icon="['fas', 'magnifying-glass']"
@@ -30,7 +30,7 @@
                 />
                 {{ $t('menu-query') }}
               </router-link>
-            </li>
+            </li> -->
             <li class="nav-item">
               <a href="https://lcp.linguistik.uzh.ch/manual" target="_blank" class="nav-link">
                 <FontAwesomeIcon
@@ -48,7 +48,7 @@
             </li> -->
           </ul>
           <ul class="navbar-nav ms-auto">
-            <li>
+            <!-- <li>
               <multiselect
                 v-model="language"
                 @select="changeLanguage"
@@ -63,7 +63,7 @@
                 aria-label="Select a language"
                 >
                 </multiselect>
-            </li>
+            </li> -->
             <li class="nav-item" v-if="debug">
               <span class="nav-link version-number">
                 #{{ appVersion }}

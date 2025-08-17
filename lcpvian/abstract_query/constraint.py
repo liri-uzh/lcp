@@ -24,8 +24,7 @@ from typing import Self
 
 # for (NOT) EXISTS parts of queries
 QUANTOR_TEMPLATE = """
-{quantor} (SELECT 1 FROM {schema}.{base} {label}
-             {joins}
+{quantor} (SELECT 1 FROM {froms}
              {conditions}
            )
 """
@@ -145,16 +144,12 @@ class Constraints:
             for m in member.members:
                 m._quantor_label = self.label
         member.make()
-        not_allowed = f"{self.schema}.{base}".lower()
         joins: Joins = member.joins()
         label_layer = cast(LabelLayer, self.label_layer or dict())
         inner_labels: set[str] = self._inner_labels()
         outer_labels: set[str] = {l for l in label_layer if l not in inner_labels}
-        crossjoins = "\n".join(
-            f"CROSS JOIN {x}"
-            for x in joins
-            if not_allowed not in x.lower() and x.split(" ")[-1] not in outer_labels
-        )
+        fromjoins = [x for x in joins if x.split(" ")[-1] not in outer_labels]
+        froms = "\nCROSS JOIN ".join(fromjoins)
         conds = member.conditions()
         all_conds = [conds]
         for jcs in joins.values():
@@ -165,12 +160,11 @@ class Constraints:
                 continue
             all_conds.append(f"({' AND '.join(str_conds)})")
         conds = "WHERE " + " AND ".join(all_conds)
+        # schema}.{base} {label}
+        #      {joins
         template = self.quantor_template.format(
-            schema=self.schema,
-            base=base,
             quantor=member.quantor,
-            label=member.label,
-            joins=crossjoins,
+            froms=froms,
             conditions=conds,
         )
         return template
@@ -398,8 +392,10 @@ class Constraint:
         if not mapping:
             mapping = _get_mapping(layer, self.config, self.batch, self.lang or "")
 
+        entities = [prefix]
+
         ref = ""
-        ref_info: RefInfo = RefInfo(layer=layer, mapping=mapping)
+        ref_info: RefInfo = RefInfo(layer=layer, mapping=mapping, entities=entities)
         # function string | regex | math | reference | entity
         if "function" in reference:
             ref, ref_info = self.parse_function(reference["function"])
@@ -427,6 +423,10 @@ class Constraint:
             cast(dict, ref_info["meta"])["str"] = reference.get(
                 "reference", reference.get("entity", reference.get("attribute", ""))
             )
+
+        ref_info["entities"] = sorted(
+            list({x for x in (entities + ref_info.get("entities", [])) if x})
+        )
         return (ref, ref_info)
 
     def join_labels_table(
@@ -492,7 +492,10 @@ class Constraint:
 
         left, left_info = self.get_sql_expr(self.left)
         right, right_info = self.get_sql_expr(self.right)
-
+        left_lab, right_lab = [
+            cast(SQLRef, x["sql"]).entity if "sql" in x else y
+            for x, y in ((left_info, left), (right_info, right))
+        ]
         left_type = left_info.get("type", "")
         right_type = right_info.get("type", "")
 
@@ -517,37 +520,37 @@ class Constraint:
                 formed_condition = f"{left} {self.op} {right}"
             elif left_type == "entity":
                 left_layer = left_info.get("layer", self.layer)
-                left_ref = self.sql_corpus.layer(left, left_layer, pointer=True)
+                left_ref = cast(SQLRef, left_info.get("sql"))
                 formed_condition = f"{left_ref} {self.op} {right}"
             elif right_type == "entity":
                 right_layer = right_info.get("layer", self.layer)
-                right_ref = self.sql_corpus.layer(right, right_layer, pointer=True)
+                right_ref = cast(SQLRef, right_info.get("sql"))
                 formed_condition = f"{left} {self.op} {right_ref}"
             else:
                 raise TypeError(f"Cannot compare {left} to {right}")
 
         elif left_type == "entity" and right_type == "entity":
             if self.op.endswith("overlaps"):
-                assert left in (self.label_layer or {}), ReferenceError(
-                    f"{left} cannot overlap anything since it is not a label"
+                assert left_lab in (self.label_layer or {}), ReferenceError(
+                    f"{left_lab} cannot overlap anything since it is not a label"
                 )
-                assert right in (self.label_layer or {}), ReferenceError(
-                    f"{right} cannot overlap anything since it is not a label"
+                assert right_lab in (self.label_layer or {}), ReferenceError(
+                    f"{right_lab} cannot overlap anything since it is not a label"
                 )
                 assert _is_anchored(
                     self.config, left_info.get("layer", ""), "time"
                 ), TypeError(
-                    f"Entity {left} cannot overlap because it is not time-anchored"
+                    f"Entity {left_lab} cannot overlap because it is not time-anchored"
                 )
                 assert _is_anchored(
                     self.config, right_info.get("layer", ""), "time"
                 ), TypeError(
-                    f"Entity {right} cannot overlap because it is not time-anchored"
+                    f"Entity {right_lab} cannot overlap because it is not time-anchored"
                 )
                 left_layer = left_info.get("layer", self.layer)
                 right_layer = right_info.get("layer", self.layer)
-                left_ref = self.sql_corpus.anchor(left, left_layer, "time")
-                right_ref = self.sql_corpus.anchor(right, right_layer, "time")
+                left_ref = self.sql_corpus.anchor(left_lab, left_layer, "time")
+                right_ref = self.sql_corpus.anchor(right_lab, right_layer, "time")
                 formed_condition = f"{left_ref} && {right_ref}"
                 if self.op != "overlaps":
                     formed_condition = f"NOT({formed_condition})"
@@ -557,8 +560,8 @@ class Constraint:
                 )
                 left_layer = left_info.get("layer", self.layer).lower()
                 right_layer = right_info.get("layer", self.layer).lower()
-                left_ref = self.sql_corpus.layer(left, left_layer, pointer=True)
-                right_ref = self.sql_corpus.layer(right, right_layer, pointer=True)
+                left_ref = cast(SQLRef, left_info.get("sql"))
+                right_ref = cast(SQLRef, right_info.get("sql"))
                 formed_condition = f"{left_ref} {self.op} {right_ref}"
 
         elif "labels" in (left_type, right_type):
@@ -652,56 +655,56 @@ class Constraint:
                 "reference", reference.get("entity", reference.get("attribute", ""))
             ),
         )
-        post_dots: list[str] = []
-        sub_ref: str = ""
-        if "." in ref:
-            ref, *post_dots = ref.strip().split(".")
-            sub_ref = ".".join(post_dots)
-
-        ref_info = RefInfo(
-            type="string",
-            layer=layer,
-            mapping=mapping,
-        )
+        ref, *post_dots = ref.strip().split(".")
 
         attributes = _get_all_attributes(layer, self.config, self.lang or "")
+        attr = ""
+        if ref not in attributes and ref in lab_lay:
+            prefix = ref
+            layer = lab_lay[prefix][0] or layer
+            attributes = _get_all_attributes(layer, self.config, self.lang or "")
+            if post_dots:
+                ref, *post_dots = post_dots
 
-        # Undotted attribute reference
-        if ref in attributes and prefix:
+        entities = [prefix]
+        ref_info = RefInfo(
+            type="string", layer=layer, mapping=mapping, entities=entities
+        )
+
+        attr = ref if ref in attributes else ""
+        sub_ref = ".".join(post_dots)
+
+        if attr:
+            attr_info = attributes[attr]
             glob_attr = self.config.get("globalAttributes", {}).get(
-                attributes[ref].get("ref", ""), {}
+                attr_info.get("ref", ""), {}
             )
-            if post_dots:  # sub-attributes
-                keys = (glob_attr or attributes[ref]).get("keys", {})
+            if sub_ref:
+                keys = (glob_attr or attr_info).get("keys", {})
                 ref_type = keys.get(sub_ref, {}).get("type", "string")
                 ref_info["type"] = ref_type
-                sql_ref = self.sql_corpus.attribute(prefix, layer, ref)
+                sql_ref = self.sql_corpus.attribute(prefix, layer, attr)
                 accessor = (
                     "->>" if ref_type in ("string", "text", "categorical") else "->"
                 )
-                ref = accessor.join([sql_ref.ref, f"'{sub_ref}'"])
+                ref = accessor.join(
+                    [sql_ref.ref, sql_str("{att}", att=sql.Literal(sub_ref))]
+                )
             elif glob_attr:  # pointer ref to global attribute
                 ref_info["type"] = "id"
                 sql_ref = self.sql_corpus.attribute(prefix, layer, ref, pointer=True)
             else:
-                ref_info["type"] = attributes[ref].get("type", "string")
-                if ref_info["type"] == "labels":
-                    ref_info["meta"] = {"nbit": attributes[ref].get("nlabels", 1)}
-                sql_ref = self.sql_corpus.attribute(prefix, layer, ref)
-        # Layer or dotted-attribute reference
-        elif ref in lab_lay:
-            layer = lab_lay[ref][0]
-            if post_dots:
-                attributes = _get_all_attributes(layer, self.config, self.lang or "")
-                sql_ref = self.sql_corpus.attribute(ref, layer, sub_ref)
-                ref_info["type"] = attributes[sub_ref].get("type", "string")
-                if ref_info["type"] == "labels":
-                    ref_info["meta"] = {"nbit": attributes[sub_ref].get("nlabels", 1)}
-            else:
-                sql_ref = self.sql_corpus.layer(ref, layer)
-                ref_info = RefInfo(
-                    type="entity", layer=layer, mapping=mapping, sql=sql_ref
+                ref_info["type"] = (
+                    "entity"
+                    if "entity" in attr_info
+                    else attr_info.get("type", "string")
                 )
+                if ref_info["type"] == "labels":
+                    ref_info["meta"] = {"nbit": attr_info.get("nlabels", 1)}
+                sql_ref = self.sql_corpus.attribute(prefix, layer, ref)
+        else:
+            sql_ref = self.sql_corpus.layer(ref, layer, pointer=True)
+            ref_info = RefInfo(type="entity", layer=layer, mapping=mapping, sql=sql_ref)
 
         try:
             assert sql_ref
@@ -716,6 +719,9 @@ class Constraint:
         )
 
         for tab, conds in sql_ref.joins.items():
+            if not conds:
+                self._joins[tab] = set()
+                continue
             for cond in conds:
                 self._add_join_on(tab, cond)
 
@@ -724,6 +730,7 @@ class Constraint:
         except:
             ref = sql_ref.ref
 
+        ref_info["entities"] = entities + ref_info.get("entities", [])
         return (ref, ref_info)
 
     def parse_math(
@@ -827,6 +834,9 @@ class Constraint:
                 sql_fn=sql.Literal(sql_fn),
             )
             ref_info = RefInfo(type="number", meta={"str": ref_info_str})
+        ref_info["entities"] = [
+            e for _, ri in parsed_ars for e in ri.get("entities", [])
+        ]
         return (fn_str, ref_info)
 
 

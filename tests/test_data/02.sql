@@ -7,7 +7,7 @@ WITH RECURSIVE fixed_parts AS
           "t1"."char_range" AS "t1_char_range",
           "t1"."token_id" AS "t1",
           "t1"."upos" AS "t1_upos",
-          "t1_lemma"."lemma" AS t1_lemma,
+          "t1_lemma"."lemma" AS "t1_lemma",
           "t2"."char_range" AS "t2_char_range",
           "t2"."token_id" AS "t2",
           "t2"."upos" AS "t2_upos",
@@ -19,12 +19,13 @@ WITH RECURSIVE fixed_parts AS
      (SELECT Segment_id
       FROM sparcling1.fts_vector_enrest vec
       WHERE vec.vector @@ '3VERB <1> 3DET <1> (3NOUN & 6NP)') AS fts_vector_s
+   CROSS JOIN "sparcling1"."token_enrest" "t1"
    CROSS JOIN "sparcling1"."session_en" "e"
    CROSS JOIN "sparcling1"."session_alignment" "e_aligned"
-   CROSS JOIN "sparcling1"."segment_enrest" "s"
-   CROSS JOIN "sparcling1"."token_enrest" "t1"
    CROSS JOIN "sparcling1"."token_enrest" "t2"
    CROSS JOIN "sparcling1"."token_enrest" "t3"
+   CROSS JOIN "sparcling1"."segment_enrest" "s"
+   CROSS JOIN "sparcling1"."deprel_en" "anonymous"
    CROSS JOIN "sparcling1"."lemma_en" "t1_lemma"
    WHERE "e"."char_range" && "s"."char_range"
      AND "e".alignment_id = "e_aligned".alignment_id
@@ -39,6 +40,9 @@ WITH RECURSIVE fixed_parts AS
      AND "t1_lemma"."lemma_id" = "t1"."lemma_id"
      AND "t2"."token_id" - "t1"."token_id" = 1
      AND "t3"."token_id" - "t2"."token_id" = 1
+     AND ("anonymous"."dependent" = "t3"."token_id"
+          AND "anonymous"."head" = "t1"."token_id"
+          AND ("anonymous"."udep")::text = ('dobj')::text)
      AND ("e_aligned"."meta"->>'date')::text ~ '^2000' ),
                gather AS
   (SELECT "e",
@@ -48,6 +52,7 @@ WITH RECURSIVE fixed_parts AS
           "s_char_range",
           "t1",
           "t1_char_range",
+          "t1_lemma",
           "t1_upos",
           "t2",
           "t2_char_range",
@@ -55,8 +60,7 @@ WITH RECURSIVE fixed_parts AS
           "t3",
           "t3_char_range",
           "t3_upos",
-          "t3_xpos",
-          t1_lemma
+          "t3_xpos"
    FROM fixed_parts) ,
                match_list AS
   (SELECT gather."e" AS "e",
@@ -66,6 +70,7 @@ WITH RECURSIVE fixed_parts AS
           gather."s_char_range" AS "s_char_range",
           gather."t1" AS "t1",
           gather."t1_char_range" AS "t1_char_range",
+          gather."t1_lemma" AS "t1_lemma",
           gather."t1_upos" AS "t1_upos",
           gather."t2" AS "t2",
           gather."t2_char_range" AS "t2_char_range",
@@ -73,8 +78,7 @@ WITH RECURSIVE fixed_parts AS
           gather."t3" AS "t3",
           gather."t3_char_range" AS "t3_char_range",
           gather."t3_upos" AS "t3_upos",
-          gather."t3_xpos" AS "t3_xpos",
-          gather.t1_lemma AS t1_lemma
+          gather."t3_xpos" AS "t3_xpos"
    FROM gather),
                res1 AS
   (SELECT DISTINCT 1::int2 AS rstype,
@@ -82,7 +86,7 @@ WITH RECURSIVE fixed_parts AS
    FROM match_list) ,
                res2 AS
   (SELECT 2::int2 AS rstype,
-          jsonb_build_array(t1_lemma, frequency)
+          jsonb_build_array(FALSE, t1_lemma, frequency)
    FROM
      (SELECT t1_lemma ,
              count(*) AS frequency

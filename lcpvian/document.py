@@ -32,7 +32,7 @@ async def document(request: web.Request) -> web.Response:
         user_data,
         "lcp",
     ):
-        raise PermissionError("This user is not authorized to modify this corpus")
+        raise PermissionError("This user is not authorized to access this corpus")
 
     corpus_conf = request.app["config"][str(corpus)]
     schema = corpus_conf["schema_path"]
@@ -65,7 +65,7 @@ async def document_ids(request: web.Request) -> web.Response:
         user_data,
         "lcp",
     ):
-        raise PermissionError("This user is not authorized to modify this corpus")
+        raise PermissionError("This user is not authorized to access this corpus")
 
     if "doc_ids" not in config[corpus_id]:
         job = request.app["query_service"].document_ids(

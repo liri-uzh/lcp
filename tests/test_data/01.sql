@@ -14,16 +14,16 @@ WITH RECURSIVE fixed_parts AS
           "t3"."char_range" AS "t3_char_range",
           "t3"."token_id" AS "t3",
           "t3"."xpos2" AS "t3_xpos2",
-          "t3_lemma"."lemma" AS t3_lemma
+          "t3_lemma"."lemma" AS "t3_lemma"
    FROM
      (SELECT Segment_id
       FROM bnc1.fts_vectorrest vec
       WHERE vec.vector @@ '7ART <1> (2true & 7ADJ) <1> 7SUBST') AS fts_vector_s
+   CROSS JOIN "bnc1"."tokenrest" "t3"
    CROSS JOIN "bnc1"."document" "d"
-   CROSS JOIN "bnc1"."segmentrest" "s"
    CROSS JOIN "bnc1"."tokenrest" "t1"
    CROSS JOIN "bnc1"."tokenrest" "t2"
-   CROSS JOIN "bnc1"."tokenrest" "t3"
+   CROSS JOIN "bnc1"."segmentrest" "s"
    CROSS JOIN "bnc1"."lemma" "t3_lemma"
    CROSS JOIN "bnc1"."lemma" "t2_lemma"
    WHERE "d"."char_range" && "s"."char_range"
@@ -55,8 +55,8 @@ WITH RECURSIVE fixed_parts AS
           "t2_xpos2",
           "t3",
           "t3_char_range",
-          "t3_xpos2",
-          t3_lemma
+          "t3_lemma",
+          "t3_xpos2"
    FROM fixed_parts) ,
                match_list AS
   (SELECT gather."d" AS "d",
@@ -73,8 +73,8 @@ WITH RECURSIVE fixed_parts AS
           gather."t2_xpos2" AS "t2_xpos2",
           gather."t3" AS "t3",
           gather."t3_char_range" AS "t3_char_range",
-          gather."t3_xpos2" AS "t3_xpos2",
-          gather.t3_lemma AS t3_lemma
+          gather."t3_lemma" AS "t3_lemma",
+          gather."t3_xpos2" AS "t3_xpos2"
    FROM gather),
                res1 AS
   (SELECT DISTINCT 1::int2 AS rstype,
@@ -82,7 +82,7 @@ WITH RECURSIVE fixed_parts AS
    FROM match_list) ,
                res2 AS
   (SELECT 2::int2 AS rstype,
-          jsonb_build_array(t3_lemma, frequency)
+          jsonb_build_array(FALSE, t3_lemma, frequency)
    FROM
      (SELECT t3_lemma ,
              count(*) AS frequency

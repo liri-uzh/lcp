@@ -1,0 +1,15 @@
+WITH preps AS (SELECT Segment_id, id_offset, content FROM candor__5003f209a11e4737ae21a00cb8857736_3.prepared_Segment WHERE Segment_id = ANY(:sids)),
+    meta AS (SELECT
+    "Segment"."segment_id" AS "Segment_id", "Segment"."char_range" AS "Segment_char_range", "Segment"."frame_range" AS "Segment_frame_range", "Segment"."f0_avg" AS "Segment_f0_avg", "Segment"."f0_max" AS "Segment_f0_max", "Segment"."f0_min" AS "Segment_f0_min", "Segment_speaker"."speaker" AS "Segment_speaker", "Segment"."intensity_avg" AS "Segment_intensity_avg", "Segment"."intensity_max" AS "Segment_intensity_max", "Segment"."intensity_min" AS "Segment_intensity_min", "Segment"."meta"::jsonb AS "Segment_meta", "Document"."document_id" AS "Document_id", "Document"."char_range" AS "Document_char_range", "Document"."frame_range" AS "Document_frame_range", "Document"."media"::jsonb AS "Document_media", "Document"."name"::text AS "Document_name", "Document_speaker_L"."speaker" AS "Document_speaker_L", "Document_speaker_R"."speaker" AS "Document_speaker_R", "Document"."meta"::jsonb AS "Document_meta"
+FROM
+    preps
+    LEFT JOIN "candor__5003f209a11e4737ae21a00cb8857736_3"."segmentrest" "Segment" ON "Segment"."segment_id" = preps."segment_id"
+    LEFT JOIN "candor__5003f209a11e4737ae21a00cb8857736_3"."global_attribute_speaker" "Segment_speaker" ON "Segment_speaker"."speaker_id" = "Segment"."speaker_id"
+    LEFT JOIN "candor__5003f209a11e4737ae21a00cb8857736_3"."document" "Document" ON "Document"."char_range" @> "Segment"."char_range"
+    LEFT JOIN "candor__5003f209a11e4737ae21a00cb8857736_3"."global_attribute_speaker" "Document_speaker_L" ON "Document_speaker_L"."speaker_id" = "Document"."speaker_l_id"
+    LEFT JOIN "candor__5003f209a11e4737ae21a00cb8857736_3"."global_attribute_speaker" "Document_speaker_R" ON "Document_speaker_R"."speaker_id" = "Document"."speaker_r_id"
+GROUP BY
+    "Segment"."segment_id", "Segment"."f0_avg", "Segment"."f0_max", "Segment"."f0_min", "Segment_speaker"."speaker", "Segment"."intensity_avg", "Segment"."intensity_max", "Segment"."intensity_min", "Segment"."meta"::jsonb, "Document"."document_id", "Document_speaker_L"."speaker", "Document_speaker_R"."speaker", "Document"."meta"::jsonb)
+SELECT -1::int2 AS rstype, jsonb_build_array(preps.segment_id, preps.id_offset, preps.content) FROM preps
+UNION ALL
+SELECT -2::int2 AS rstype, jsonb_build_array(meta."Segment_id", meta."Segment_char_range", meta."Segment_frame_range", meta."Segment_f0_avg", meta."Segment_f0_max", meta."Segment_f0_min", meta."Segment_speaker", meta."Segment_intensity_avg", meta."Segment_intensity_max", meta."Segment_intensity_min", meta."Segment_meta", meta."Document_id", meta."Document_char_range", meta."Document_frame_range", meta."Document_media", meta."Document_name", meta."Document_speaker_L", meta."Document_speaker_R", meta."Document_meta") FROM meta;

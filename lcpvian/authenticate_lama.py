@@ -68,7 +68,7 @@ class Lama(Authentication):
         self,
         corpus_id: str,
         user_data: JSONObject | None,
-        app_type: str = "",
+        app_type: str = "lcp",
         get_all: bool = False,
     ) -> bool:
 
@@ -114,6 +114,33 @@ class Lama(Authentication):
         if app_type == "soundscript" and data_type in ["audio", "video"]:
             return True
 
+        return False
+
+    def check_corpus_searchable(
+        self,
+        corpus_id: str,
+        user_data: JSONObject | None,
+        app_type: str = "lcp",
+        get_all: bool = False,
+    ) -> bool:
+        allowed = self.check_corpus_allowed(
+            corpus_id, user_data, app_type=app_type, get_all=get_all
+        )
+        if not allowed:
+            return False
+        corpus: CorpusConfig = self.app["config"][corpus_id]
+        auth_required = corpus.get("authRequired")
+        if not auth_required:
+            return True
+        user_data_d: dict = cast(dict, user_data or {})
+        user: dict = user_data_d.get("user") or user_data_d.get("account", {})
+        if not user.get("id"):
+            return False
+        is_swissdox = corpus.get("isSwissdox")
+        if not is_swissdox:
+            return True
+        if user.get("swissdoxUser") or user["id"] in SUPER_ADMINS:
+            return True
         return False
 
     ## JSON responses to GET requests

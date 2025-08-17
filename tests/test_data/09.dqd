@@ -1,0 +1,15 @@
+Kinesics k1
+    kinesics = "nod_yes"
+
+Kinesics%k1 k2
+    kinesics = "smile"
+    speaker = k1.speaker
+
+Segment%k1%k2 s
+    speaker != k1.speaker
+
+kwic => plain
+    context
+        s
+    entities
+        s
