@@ -707,7 +707,7 @@ export default {
   },
   updated() {
     // this.setTooltips();
-    setTooltips();
+    // setTooltips();
   },
   beforeUnmount() {
     // this.removeTooltips();

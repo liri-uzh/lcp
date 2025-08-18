@@ -118,6 +118,8 @@ import LoadingView from "@/components/LoadingView.vue";
 import FooterView from "@/components/FooterView.vue";
 import NotificationView from "@/components/NotificationView.vue";
 import config from "@/config";
+import Utils from "@/utils";
+import { useNotificationStore } from "@/stores/notificationStore";
 
 export default {
   name: "AppCatchphrase",
@@ -131,7 +133,22 @@ export default {
   },
   mounted() {
     document.title = config.appName;
-    useUserStore().fetchUserData();
+    useUserStore().fetchUserData().then(()=>{
+      if (!this.userData.pending_invites) return;
+      window.copyEmails = []
+      for (let {title, corpus, emails} of Object.values(this.userData.pending_invites)) {
+        useNotificationStore().add({
+          text: `
+            The following email addresses asked to be invited to the corpus ${corpus.name} in the group ${title}:<br>
+            ${emails.join("<br>")}<br>
+            <input type="button" value="Copy emails" onclick="copyEmails[${window.copyEmails.length}]()">
+          `,
+          type: "dark",
+          timeout: 30
+        });
+        window.copyEmails.push(()=>Utils.copy(emails.join(", ")));
+      }
+    });
     useCorpusStore().fetchCorpora();
   },
   unmounted() {

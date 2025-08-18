@@ -54,7 +54,16 @@
           </div>
         </div>
       </div>
-      <div class="row mt-5" v-if="selectedCorpora">
+      <div class="row mt-5" v-if="noCorpus">
+        <div class="col-12 mt-3" v-if="userData && userData.user && userData.user.id">
+          {{ noCorpus.message }}
+          <a href="#" class="btn-light" @click.stop.prevent="requestInvite" v-if="noCorpus.link">{{ noCorpus.link }}</a>
+        </div>
+        <div class="col-12 mt-3" v-else>
+          Either there is no corpus at this address, or it is not publicly accessible. Please log in and check again.
+        </div>
+      </div>
+      <div class="row mt-5" v-else-if="selectedCorpora">
         <div class="col-12 mt-3">
           <div class="form-floating mb-3">
             <nav>
@@ -870,6 +879,7 @@ export default {
       // timelineEntry: null,
 
       modalIndexKey: 0,
+      noCorpus: null,
       local: window.location.hostname == "localhost"
     };
   },
@@ -887,9 +897,10 @@ export default {
   watch: {
     corpora: {
       handler() {
-        if (this.preselectedCorporaId) {
+        const preselectedCorporaId = this.preselectedCorporaId;
+        if (preselectedCorporaId) {
           let corpus = this.corpora.filter(
-            (corpus) => corpus.meta.id == this.preselectedCorporaId
+            (corpus) => corpus.meta.id == preselectedCorporaId
           );
           if (corpus.length) {
             this.selectedCorpora = {
@@ -897,6 +908,7 @@ export default {
               value: corpus[0].meta.id,
               corpus: corpus[0],
             };
+            this.noCorpus = null;
             this.checkAuthUser()
             this.defaultQueryDQD = this.getSampleQuery();
             this.queryDQD = this.getSampleQuery();
@@ -904,6 +916,18 @@ export default {
             this.showGraph = 'main'
             setTimeout(() => this.graphIndex++, 1)
             this.fetch(); // Retrieve the saved queries
+          }
+          else {
+            useCorpusStore().getCorpus(preselectedCorporaId).then(r=>{
+              if (this.selectedCorpora)
+                return;
+              this.noCorpus = {message: "There is no corpus at this address."}
+              if (r.data.status != 200)
+                return;
+              this.noCorpus.message = "You do not have access to this corpus.";
+              this.noCorpus.link = "Click here to send an access request to the owner.";
+              this.noCorpus.id = preselectedCorporaId;
+            });
           }
           this.validate();
         }
@@ -955,6 +979,7 @@ export default {
         //   setTimeout(() => (this.corpusGraph = this.selectedCorpora.corpus), 1);
         this.showGraph = 'main'
         setTimeout(() => this.graphIndex++, 1)
+        this.noCorpus = null;
       } else {
         history.pushState({}, null, `/query/`);
       }
@@ -1139,6 +1164,21 @@ export default {
       ) {
         window.location.replace("/login");
       }
+    },
+    requestInvite() {
+      if (!this.noCorpus || !this.noCorpus.id) return;
+      useCorpusStore().requestInvite(this.noCorpus.id).then(r=>{
+        if (r.data.status == 200)
+          useNotificationStore().add({
+            type: "success",
+            text: `Invitation request sent.`
+          });
+        else
+          useNotificationStore().add({
+            type: "error",
+            text: r.data.error,
+          });
+      })
     },
     openCorpusDetailsModal(corpus) {
       this.corpusModal = { ...corpus };
@@ -1758,7 +1798,6 @@ export default {
       const ds = JSON.parse(JSON.stringify(this.WSDataSentences)) || {};
       dr.result = dr.result || {};
       ds.result = ds.result || {};
-      console.log("dr", dr, "ds", ds);
       return [dr,ds].every(d=>Object.entries(d.result).every(([k,v])=>k==0 || !v || v.length==0));
     }
   },

@@ -65,10 +65,8 @@ const Utils = {
     frameNumberToSeconds(frameNumber, frameRate = 25) {
       return frameNumber*1000/frameRate;
     },
-    copyToClip(item) {
-      let space = t=>!('spaceAfter' in t) || t.spaceAfter;
-      let plain = item.map(t=>`${t.form}${space(t)?' ':''}`).join('');
-      let rich = item.map(t=>`${t.group>=0?'<strong>':''}${t.form}${space(t)?' ':''}${t.group>=0?'</strong>':''}`).join('');
+    copy(rich, plain) {
+      if (!plain) plain = rich;
       function listener(e) {
         e.clipboardData.setData("text/html", rich);
         e.clipboardData.setData("text/plain", plain);
@@ -77,6 +75,12 @@ const Utils = {
       document.addEventListener("copy", listener);
       document.execCommand("copy");
       document.removeEventListener("copy", listener);
+    },
+    copyToClip(item) {
+      let space = t=>!('spaceAfter' in t) || t.spaceAfter;
+      let plain = item.map(t=>`${t.form}${space(t)?' ':''}`).join('');
+      let rich = item.map(t=>`${t.group>=0?'<strong>':''}${t.form}${space(t)?' ':''}${t.group>=0?'</strong>':''}`).join('');
+      this.copy(plain, rich);
     },
     formatDate: (date, format = 'DD.MM.YYYY HH:mm') => {
       return date ? moment(date).format(format) : '';
