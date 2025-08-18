@@ -903,6 +903,7 @@ export default {
             this.preselectedCorporaId = null;
             this.showGraph = 'main'
             setTimeout(() => this.graphIndex++, 1)
+            this.fetch(); // Retrieve the saved queries
           }
           this.validate();
         }
@@ -1764,7 +1765,6 @@ export default {
   mounted() {
     // this.userId = this.userData.user.id;
     setTooltips();
-    this.fetch(); // Retrieve the saved queries
   },
   beforeUnmount() {
     removeTooltips();
