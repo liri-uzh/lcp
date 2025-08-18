@@ -168,6 +168,13 @@
                       <div class="tab-content" id="nav-query-tabContent">
                         <div class="tab-pane fade show active pt-3" id="nav-plaintext" role="tabpanel"
                           aria-labelledby="nav-plaintext-tab">
+                          <span
+                            class="btn icon-x col-sm-1"
+                            @click.stop="toggleModal('text')"
+                            v-if="selectedCorpora && selectedCorpora.corpus"
+                          >
+                            <FontAwesomeIcon :icon="['fas', 'circle-info']" />
+                          </span>
                           <input class="form-control" type="text" :placeholder="$t('common-plain-query')" :class="isQueryValidData == null || isQueryValidData.valid == true
                             ? 'ok'
                             : 'error'
@@ -179,6 +186,13 @@
                         </div>
                         <div class="tab-pane fade pt-3" id="nav-dqd" role="tabpanel"
                           aria-labelledby="nav-results-tab">
+                          <span
+                            class="btn icon-x col-sm-1"
+                            @click.stop="toggleModal('dqd')"
+                            v-if="selectedCorpora && selectedCorpora.corpus"
+                          >
+                            <FontAwesomeIcon :icon="['fas', 'circle-info']" />
+                          </span>
                           <EditorView :query="queryDQD" :defaultQuery="defaultQueryDQD" :corpora="selectedCorpora"
                             :invalidError="isQueryValidData && isQueryValidData.valid != true
                               ? isQueryValidData.error
@@ -191,6 +205,13 @@
                           </p>
                         </div>
                         <div class="tab-pane fade pt-3" id="nav-cqp" role="tabpanel" aria-labelledby="nav-cqp-tab">
+                          <span
+                            class="btn icon-x col-sm-1"
+                            @click.stop="toggleModal('cqp')"
+                            v-if="selectedCorpora && selectedCorpora.corpus"
+                          >
+                            <FontAwesomeIcon :icon="['fas', 'circle-info']" />
+                          </span>
                           <textarea class="form-control query-field" :placeholder="$t('common-cqp-query')"
                             :class="isQueryValidData == null || isQueryValidData.valid == true
                               ? 'ok'
@@ -698,10 +719,80 @@
     </div>
 
 
+    <div class="modal fade" id="DQDModal" tabindex="-1" aria-labelledby="DQDModalLabel"
+      aria-hidden="true" ref="DQDModal">
+      <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="DQDModalLabel">
+              DQD query information
+            </h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body text-start">
+            <span>DQD is the LCP-specific query language. for more information on it, please visit the <a href="https://lcp.linguistik.uzh.ch/manual/dqd.html" target="_blank">Manual</a>.</span>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+              {{ $t('common-close') }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal fade" id="CQPModal" tabindex="-1" aria-labelledby="CQPModalLabel"
+      aria-hidden="true" ref="CQPModal">
+      <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="CQPModalLabel">
+              CQP query information
+            </h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body text-start">
+            <span>CQP is the query language developed for the <a href="https://cwb.sourceforge.io/">CWB (Corpus Work Bench)</a>. A manual of it can be found <a href="https://cwb.sourceforge.io/files/CQP_Manual.pdf">here</a>.</span>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+              {{ $t('common-close') }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal fade" id="TextModal" tabindex="-1" aria-labelledby="TextModalLabel"
+      aria-hidden="true" ref="TextModal">
+      <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="TextModalLabel">
+              Text query information
+            </h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body text-start">
+            <span>specifying a query in plain text is straight forward: just enter the word (sequence) you are interested in, e.g. <tt class="queryExample">Européenne</tt>, <tt class="queryExample">der internationale Währungsfond</tt>, <tt class="queryExample">I have a dream</tt>.<br>Be aware that search strings are interpreted case-sensitive and literally, so no stemming or lemmatization is performed; therefore <tt class="queryExample">internationaler Währungsfond</tt> will very likely not produce any hits, since this Named Entity is virtually always used with the determiner, as written before.</span>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+              {{ $t('common-close') }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+
   </div>
 </template>
 
 <style scoped>
+.queryExample {
+  background-color: lightcoral;
+}
 .export {
   float: left;
 }
@@ -1066,6 +1157,24 @@ export default {
     // },
   },
   methods: {
+    toggleModal(language) {
+    	let modalEl;
+
+    	switch (language) {
+      	case "cqp":
+          modalEl = this.$refs.CQPModal;
+          break;
+      	case "dqd":
+          modalEl = this.$refs.DQDModal;
+          break;
+      	case "text":
+          modalEl = this.$refs.TextModal;
+          break;
+    	}
+
+      const modal = new Modal(modalEl)
+      modal.show()
+    },
     getLanguageName(lg) {
       const cl = this.corpusLanguages.find(v=>v.value.toLowerCase() == lg.toLowerCase());
       if (cl)
