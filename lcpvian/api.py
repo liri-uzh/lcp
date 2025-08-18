@@ -59,7 +59,7 @@ async def search(request: web.Request) -> web.Response:
         lg = partitions.get("values", [""])[0]
     kwargs: dict[str, Any] = {"config": {cid: corpus_conf}, "corpus": cid}
 
-    val = await validate(query, kind, **kwargs)
+    val = validate(query, kind, **kwargs)
     if val.get("status") != 200:
         return web.HTTPForbidden(text=cast(dict, val).get("error", "Error"))
 

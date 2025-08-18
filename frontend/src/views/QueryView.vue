@@ -1521,8 +1521,7 @@ export default {
       fullSearch = false,
       to_export = false
     ) {
-      const query = this.currentQuery;
-      if (this.isSubmitDisabled || !query)
+      if (this.isSubmitDisabled || !this.currentQuery || !this.query)
         return;
       if (!localStorage.getItem("dontShowResultsNotif"))
         this.showResultsNotification = true;
@@ -1536,7 +1535,7 @@ export default {
       }
       let data = {
         corpus: this.selectedCorpora.value,
-        query: query,
+        query: this.query,
         user: this.userData.user.id,
         room: this.roomId,
         languages: this.selectedLanguages,
