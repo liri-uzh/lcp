@@ -369,6 +369,8 @@ def _is_anchored(config: dict[str, Any], layer: str, anchor: str) -> bool:
     layer_config = config["layer"].get(layer, {})
     if layer_config.get("anchoring", {}).get(anchor):
         return True
+    if any(x for x in layer_config.get("anchoring", {}).values()):
+        return False  # if *other* anchors are True, this one is False
     child: str = layer_config.get("contains", "")
     if child in config["layer"]:
         return _is_anchored(config, child, anchor)

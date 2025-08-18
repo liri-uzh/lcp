@@ -1006,6 +1006,8 @@ def _parent_of(config: CorpusConfig, child: str, parent: str) -> bool:
 def _is_anchored(entity: dict, config: dict, anchor: str) -> bool:
     if "anchoring" in entity:
         return entity["anchoring"].get(anchor, False)
+    if any(x for x in entity.get("anchoring", {}).values()):
+        return False  # if *other* anchors are True, this one is False
     if entity.get("contains", "") in config.get("layer", {}):
         return _is_anchored(config["layer"][entity["contains"]], config, anchor)
     return False
