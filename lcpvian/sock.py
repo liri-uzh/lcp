@@ -442,7 +442,7 @@ async def _handle_sock(
     # user edited a query, triggering auto-validation of the DQD/JSON
     elif action == "validate":
         payload["config"] = conf
-        resp = await validate(**payload)
+        resp = validate(**payload)
         await push_msg(sockets, session_id, resp, just=ident)
 
     # used in simultaneous mode only: once FE sees enough results, cancel

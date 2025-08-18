@@ -903,6 +903,7 @@ export default {
             this.preselectedCorporaId = null;
             this.showGraph = 'main'
             setTimeout(() => this.graphIndex++, 1)
+            this.fetch(); // Retrieve the saved queries
           }
           this.validate();
         }
@@ -1521,8 +1522,7 @@ export default {
       fullSearch = false,
       to_export = false
     ) {
-      const query = this.currentQuery;
-      if (this.isSubmitDisabled || !query)
+      if (this.isSubmitDisabled || !this.currentQuery || !this.query)
         return;
       if (!localStorage.getItem("dontShowResultsNotif"))
         this.showResultsNotification = true;
@@ -1536,7 +1536,7 @@ export default {
       }
       let data = {
         corpus: this.selectedCorpora.value,
-        query: query,
+        query: this.query,
         user: this.userData.user.id,
         room: this.roomId,
         languages: this.selectedLanguages,
@@ -1765,7 +1765,6 @@ export default {
   mounted() {
     // this.userId = this.userData.user.id;
     setTooltips();
-    this.fetch(); // Retrieve the saved queries
   },
   beforeUnmount() {
     removeTooltips();

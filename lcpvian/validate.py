@@ -95,7 +95,7 @@ def process_refs(
     return ret
 
 
-async def validate(
+def validate(
     query: str = "",
     kind: str = "json",
     **kwargs: dict[str, Any],
@@ -194,7 +194,7 @@ async def validate(
                 "error": str(e),
                 "status": 400,
             }
-    elif kind == "text":
+    else:  # if kind == "text":
         try:
             # plain text search
             json_query = textsearch_to_json(query, conf)
