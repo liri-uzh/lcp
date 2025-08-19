@@ -343,7 +343,7 @@ export default {
         text: `${name} has been copied to clipboard`,
       });
     },
-    formatDate: Utils.formatDate,Clipboard,
+    formatDate: Utils.formatDate,
     async APIKeyRevoke(projectId, apiKeyId) {
       let retval = await useProjectStore().revokeApiKey(projectId, apiKeyId);
       if (retval.result == "ok") {
