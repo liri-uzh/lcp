@@ -125,7 +125,29 @@ export default {
   },
   mounted() {
     document.title = config.appName;
-    useUserStore().fetchUserData();
+    useUserStore().fetchUserData().then(()=>{
+      if (!this.userData.pending_invites) return;
+      window.copyEmails = []
+      window.discardInvites = [];
+      for (let [cid, {title, corpus, emails}] of Object.entries(this.userData.pending_invites)) {
+        useNotificationStore().add({
+          text: `
+            The following email address(es) asked to be invited to the corpus ${corpus.name} in the group ${title}:<br>
+            ${emails.join("<br>")}<br>
+            <input type="button" value="Copy email(s)" onclick="copyEmails[${window.copyEmails.length}]()">
+            <input type="button" value="Discard request(s)" style="float: right;" onclick="discardInvites[${window.discardInvites.length}](${cid})">
+          `,
+          type: "dark",
+          timeout: 60
+        });
+        window.copyEmails.push(()=>Utils.copy(emails.join(", ")));
+        window.discardInvites.push(
+          (cid)=>useCorpusStore().discardInvites(cid).then(
+            (r)=>r.data.status == 200 && useNotificationStore().add({text:"Invite request(s) discarded."})
+          )
+        );
+      }
+    });
     useCorpusStore().fetchCorpora();
   },
   unmounted() {

@@ -18,8 +18,11 @@ from email.mime.multipart import MIMEMultipart
 
 from json.decoder import JSONDecodeError
 
-from .utils import _filter_corpora
-from .utils import _remove_sensitive_fields_from_corpora
+from .utils import (
+    _filter_corpora,
+    _remove_sensitive_fields_from_corpora,
+    get_pending_invites,
+)
 from .typed import JSONObject
 
 from aiohttp import web
@@ -88,6 +91,31 @@ async def check_corpus(request: web.Request) -> web.Response:
     if str(corpus_id) in request.app["config"]:
         ret = {"status": 200, "message": "Corpus found."}
     return web.json_response(ret)
+
+
+async def discard_invites(request: web.Request) -> web.Response:
+    """
+    Remove the redis key for the invite to this corpus
+    """
+    authenticator = request.app["auth_class"](request.app)
+    try:
+        user_data = await authenticator.user_details(request)
+    except ClientOSError as err:
+        return web.json_response({"error": "Failed to log in.", "status": 401})
+    subscriptions = user_data.get("subscription", {}).get("subscriptions", {})
+    pending_invites = get_pending_invites(request, subscriptions)
+    no_pending_res = {"error": "No pending invites for this user.", "status": 401}
+    if not pending_invites:
+        return web.json_response(no_pending_res)
+    corpus_id = request.match_info["corpus_id"]
+    import pdb
+
+    pdb.set_trace()
+    if corpus_id not in pending_invites:
+        return web.json_response(no_pending_res)
+    request_id = f"request_invite::{corpus_id}"
+    request.app["redis"].delete(request_id)
+    return web.json_response({"status": 200, "message": "Invitation discarded."})
 
 
 async def request_invite(request: web.Request) -> web.Response:

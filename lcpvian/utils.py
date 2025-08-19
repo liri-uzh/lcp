@@ -26,9 +26,7 @@ from aiohttp import web
 
 # here we remove __slots__ from these superclasses because mypy can't handle them...
 from redis import Redis as RedisConnection
-
 from redis._parsers import _AsyncHiredisParser, _AsyncRESP3Parser  # type: ignore
-
 from redis.utils import HIREDIS_AVAILABLE
 
 DefaultParser: Any
@@ -1230,3 +1228,31 @@ async def copy_to_table(
         timeout=timeout,
     )
     return None
+
+
+def get_pending_invites(request: web.Request, subscriptions: list) -> dict:
+    """
+    Return a dict mapping corpus IDs to invites {title,corpus,emails}
+    """
+    ret = {}
+    config = request.app["config"]
+    subscriptions_map = {y["id"]: y for x in subscriptions for y in x["profiles"]}
+    for cid, corpus in config.items():
+        project_id = corpus.get("project_id", "")
+        if project_id not in subscriptions_map:
+            continue
+        if not subscriptions_map[project_id].get("isAdmin"):
+            continue
+        request_id = f"request_invite::{cid}"
+        existing_invites = json.loads(request.app["redis"].get(request_id) or "[]")
+        if not existing_invites:
+            continue
+        corpus_name = corpus.get(
+            "name", corpus.get("shortname", corpus.get("meta", {}).get("name", ""))
+        )
+        ret[cid] = {
+            "title": subscriptions_map[project_id].get("title", ""),
+            "corpus": {"name": corpus_name, "id": cid},
+            "emails": existing_invites,
+        }
+    return ret
