@@ -1899,7 +1899,7 @@ export default {
       return (this.selectedCorpora && this.selectedCorpora.length == 0) ||
         this.loading === true ||
         (this.isQueryValidData != null && this.isQueryValidData.valid == false) ||
-        !this.query ||
+        !this.query.trim() ||
         !this.selectedLanguages
     },
     noResults() {
