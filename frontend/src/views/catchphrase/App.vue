@@ -139,12 +139,12 @@ export default {
       for (let {title, corpus, emails} of Object.values(this.userData.pending_invites)) {
         useNotificationStore().add({
           text: `
-            The following email addresses asked to be invited to the corpus ${corpus.name} in the group ${title}:<br>
+            The following email address(es) asked to be invited to the corpus ${corpus.name} in the group ${title}:<br>
             ${emails.join("<br>")}<br>
             <input type="button" value="Copy emails" onclick="copyEmails[${window.copyEmails.length}]()">
           `,
           type: "dark",
-          timeout: 30
+          timeout: 60
         });
         window.copyEmails.push(()=>Utils.copy(emails.join(", ")));
       }
