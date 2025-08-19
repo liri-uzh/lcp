@@ -9,7 +9,7 @@ def textsearch_to_json(text: str, conf: dict[str, Any] | None = None) -> dict:
         "Not a single-line plain text search"
     )
 
-    forms = [x.strip() for x in re.split(r"\b", text) if x.strip()]
+    forms = re.findall(r"\S+", text)
 
     segment_layer = (conf or {}).get("firstClass", {}).get("segment", "Segment")
     token_layer = (conf or {}).get("firstClass", {}).get("token", "Token")
