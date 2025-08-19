@@ -752,7 +752,7 @@
             <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
           </div>
           <div class="modal-body text-start">
-            <span>CQP is the query language developed for the <a href="https://cwb.sourceforge.io/">CWB (Corpus Work Bench)</a>. A manual of it can be found <a href="https://cwb.sourceforge.io/files/CQP_Manual.pdf">here</a>.</span>
+            <span>CQP is the query language developed for the <a href="https://cwb.sourceforge.io/" target="_blank">CWB (Corpus Work Bench)</a>. The basic functionalities described <a href="https://www.sketchengine.eu/documentation/cql-basics/" target="_blank">here</a> are implemented in LCP.</span>
           </div>
           <div class="modal-footer">
             <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
@@ -774,7 +774,7 @@
             <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
           </div>
           <div class="modal-body text-start">
-            <span>specifying a query in plain text is straight forward: just enter the word (sequence) you are interested in, e.g. <tt class="queryExample">Européenne</tt>, <tt class="queryExample">der internationale Währungsfond</tt>, <tt class="queryExample">I have a dream</tt>.<br>Be aware that search strings are interpreted case-sensitive and literally, so no stemming or lemmatization is performed; therefore <tt class="queryExample">internationaler Währungsfond</tt> will very likely not produce any hits, since this Named Entity is virtually always used with the determiner, as written before.</span>
+            <span>Specifying a query in plain text is straightforward: just enter the word or sequence of words you are interested in, e.g. <code class="queryExample">Européenne</code>, <code class="queryExample">der internationale Währungsfond</code>, <code class="queryExample">I have a dream</code>.<br>Search strings are interpreted case-sensitive and literally and can match either the form or the lemma of a token.</span>
           </div>
           <div class="modal-footer">
             <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
