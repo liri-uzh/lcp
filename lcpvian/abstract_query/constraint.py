@@ -17,6 +17,7 @@ from .utils import (
     _joinstring,
     _is_anchored,
     _layer_contains,
+    _bound_label,
 )
 from ..utils import _get_all_attributes
 
@@ -1131,22 +1132,22 @@ def process_set(
     joins: Joins = {}
     conditions: dict[str, int] = {}
 
-    first_unit: dict[str, Any] = next(
-        (u["unit"] for u in set_data.get("members", []) if "unit" in u), {}
-    )
-    lay = first_unit.get("layer", token)
-
     set_label = label or set_data.get("label", "")
     if not set_label:
         set_label = r.unique_label(f"unknown_set", "_internal", r.label_layer)
 
-    if attribute == "___tokenid___":
-        field_ref = r.sql.layer(set_label, config["token"], pointer=True)
-    else:
-        field_ref = r.sql.attribute(set_label, lay, attribute, pointer=True)
+    first_unit: dict[str, Any] = next(
+        (u["unit"] for u in set_data.get("members", []) if "unit" in u), {}
+    )
+    lay = first_unit.get("layer", config["token"])
 
     from_label = first_unit.get("label", "t")
     from_ref = r.sql.layer(from_label, lay)
+
+    if attribute == "___tokenid___":
+        field_ref = r.sql.layer(from_label, config["token"], pointer=True)
+    else:
+        field_ref = r.sql.attribute(from_label, lay, attribute, pointer=True)
 
     assert config["layer"][lay].get("layerType") != "relation", TypeError(
         f"Cannot build a set of relational entities ({lay})"
@@ -1174,6 +1175,7 @@ def process_set(
         for k, v in join.items():
             if disallowed.lower() == k.lower():
                 continue
+            # TODO: only join bound tables
             joins[k] = v
             if not isinstance(v, set):
                 continue
@@ -1199,12 +1201,12 @@ def process_set(
     formed = sql_str(
         f"""
               (SELECT array_agg({field_ref})
-              FROM {from_ref} {LR}
+              FROM 
                {strung_joins} 
                {strung_conds}
               ) AS {LR}
     """,
         from_ref.alias,
-        field_ref.alias,
+        set_label,
     )
     return formed.strip()

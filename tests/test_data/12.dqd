@@ -1,0 +1,29 @@
+Document d
+    classCode = /^S/
+
+Segment@d s
+
+sequence@s seq
+    Token t1
+        xpos2 = "ART"
+    Token t2
+        xpos2 = "ADJ"
+        lemma = "true"
+    Token t3
+        xpos2 = "SUBST"
+
+kwic => plain
+    context
+        s
+    entities
+        t1
+        t2
+        t3
+
+results3 => collocation
+    center
+        t2
+    window
+        -2..+2
+    attribute
+        form

@@ -80,7 +80,7 @@ def process_refs(
             )
             if recent_label and ref not in (refs := ret.get(recent_label, set())):
                 ret[recent_label] = refs.union({ref})
-    if obj.get("attribute", "").count(".") == 1:
+    if isinstance(obj.get("attribute"), str) and obj["attribute"].count(".") == 1:
         _, aname = obj["attribute"].split(".")
         assert any(
             aname in _get_all_attributes(x, conf) for x in conf["layer"]
@@ -136,17 +136,8 @@ def check_refs(
                     assert x in all_refs, ReferenceError(
                         f"Could find no entity labeled '{x}'."
                     )
-            if "resultsCollocation" in r:
-                if "space" in r["resultsCollocation"]:
-                    space = r["resultsCollocation"]["space"]
-                    assert space in all_refs, ReferenceError(
-                        f"Could find no entity labeled {space}."
-                    )
-                if "center" in r["resultsCollocation"]:
-                    center = r["resultsCollocation"]["center"]
-                    assert center in all_refs, ReferenceError(
-                        f"Could find no entity labeled {center}."
-                    )
+            else:
+                pass
 
 
 def validate(

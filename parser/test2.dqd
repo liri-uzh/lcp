@@ -61,4 +61,4 @@ results3 => collocation
     window
         -32..+32
     attribute
-        t2.form
+        form
