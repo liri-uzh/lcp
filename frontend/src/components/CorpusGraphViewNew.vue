@@ -72,6 +72,7 @@ export default {
     const layers = this.corpus.layer;
     Object.entries(layers).forEach(([layerName,layerProps])=>{
       if (layerProps.contains && typeof(layerProps.contains)=="string")
+        // typeof(layerProps.contains) == 'string' ? layerProps.contains = [layerProps.contains] : layerProps.contains.push
         layerProps.contains = [layerProps.contains];
       if (!layerProps.partOf) return;
       if (!layers[layerProps.partOf].contains)
@@ -225,14 +226,35 @@ export default {
       const nodes = hierarchy.descendants();
 
       const additionalLinks = Object.entries(this.additionalParents).map(([parentId,childrenIds])=>{
-        const parent = nodes.find((n)=>n.id==parentId);
-        if (!parent) return null;
+        const parentNode = nodes.find((n)=>n.id==parentId);
+        if (!parentNode) return null;
         return childrenIds.map((cid)=>{
           const child = nodes.find((n)=>n.id==cid);
-          const [parentWidth, childWidth] = [parent, child].map(x=>displayTextWidth(x.label));
           return Object({
-            source: {x: parent.x, y: parent.y, data: {width: parentWidth}},
-            target: {x: child.x, y: child.y, data: {width: childWidth}}
+            source: {
+              data: {
+                width: 10
+              },
+              id: child.id,
+              x: child.x,
+              y: child.y
+            },
+            target: {
+              data: {
+                width: child.width
+              },
+              id: parentNode.id,
+              x: parentNode.x,
+              y: parentNode.y,
+              child: {
+                data : {
+                  width: child.width
+                },
+                id: child.id,
+                x: child.x,
+                y: child.y
+              }
+            }
           });
         });
       }).flat().filter(x=>x != null);
@@ -319,7 +341,7 @@ export default {
       const x = event.pageX;
       const y = event.pageY;
       this.viewBoxPointer = {
-        x: x + this.viewBoxOffset.x, 
+        x: x + this.viewBoxOffset.x,
         y: y + this.viewBoxOffset.y,
       };
     },
