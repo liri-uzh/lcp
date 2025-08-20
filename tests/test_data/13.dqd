@@ -3,13 +3,13 @@ Document d
 
 Segment@d s
 
-Token t3
+Token@s t3
     xpos2 = "SUBST"
 
 set prox
-    Token tx
-        position(prox) > position(t3) - 20
-        position(prox) < position(t3) + 20
+    Token@s tx
+        position(tx) > position(t3) - 20
+        position(tx) < position(t3) + 20
         tx != t3
 
 kwic => plain
@@ -22,4 +22,4 @@ results3 => collocation
     space
         prox
     attribute
-        t2.form
+        form

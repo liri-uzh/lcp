@@ -413,6 +413,13 @@ def _bound_label(
             for m in obj["sequence"].get("members", []):
                 if _bound_label(label, m, tmp_in_scope):
                     return True
+        if "set" in obj:
+            if obj["set"].get("label") == label:
+                return in_scope
+            tmp_in_scope = in_scope
+            for m in obj["set"].get("members", []):
+                if _bound_label(label, m, tmp_in_scope):
+                    return True
         if "logicalExpression" in obj:
             logic = obj["logicalExpression"]
             tmp_in_scope = in_scope or (
