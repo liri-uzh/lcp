@@ -145,6 +145,7 @@ menu-manual = Manuel
 
 modal-details-count = Nombre mots
 modal-details-revison = Révison
+modal-details-date = Date
 modal-details-url = URL
 modal-details-description = Description
 modal-details-language = Langue principale
