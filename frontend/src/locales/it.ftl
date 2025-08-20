@@ -144,6 +144,7 @@ menu-manual = Manuale
 
 modal-details-count = Conteggio parole
 modal-details-revison = Revisione
+modal-details-date = Data
 modal-details-url = URL
 modal-details-description = Descrizione
 modal-details-language = Lingua principale
