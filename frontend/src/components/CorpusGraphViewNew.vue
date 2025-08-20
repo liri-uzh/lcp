@@ -230,30 +230,19 @@ export default {
         if (!parentNode) return null;
         return childrenIds.map((cid)=>{
           const child = nodes.find((n)=>n.id==cid);
+          const [childWidth, parentWidth] = [child,parentNode].map(n=>displayTextWidth(n.label));
           return Object({
             source: {
-              data: {
-                width: 10
-              },
+              data: {width: childWidth},
               id: child.id,
               x: child.x,
               y: child.y
             },
             target: {
-              data: {
-                width: child.width
-              },
+              data: {width: parentWidth},
               id: parentNode.id,
               x: parentNode.x,
-              y: parentNode.y,
-              child: {
-                data : {
-                  width: child.width
-                },
-                id: child.id,
-                x: child.x,
-                y: child.y
-              }
+              y: parentNode.y
             }
           });
         });
