@@ -1365,7 +1365,7 @@ export default {
           // console.log("Query validation", data);
           if (data.kind in { dqd: 1, text: 1, cqp: 1 } && data.valid == true)
             this.query = JSON.stringify(data.json, null, 2);
-          else
+          else if (data.kind != "json")
             this.query = "";
           if (data.kind == "cqp" && !data.valid)
             data.error = "Incomplete query or invalid CQP syntax";

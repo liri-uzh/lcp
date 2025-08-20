@@ -220,10 +220,10 @@ def validate(
             result["all_refs"] = {k: sorted(v) for k, v in all_refs.items()}  # type: ignore
         except Exception as e:
             result = {
-                "kind": kind,
                 "valid": False,
                 "action": "validate",
                 "error": str(e),
                 "status": 400,
             }
+        result["kind"] = kind
     return result
