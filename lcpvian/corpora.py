@@ -108,9 +108,6 @@ async def discard_invites(request: web.Request) -> web.Response:
     if not pending_invites:
         return web.json_response(no_pending_res)
     corpus_id = request.match_info["corpus_id"]
-    import pdb
-
-    pdb.set_trace()
     if corpus_id not in pending_invites:
         return web.json_response(no_pending_res)
     request_id = f"request_invite::{corpus_id}"

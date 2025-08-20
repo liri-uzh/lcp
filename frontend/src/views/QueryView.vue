@@ -103,36 +103,6 @@
               <div class="tab-pane fade pt-3"
                 :class="{ active: activeMainTab === 'query', show: activeMainTab === 'query' }" id="nav-query"
                 role="tabpanel" aria-labelledby="nav-query-tab">
-                <div class="mt-3">
-                  <button type="button" @click="submit" class="btn btn-primary me-1 mb-1"
-                    :disabled="isSubmitDisabled || !currentQuery">
-                    <FontAwesomeIcon :icon="['fas', 'magnifying-glass-chart']" />
-                    {{ loading == "resubmit" ? $t('common-resubmit') : $t('common-submit') }}
-                  </button>
-
-                  <button
-                    type="button"
-                    v-if="queryStatus in {'satisfied':1,'finished':1} && !loading && userData.user.anon != true"
-                    class="btn btn-primary me-1 mb-1"
-                    data-bs-toggle="modal"
-                    data-bs-target="#exportModal"
-                    @click="setExportFilename('xml')"
-                  >
-                    <FontAwesomeIcon :icon="['fas', 'file-export']" />
-                    {{ $t('common-export') }}
-                  </button>
-
-                  <button type="button" v-if="queryStatus == 'satisfied' && !loading && userData.user.anon != true"
-                    @click="submitFullSearch" class="btn btn-primary me-1 mb-1">
-                    <FontAwesomeIcon :icon="['fas', 'magnifying-glass-chart']" />
-                    {{ $t('common-search-whole') }}
-                  </button>
-                  <button v-else-if="loading" type="button" @click="stop" :disabled="loading == false"
-                    class="btn btn-primary me-1 mb-1">
-                    <FontAwesomeIcon :icon="['fas', 'xmark']" />
-                    {{ $t('common-stop') }}
-                  </button>
-                </div>
                 <div class="row">
                   <div class="col-12 col-md-6">
                     <div class="form-floating mb-3">
@@ -240,8 +210,39 @@
                       </div>
                     </div>
                     <div class="mt-5">
+
+                      <button type="button" @click="submit" class="btn btn-primary me-2 mb-2"
+                        :disabled="isSubmitDisabled || !currentQuery">
+                        <FontAwesomeIcon :icon="['fas', 'magnifying-glass-chart']" />
+                        {{ loading == "resubmit" ? $t('common-resubmit') : $t('common-submit') }}
+                      </button>
+
+                      <button
+                        type="button"
+                        class="btn btn-primary me-2 mb-2"
+                        v-if="queryStatus in {'satisfied':1,'finished':1} && !loading && userData.user.anon != true"
+                        data-bs-toggle="modal"
+                        data-bs-target="#exportModal"
+                        @click="setExportFilename('xml')"
+                      >
+                        <FontAwesomeIcon :icon="['fas', 'file-export']" />
+                        {{ $t('common-export') }}
+                      </button>
+
+                      <button type="button" v-if="queryStatus == 'satisfied' && !loading && userData.user.anon != true && currentQuery == querySatisfied"
+                        @click="submitFullSearch" class="btn btn-primary me-2 mb-2">
+                        <FontAwesomeIcon :icon="['fas', 'magnifying-glass-chart']" />
+                        {{ $t('common-search-whole') }}
+                      </button>
+                      <button v-else-if="loading" type="button" @click="stop" :disabled="loading == false"
+                        class="btn btn-primary me-1 mb-1">
+                        <FontAwesomeIcon :icon="['fas', 'xmark']" />
+                        {{ $t('common-stop') }}
+                      </button>
+
                       <button type="button" v-if="!loading && userData.user.anon != true && userQueryVisible()"
                         :disabled="saveQueryDisabled" class="btn btn-primary me-2 mb-2"
+                        style="float: right;"
                         data-bs-toggle="modal" data-bs-target="#saveQueryModal">
                         <FontAwesomeIcon :icon="['fas', 'file-export']" />
                         {{ $t('common-save-query') }}
@@ -930,6 +931,7 @@ export default {
       percentageTotalDone: 0,
       percentageWordsDone: 0,
       loading: false,
+      querySatisfied: "",
       requestId: "",
       stats: null,
       queryTest: "const noop = () => {}",
@@ -1086,6 +1088,7 @@ export default {
         this.percentageTotalDone = 0;
         this.failedStatus = false;
         this.loading = false;
+        this.querySatisfied = "";
         this.WSDataResults = {};
         this.WSDataMeta = {};
         this.WSDataSentences = {};
@@ -1231,6 +1234,7 @@ export default {
       if (["satisfied", "overtime"].includes(status)) {
         this.percentageDone = 100;
         this.loading = false;
+        this.querySatisfied = this.currentQuery;
       }
     },
     updatePage(currentPage) {
@@ -1662,6 +1666,8 @@ export default {
       this.submit(null, /*resumeQuery=*/resume, /*cleanResults=*/false, /*full=*/full, /*to_export=*/to_export);
     },
     submitFullSearch() {
+      if (this.currentQuery != this.querySatisfied)
+        return;
       this.submit(null, true, false, true);
     },
     async submit(
@@ -1794,6 +1800,10 @@ export default {
       useCorpusStore().fetchQueries(data);
     },
     handleQuerySelection(selectedQuery) {
+      if (this.currentQuery.trim()) {
+        if (!confirm("Loading this saved query will overwrite the current one, which will be lost. Are you sure you want to proceed?"))
+          return;
+      }
       if (this.currentTab == "text") {
         this.textsearch = selectedQuery.query.query;
       }
