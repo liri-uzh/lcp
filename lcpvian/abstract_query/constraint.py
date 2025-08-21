@@ -1178,7 +1178,9 @@ def process_set(
         for k, v in join.items():
             if disallowed.lower() == k.lower():
                 continue
-            if not isinstance(k, RichStr) or k.meta.get("entity", "") == from_label:
+            if not isinstance(k, RichStr) or _bound_label(
+                k.meta.get("entity", ""), {"set": set_data}
+            ):
                 joins[k] = v
             if not isinstance(v, set):
                 continue

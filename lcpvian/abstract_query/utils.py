@@ -408,6 +408,12 @@ def _bound_label(
         if "unit" in obj:
             if obj["unit"].get("label") == label:
                 return in_scope
+            for c in obj["unit"].get("constraints", []):
+                if not isinstance(c, dict):
+                    continue
+                tmp_in_scope = in_scope
+                if _bound_label(label, c, tmp_in_scope):
+                    return True
         if "sequence" in obj:
             if obj["sequence"].get("label") == label:
                 return in_scope
