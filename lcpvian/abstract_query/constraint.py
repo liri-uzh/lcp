@@ -4,7 +4,7 @@ from psycopg import sql
 from typing import Any, cast
 from uuid import UUID
 
-from .typed import JSONObject, Joins, LabelLayer, RefInfo, SQLRef
+from .typed import JSONObject, Joins, LabelLayer, RefInfo, RichStr, SQLRef
 from .utils import (
     Config,
     _get_underlang,
@@ -190,7 +190,9 @@ class Constraints:
                 # do we need a sublevel here?
                 member.make()
                 # Constraint instances necessarily connect their conditions with AND
-                stripped_conditions = [c for c in member._conditions if c.strip()]
+                stripped_conditions = sorted(
+                    [c for c in member._conditions if c.strip()]
+                )
                 conjunction = " AND ".join(stripped_conditions)
                 if len(stripped_conditions) > 1 and self.conj.upper() != "AND":
                     out[f"({conjunction})"] = None
@@ -316,7 +318,7 @@ class Constraint:
             self.config, self.schema, self.batch, self.lang or ""
         )
 
-    def _add_join_on(self, table: str, constraint: str) -> None:
+    def _add_join_on(self, table: str | RichStr, constraint: str) -> None:
         """
         Associate one or more WHERE statements with a JOIN statement
         """
@@ -1018,11 +1020,13 @@ def _get_constraints(
     # if not constraints and order is None:
     #     return None
 
+    sorted_constraints = sorted(cast(list[dict], constraints), key=arg_sort_key)
+
     # sorry about this:
     first_unit: dict[str, Any] = next(
         (
             cast(dict[str, Any], i.get("unit", i.get("sequence", i.get("set"))))
-            for i in sorted(cast(list[dict], constraints), key=arg_sort_key)
+            for i in sorted_constraints
             if any(x in i for x in ("unit", "sequence", "set"))
         ),
         {},
@@ -1072,8 +1076,7 @@ def _get_constraints(
             part_ofs.append(f"{part_ref} && {own_ref}")
     part_of_str = " AND ".join(part_ofs)
 
-    args = cast(list[JSONObject], constraints)
-    for arg in sorted(args, key=arg_sort_key):
+    for arg in sorted_constraints:
         arg_label = cast(str, arg.get("label") or label)
         tup = _get_constraint(
             arg,
@@ -1175,13 +1178,12 @@ def process_set(
         for k, v in join.items():
             if disallowed.lower() == k.lower():
                 continue
-            # TODO: only join bound tables
-            joins[k] = v
+            if not isinstance(k, RichStr) or k.meta.get("entity", "") == from_label:
+                joins[k] = v
             if not isinstance(v, set):
                 continue
-            for join_condition in v:
-                if not isinstance(join_condition, str):
-                    continue
+            join_conditions = sorted([x for x in v if isinstance(x, str)])
+            for join_condition in join_conditions:
                 conditions[join_condition] = 1
         cond = conn_obj.conditions() if conn_obj else ""
         if cond:
@@ -1195,18 +1197,19 @@ def process_set(
         from_ref = r.sql.anchor(from_label, config["token"], "stream")
         conditions[f"{from_stream_ref} && {from_ref}"] = 1
 
+    from_formed = next(k for k in joins)
+    joins = {k: v for k, v in joins.items() if k != from_formed}
     strung_joins = _joinstring(joins)
     strung_conds = "WHERE " + " AND ".join(x for x in conditions) if conditions else ""
 
     formed = sql_str(
         f"""
               (SELECT array_agg({field_ref})
-              FROM 
+              FROM {from_formed}
                {strung_joins} 
                {strung_conds}
               ) AS {LR}
     """,
-        from_ref.alias,
         set_label,
     )
     return formed.strip()

@@ -335,6 +335,7 @@ class ResultsMaker:
                     self.find_set(space) or {},
                     seg_label="___seglabel___",
                     attribute=feat,
+                    label=f"{space}_{feat}",
                 )
             else:
                 # TODO: must be the label of a unit that contains tokens or of a sequence
@@ -1121,10 +1122,7 @@ WHERE {ent_stream_ref} && {cont_tok_stream_ref}
         space = cast(str, result.get("space", ""))
         center = cast(str | None, result.get("center"))
         assert not (space and center), "Only one of space/center allowed!"
-        if space and space in self.r.set_objects:
-            lany = " ANY ( "
-            rbrack = " ) "
-        elif center and (token_meta := self.r.label_layer.get(center)):
+        if center and (token_meta := self.r.label_layer.get(center)):
             seg_depth = 999  # start with a ridiculously deep value
             # Use the label of the first segment layer found in label_layer as a fallback
             seg_lab = next(
@@ -1165,8 +1163,6 @@ WHERE {ent_stream_ref} && {cont_tok_stream_ref}
         assert feat in token_attribs, ReferenceError(
             f"Could find no attribute named '{feat}' on the {self.token} layer."
         )
-        space_feat, lany, rbrack = "", "", ""
-
         tok_lab = f"_token_collocate{i}"
         tok_ref = self.r.sql.layer(tok_lab, self.token, pointer=True)
         tok_attr_ref = self.r.sql.attribute(tok_lab, self.token, feat, pointer=True)
@@ -1178,16 +1174,21 @@ WHERE {ent_stream_ref} && {cont_tok_stream_ref}
                 cte_wheres[c] = 1
 
         if space:
-            # if space in self.r.set_objects:
-            #     select_feat = f"unnest({space_feat})"
-            cte_wheres[f"{tok_ref} = {lany}{space_feat}{rbrack}"] = 1
+            cte_wheres[sql_str(f"{tok_ref} = ANY(unnest({LR}))", space)] = 1
+            # cte = f"""
+            #     collocates{i} AS (
+            #         SELECT {tok_attr_ref}
+            #         FROM {' CROSS JOIN '.join(t for t in cte_tables)}
+            #         WHERE {' AND '.join(w for w in cte_wheres)}),
+            # """
+            attr_ref_suffix = tok_attr_ref.ref.split(".")[-1]
             cte = sql_str(
                 f"""
                 collocates{i} AS (
-                    SELECT {tok_attr_ref}
-                    FROM {' CROSS JOIN '.join(t for t in cte_tables)}
-                    WHERE {' AND '.join(w for w in cte_wheres)}),
-            """,
+                    SELECT unnest(match_list.{LR}) AS {attr_ref_suffix}
+                    FROM match_list
+                ),""",
+                f"{space}_{feat}",
             )
         elif center:
             center_ref = self.r.sql.layer(center, self.token)

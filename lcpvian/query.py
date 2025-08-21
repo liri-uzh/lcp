@@ -227,7 +227,6 @@ def process_query(
     config = app["config"][request.corpus]
     try:
         json_query = json.loads(request.query)
-        json_query = json.loads(json.dumps(json_query, sort_keys=True))
     except json.JSONDecodeError:
         json_query = convert(request.query, config)
     all_batches = _get_query_batches(config, request.languages)

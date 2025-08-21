@@ -4,87 +4,47 @@ WITH RECURSIVE fixed_parts AS
           "d"."meta"->>'classCode' AS "d_classCode",
           "s"."char_range" AS "s_char_range",
           "s"."segment_id" AS "s",
-          "t1"."char_range" AS "t1_char_range",
-          "t1"."token_id" AS "t1",
-          "t1"."xpos2" AS "t1_xpos2",
-          "t2"."char_range" AS "t2_char_range",
-          "t2"."segment_id" AS "t2_segment_id",
-          "t2"."token_id" AS "t2",
-          "t2"."xpos2" AS "t2_xpos2",
-          "t2_lemma"."lemma" AS "t2_lemma",
           "t3"."char_range" AS "t3_char_range",
+          "t3"."segment_id" AS "t3_segment_id",
           "t3"."token_id" AS "t3",
-          "t3"."xpos2" AS "t3_xpos2"
-   FROM
-     (SELECT Segment_id
-      FROM bnc1.fts_vectorrest vec
-      WHERE vec.vector @@ '7ART <1> (2true & 7ADJ) <1> 7SUBST') AS fts_vector_s
+          "t3"."xpos2" AS "t3_xpos2",
+
+     (SELECT array_agg("tx"."form_id")
+      FROM "bnc1"."tokenrest" "tx"
+      WHERE "s"."segment_id" = "tx"."segment_id"
+        AND ((lower("tx"."char_range"))::numeric < (lower("t3"."char_range") + 20)::numeric
+             AND (lower("tx"."char_range"))::numeric > (lower("t3"."char_range") - 20)::numeric
+             AND "tx"."token_id" != "t3"."token_id") ) AS "prox_form"
+   FROM "bnc1".segmentrest AS s
    CROSS JOIN "bnc1"."document" "d"
-   CROSS JOIN "bnc1"."tokenrest" "t1"
-   CROSS JOIN "bnc1"."tokenrest" "t2"
    CROSS JOIN "bnc1"."tokenrest" "t3"
-   CROSS JOIN "bnc1"."segmentrest" "s"
-   CROSS JOIN "bnc1"."lemma" "t2_lemma"
    WHERE "d"."char_range" && "s"."char_range"
-     AND "fts_vector_s"."segment_id" = "s"."segment_id"
-     AND "s"."segment_id" = "t1"."segment_id"
-     AND ("t1"."xpos2")::text = ('ART')::text
-     AND "s"."segment_id" = "t2"."segment_id"
-     AND (("t2_lemma"."lemma")::text = ('true')::text
-          AND ("t2"."xpos2")::text = ('ADJ')::text)
      AND "s"."segment_id" = "t3"."segment_id"
      AND ("t3"."xpos2")::text = ('SUBST')::text
-     AND "t2"."token_id" - "t1"."token_id" = 1
-     AND "t2_lemma"."lemma_id" = "t2"."lemma_id"
-     AND "t3"."token_id" - "t2"."token_id" = 1
      AND ("d"."meta"->>'classCode')::text ~ '^S' ),
-               gather AS
-  (SELECT "d",
-          "d_char_range",
-          "d_classCode",
-          "s",
-          "s_char_range",
-          "t1",
-          "t1_char_range",
-          "t1_xpos2",
-          "t2",
-          "t2_char_range",
-          "t2_lemma",
-          "t2_segment_id",
-          "t2_xpos2",
-          "t3",
-          "t3_char_range",
-          "t3_xpos2"
-   FROM fixed_parts) ,
                match_list AS
-  (SELECT gather."d" AS "d",
-          gather."d_char_range" AS "d_char_range",
-          gather."d_classCode" AS "d_classCode",
-          gather."s" AS "s",
-          gather."s_char_range" AS "s_char_range",
-          gather."t1" AS "t1",
-          gather."t1_char_range" AS "t1_char_range",
-          gather."t1_xpos2" AS "t1_xpos2",
-          gather."t2" AS "t2",
-          gather."t2_char_range" AS "t2_char_range",
-          gather."t2_lemma" AS "t2_lemma",
-          gather."t2_segment_id" AS "t2_segment_id",
-          gather."t2_xpos2" AS "t2_xpos2",
-          gather."t3" AS "t3",
-          gather."t3_char_range" AS "t3_char_range",
-          gather."t3_xpos2" AS "t3_xpos2"
-   FROM gather),
+  (SELECT fixed_parts."d" AS "d",
+          fixed_parts."d_char_range" AS "d_char_range",
+          fixed_parts."d_classCode" AS "d_classCode",
+          fixed_parts."prox_form" AS "prox_form",
+          fixed_parts."s" AS "s",
+          fixed_parts."s_char_range" AS "s_char_range",
+          fixed_parts."t3" AS "t3",
+          fixed_parts."t3_char_range" AS "t3_char_range",
+          fixed_parts."t3_segment_id" AS "t3_segment_id",
+          fixed_parts."t3_xpos2" AS "t3_xpos2"
+   FROM fixed_parts),
                res1 AS
   (SELECT DISTINCT 1::int2 AS rstype,
-                   jsonb_build_array(s, jsonb_build_array(t1, t2, t3))
+                   jsonb_build_array(s, jsonb_build_array(t3))
    FROM match_list) ,
                collocates2 AS
   (SELECT "_token_collocate2"."form_id"
    FROM match_list
    CROSS JOIN "bnc1"."tokenrest" "_token_collocate2"
-   WHERE "_token_collocate2"."token_id" <> match_list."t2"
-     AND "_token_collocate2"."segment_id" = match_list."t2_segment_id"
-     AND "_token_collocate2"."token_id" BETWEEN "t2" + (-2) AND "t2" + (2)),
+   WHERE "_token_collocate2"."token_id" <> match_list."t3"
+     AND "_token_collocate2"."segment_id" = match_list."t3_segment_id"
+     AND "_token_collocate2"."token_id" BETWEEN "t3" + (-2) AND "t3" + (2)),
                resXn2 AS
   (SELECT count(*) AS freq
    FROM collocates2),
@@ -110,6 +70,34 @@ WITH RECURSIVE fixed_parts AS
       CROSS JOIN bnc1.token_n
       CROSS JOIN resXn2
       WHERE "collocates2_form"."form_id" = x."form_id") x) ,
+               collocates3 AS
+  (SELECT unnest(match_list."prox_form") AS "form_id"
+   FROM match_list),
+               resXn3 AS
+  (SELECT count(*) AS freq
+   FROM collocates3),
+               res3 AS
+  (SELECT 3::int2 AS rstype,
+          jsonb_build_array("collocates3_form", o, e)
+   FROM
+     (SELECT "collocates3_form"."form" AS "collocates3_form",
+             o,
+             1. * x.freq / token_n.freq * resXn3.freq AS e
+      FROM
+        (SELECT "collocates3"."form_id",
+                freq,
+                count(*) AS o
+         FROM collocates3
+         JOIN bnc1.token_freq USING ("form_id")
+         WHERE token_freq.lemma_id IS NULL
+           AND token_freq.xpos1 IS NULL
+           AND token_freq.xpos2 IS NULL
+         GROUP BY "form_id",
+                  freq) x
+      CROSS JOIN "bnc1"."form" "collocates3_form"
+      CROSS JOIN bnc1.token_n
+      CROSS JOIN resXn3
+      WHERE "collocates3_form"."form_id" = x."form_id") x) ,
                res0 AS
   (SELECT 0::int2 AS rstype,
           jsonb_build_array(count(match_list.*))
@@ -121,4 +109,7 @@ SELECT *
 FROM res1
 UNION ALL
 SELECT *
-FROM res2 ;
+FROM res2
+UNION ALL
+SELECT *
+FROM res3 ;

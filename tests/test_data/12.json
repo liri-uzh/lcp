@@ -33,76 +33,121 @@
             }
         },
         {
-            "sequence": {
+            "unit": {
+                "layer": "Token",
                 "partOf": [
                     {
                         "partOfStream": "s"
                     }
                 ],
-                "label": "seq",
+                "label": "t3",
+                "constraints": [
+                    {
+                        "comparison": {
+                            "left": {
+                                "reference": "xpos2"
+                            },
+                            "comparator": "=",
+                            "right": {
+                                "string": "SUBST"
+                            }
+                        }
+                    }
+                ]
+            }
+        },
+        {
+            "set": {
+                "label": "prox",
                 "members": [
                     {
                         "unit": {
                             "layer": "Token",
-                            "label": "t1",
-                            "constraints": [
+                            "partOf": [
                                 {
-                                    "comparison": {
-                                        "left": {
-                                            "reference": "xpos2"
-                                        },
-                                        "comparator": "=",
-                                        "right": {
-                                            "string": "ART"
-                                        }
-                                    }
+                                    "partOfStream": "s"
                                 }
-                            ]
-                        }
-                    },
-                    {
-                        "unit": {
-                            "layer": "Token",
-                            "label": "t2",
+                            ],
+                            "label": "tx",
                             "constraints": [
                                 {
                                     "comparison": {
                                         "left": {
-                                            "reference": "xpos2"
+                                            "function": {
+                                                "functionName": "position",
+                                                "arguments": [
+                                                    {
+                                                        "entity": "tx"
+                                                    }
+                                                ]
+                                            }
                                         },
-                                        "comparator": "=",
+                                        "comparator": ">",
                                         "right": {
-                                            "string": "ADJ"
+                                            "math": {
+                                                "operation": {
+                                                    "left": {
+                                                        "function": {
+                                                            "functionName": "position",
+                                                            "arguments": [
+                                                                {
+                                                                    "entity": "t3"
+                                                                }
+                                                            ]
+                                                        }
+                                                    },
+                                                    "operator": "-",
+                                                    "right": {
+                                                        "math": "20"
+                                                    }
+                                                }
+                                            }
                                         }
                                     }
                                 },
                                 {
                                     "comparison": {
                                         "left": {
-                                            "reference": "lemma"
+                                            "function": {
+                                                "functionName": "position",
+                                                "arguments": [
+                                                    {
+                                                        "entity": "tx"
+                                                    }
+                                                ]
+                                            }
                                         },
-                                        "comparator": "=",
+                                        "comparator": "<",
                                         "right": {
-                                            "string": "true"
+                                            "math": {
+                                                "operation": {
+                                                    "left": {
+                                                        "function": {
+                                                            "functionName": "position",
+                                                            "arguments": [
+                                                                {
+                                                                    "entity": "t3"
+                                                                }
+                                                            ]
+                                                        }
+                                                    },
+                                                    "operator": "+",
+                                                    "right": {
+                                                        "math": "20"
+                                                    }
+                                                }
+                                            }
                                         }
                                     }
-                                }
-                            ]
-                        }
-                    },
-                    {
-                        "unit": {
-                            "layer": "Token",
-                            "label": "t3",
-                            "constraints": [
+                                },
                                 {
                                     "comparison": {
                                         "left": {
-                                            "reference": "xpos2"
+                                            "reference": "tx"
                                         },
-                                        "comparator": "=",
+                                        "comparator": "!=",
                                         "right": {
-                                            "string": "SUBST"
+                                            "reference": "t3"
                                         }
                                     }
                                 }
@@ -121,20 +166,27 @@
                     "s"
                 ],
                 "entities": [
-                    "t1",
-                    "t2",
                     "t3"
                 ]
             }
         },
         {
-            "label": "results3",
+            "label": "results2",
             "resultsCollocation": {
-                "center": "t2",
+                "center": "t3",
                 "window": {
                     "leftSpan": "-2",
                     "rightSpan": "2"
                 },
+                "attribute": {
+                    "reference": "form"
+                }
+            }
+        },
+        {
+            "label": "results3",
+            "resultsCollocation": {
+                "space": "prox",
                 "attribute": {
                     "reference": "form"
                 }

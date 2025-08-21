@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from psycopg import sql
 from typing import Any, cast
 
-from .typed import Joins, LabelLayer, QueryType, SQLRef
+from .typed import Joins, LabelLayer, QueryType, RichStr, SQLRef
 
 SUFFIXES = {".*", ".+", ".*?", ".?", ".+?", "."}
 LR = "{}"
@@ -59,7 +59,7 @@ class SQLCorpus:
         entity: str,
         ref: str,
         alias: str,
-        joins: dict[str, dict[str, int]],
+        joins: dict[RichStr, dict[str, int]],
     ) -> SQLRef:
         self.refs[key] = SQLRef(entity, ref, alias, joins)
         return self.refs[key]
@@ -73,8 +73,9 @@ class SQLCorpus:
         if key not in self.refs:
             ref = unique_label(entity, layer, self.used_refs)
             layer_table = _get_table(layer, self.conf, self.batch, self.lang).lower()
-            table = sql_str("{}.{} {}", self.schema, layer_table, ref)
-            joins: dict[str, dict[str, int]] = {table: {}}
+            table = RichStr(sql_str("{}.{} {}", self.schema, layer_table, ref))
+            table.meta["entity"] = entity
+            joins: dict[RichStr, dict[str, int]] = {table: {}}
             if pointer:
                 layer_map = self.conf["mapping"]["layer"].get(layer, {})
                 aligned = "alignment" in layer_map and not layer_map["alignment"].get(
@@ -99,7 +100,7 @@ class SQLCorpus:
         if key in self.refs:
             return self.refs[key]
         used_refs = self.used_refs
-        joins: dict[str, dict[str, int]] = {}
+        joins: dict[RichStr, dict[str, int]] = {}
         entity_key = (entity, "", False)
         entity_ref: SQLRef
         if entity_key in self.refs:
@@ -124,7 +125,8 @@ class SQLCorpus:
         )
         if rel_table:
             rel_ent_label = unique_label(f"{entity_alias}_aligned", layer, used_refs)
-            table = sql_str("{}.{} {}", self.schema, rel_table, rel_ent_label)
+            table = RichStr(sql_str("{}.{} {}", self.schema, rel_table, rel_ent_label))
+            table.meta["entity"] = entity
             condition = sql_str(
                 f"{entity_label}.alignment_id = {LR}.alignment_id", rel_ent_label
             )
@@ -172,7 +174,8 @@ class SQLCorpus:
             ref = entity_alias
             rel_key += "_id"
         else:
-            table = sql_str("{}.{} {}", self.schema, rel_tab, ref)
+            table = RichStr(sql_str("{}.{} {}", self.schema, rel_tab, ref))
+            table.meta["entity"] = entity
             # rel_alias.rel_key_id = entity.attribute_id
             # e.g. Document_speaker_L.speaker_id = Document.speaker_l_id
             condition = sql_str(
@@ -416,7 +419,7 @@ def _bound_label(
         if "set" in obj:
             if obj["set"].get("label") == label:
                 return in_scope
-            tmp_in_scope = in_scope
+            tmp_in_scope = True
             for m in obj["set"].get("members", []):
                 if _bound_label(label, m, tmp_in_scope):
                     return True
