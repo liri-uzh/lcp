@@ -1692,6 +1692,8 @@ export default {
       let data = {
         corpus: this.selectedCorpora.value,
         query: this.query,
+        localQuery: this.currentQuery,
+        kind: this.currentTab,
         user: this.userData.user.id,
         room: this.roomId,
         languages: this.selectedLanguages,

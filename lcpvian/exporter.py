@@ -682,6 +682,9 @@ class Exporter:
                 E.delivered(str(req.lines_sent_so_far)),
                 E.coverage(str(percentage_words_done)),
                 E.json("\n" + json.dumps(self._qi.json_query, indent=2) + "\n  "),
+                E.locals(
+                    *[getattr(E, k)(v) for k, v in self._qi.local_queries.items()]
+                ),
             )
             output.write(_node_to_string(query_node, prefix="  "))
             # STATS

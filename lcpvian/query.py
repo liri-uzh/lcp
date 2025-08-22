@@ -239,6 +239,9 @@ def process_query(
     )
     print("SQL query:", sql_query)
     shash = hasher(sql_query)
+    local_kind = request_data.get("kind")
+    local_query = request_data.get("localQuery")
+    local_queries: dict = {k: v for k, v in [(local_kind, local_query)] if k and v}
     qi = QueryInfo(
         shash,
         app["redis"],
@@ -247,7 +250,10 @@ def process_query(
         post_processes,
         request.languages,
         config,
+        local_queries,
     )
+    if local_kind and local_kind not in qi.local_queries:
+        qi.update({"local_queries": {**qi.local_queries, local_kind: local_query}})
     job: Job | None = None
     should_run: bool = True
     if request.to_export and request.user:
