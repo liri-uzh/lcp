@@ -2,6 +2,7 @@
 project.py: endpoints for project management
 """
 
+import json
 import os
 from aiohttp import web
 
@@ -14,6 +15,7 @@ from .authenticate import Authentication
 from .typed import JSONObject
 
 AIO_PORT = os.getenv("AIO_PORT", 9090)
+MESSAGE_TTL = int(os.getenv("REDIS_WS_MESSSAGE_TTL", 5000))
 
 
 async def project_create(request: web.Request) -> web.Response:
@@ -85,6 +87,21 @@ async def project_users_invite(request: web.Request) -> web.Response:
     res = await authenticator.project_users_invite(
         request, project_id, request_data["emails"]
     )
+    for cid, corpus in request.app["config"].items():
+        if project_id != corpus.get("project_id"):
+            continue
+        request_id = f"request_invite::{cid}"
+        existing_invites = json.loads(request.app["redis"].get(request_id) or "[]")
+        if not existing_invites:
+            continue
+        new_invites = [e for e in existing_invites if e not in request_data["emails"]]
+        if len(new_invites) == len(existing_invites):
+            continue
+        if len(new_invites) == 0:
+            request.app["redis"].delete(request_id)
+            continue
+        request.app["redis"].set(request_id, json.dumps(new_invites))
+        # request.app["redis"].expire(MESSAGE_TTL)
     return web.json_response(res)
 
 

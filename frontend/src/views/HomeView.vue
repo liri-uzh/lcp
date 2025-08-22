@@ -489,7 +489,7 @@ export default {
           corpora = corpora.filter(
             (c) =>
               c.meta.name.search(rgx) > -1 ||
-              c.meta.author.search(rgx) > -1
+              c.meta.authors.search(rgx) > -1
           );
           this.filterError = null;
         }
@@ -707,7 +707,7 @@ export default {
   },
   updated() {
     // this.setTooltips();
-    setTooltips();
+    // setTooltips();
   },
   beforeUnmount() {
     // this.removeTooltips();

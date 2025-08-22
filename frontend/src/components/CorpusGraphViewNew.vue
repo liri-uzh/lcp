@@ -1,6 +1,11 @@
 <template>
-  <div :style="`width: ${this.width}px; height: ${this.height}px; overflow: hidden;`">
+  <div :style="`width: ${width}px; height: ${height}px; overflow: hidden;`">
     <svg id="corpusDiagram"></svg>
+    <div id="zoomControls">
+      <div id="zoomPlus" @click="zoom = Math.min(2.0, zoom - 0.1)">+</div>
+      <div id="zoomReset" @click="placeInit()">reset</div>
+      <div id="zoomMinus" @click="zoom = Math.max(0.2, zoom + 0.1)">-</div>
+    </div>
   </div>
 </template>
 
@@ -67,6 +72,7 @@ export default {
     const layers = this.corpus.layer;
     Object.entries(layers).forEach(([layerName,layerProps])=>{
       if (layerProps.contains && typeof(layerProps.contains)=="string")
+        // typeof(layerProps.contains) == 'string' ? layerProps.contains = [layerProps.contains] : layerProps.contains.push
         layerProps.contains = [layerProps.contains];
       if (!layerProps.partOf) return;
       if (!layers[layerProps.partOf].contains)
@@ -76,6 +82,7 @@ export default {
       layers[layerProps.partOf].contains.push(layerName);
     });
     const globalAttributesDones = {};
+    const additionalParents = {};
     const entities = [];
     for (let [layerName, layerProps] of Object.entries(layers)) {
       const attributes = layerProps.attributes || {};
@@ -87,10 +94,13 @@ export default {
       const nAttrs = Object.keys(attributes).length;
       const folded = nAttrs > NATTR_FOLD;
       for (let [attName, attProps] of Object.entries(attributes)) {
-        if ("entity" in attProps && "name" in attProps)
+        const attId = `${layerName}_${attName}`;
+        if ("entity" in attProps && "name" in attProps) {
           attName = attProps.name;
+          additionalParents[attId] = [attProps.entity];
+        }
         entities.push({
-          id: `${layerName}_${attName}`,
+          id: attId,
           parentId: layerName,
           label: attName,
           attribute: true,
@@ -151,7 +161,6 @@ export default {
       };
       entities.push(layerEntity);
     }
-    const additionalParents = {};
     for (let [layerName, layerProps] of Object.entries(this.corpus.layer)) {
       if (!layerProps.contains) continue;
       const children = entities.filter((e)=>layerProps.contains.includes(e.id));
@@ -161,13 +170,13 @@ export default {
           child.parentId = layerName;
           return;
         }
-        additionalParents[child] = additionalParents[child] || [];
-        additionalParents[child].push(layerName);
+        additionalParents[child.id] = additionalParents[child.id] || [];
+        additionalParents[child.id].push(layerName);
       })
     }
     for (let entity of entities)
       entity.parentId = entity.parentId || "_root";
-    const rootLabel = this.corpus.shortname || this.corpus.meta.shortname;
+    const rootLabel = (this.corpus.meta||{}).name || this.corpus.shortname;
     entities.unshift({id:"_root", label: rootLabel, width: displayTextWidth(rootLabel)});
     entities.forEach((e)=>e.folded = e.folded || false);
     return {
@@ -181,6 +190,11 @@ export default {
   },
   props: ["corpus"],
   methods: {
+    placeInit() {
+      const svgInDOM = document.querySelector("#corpusDiagram");
+      this.viewBoxOffset = {x: -1 * Math.round(WIDTH/2), y: 0};
+      svgInDOM.setAttribute("viewBox", `${this.viewBoxOffset.x} ${this.viewBoxOffset.y} ${WIDTH} ${HEIGHT}`);
+    },
     title(node) {
       const props = node.data.props;
       let title = (props||node.data).description || node.data.label;
@@ -212,11 +226,25 @@ export default {
       const nodes = hierarchy.descendants();
 
       const additionalLinks = Object.entries(this.additionalParents).map(([parentId,childrenIds])=>{
-        const parent = nodes.find((n)=>n.id==parentId);
-        if (!parent) return null;
+        const parentNode = nodes.find((n)=>n.id==parentId);
+        if (!parentNode) return null;
         return childrenIds.map((cid)=>{
           const child = nodes.find((n)=>n.id==cid);
-          return Object({source: {x: parent.x, y: parent.y}, target: {x: child.x, y: child.y}});
+          const [childWidth, parentWidth] = [child,parentNode].map(n=>displayTextWidth(n.label));
+          return Object({
+            source: {
+              data: {width: childWidth},
+              id: child.id,
+              x: child.x,
+              y: child.y
+            },
+            target: {
+              data: {width: parentWidth},
+              id: parentNode.id,
+              x: parentNode.x,
+              y: parentNode.y
+            }
+          });
         });
       }).flat().filter(x=>x != null);
 
@@ -302,7 +330,7 @@ export default {
       const x = event.pageX;
       const y = event.pageY;
       this.viewBoxPointer = {
-        x: x + this.viewBoxOffset.x, 
+        x: x + this.viewBoxOffset.x,
         y: y + this.viewBoxOffset.y,
       };
     },
@@ -322,15 +350,26 @@ export default {
   },
   computed: {
   },
+  watch: {
+    zoom: {
+      handler() {
+        const svgInDOM = document.querySelector("svg#corpusDiagram");
+        const [x,y] = svgInDOM.getAttribute("viewBox").split(" ").map(x=>parseInt(x)).slice(0,2);
+        svgInDOM.setAttribute(
+          "viewBox",
+          [x, y, Math.round(WIDTH * this.zoom), Math.round(HEIGHT * this.zoom)].join(" ")
+        );
+      }
+    }
+  },
   mounted() {
-    this.viewBoxOffset = {x: -1 * Math.round(WIDTH/2), y: 0};
+    this.placeInit();
     this.svg = d3
       .select("svg#corpusDiagram")
       .attr("width", WIDTH)
       .attr("height", HEIGHT)
       .attr("cursor", "grab")
-      .attr("position", "relative")
-      .attr("viewBox", `${this.viewBoxOffset.x} ${this.viewBoxOffset.y} ${WIDTH} ${HEIGHT}`);
+      .attr("position", "relative");
     this.corpusTree = this.svg.append("g");
     this.drawTree();
 
@@ -344,13 +383,7 @@ export default {
       e.preventDefault();
       e.stopPropagation();
       this.zoom = Math.max(0.2, Math.min(2.0, this.zoom + e.deltaY/250));
-      const [x,y] = svgInDOM.getAttribute("viewBox").split(" ").map(x=>parseInt(x)).slice(0,2);
-      svgInDOM.setAttribute(
-        "viewBox",
-        [x, y, Math.round(WIDTH * this.zoom), Math.round(HEIGHT * this.zoom)].join(" ")
-      );
     });
-
     setTooltips();
   },
   updated() {
@@ -367,5 +400,39 @@ export default {
   font-family: trebuchet ms, verdana, arial, sans-serif;
   pointer-events: none;
   user-select: none;
+}
+#zoomControls {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  position: absolute;
+  width: 100px;
+  height: 100px;
+  right: 1em;
+  bottom: 1em;
+}
+#zoomControls div {
+  text-align: center;
+  font-size: 1.5em;
+  line-height: 1em;
+  height: 1em;
+  width: 1em;
+  font-variant: small-caps;
+  font-weight: bold;
+  color: white;
+  background-color: gray;
+  border-radius: 0.1em;
+  margin: 0.15em 0em;
+}
+#zoomControls div:hover {
+  cursor: pointer;
+  background-color: lightgray;
+  color: black;
+}
+#zoomControls #zoomReset {
+  width: unset;
+  font-size: 1.25em;
+  padding: 0em 0.2em;
 }
 </style>

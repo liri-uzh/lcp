@@ -45,8 +45,13 @@ load_env()
 from .api import list_coprora, get_corpus, search
 from .check_file_permissions import check_file_permissions
 from .configure import CorpusConfig
-from .corpora import corpora
-from .corpora import corpora_meta_update
+from .corpora import (
+    corpora,
+    corpora_meta_update,
+    check_corpus,
+    discard_invites,
+    request_invite,
+)
 from .document import document, document_ids
 from .export import download_export
 from .fcs import get_fcs
@@ -244,6 +249,9 @@ async def create_app(test: bool = False) -> web.Application:
         ("/check-file-permissions", "GET", check_file_permissions),
         ("/config", "POST", refresh_config),
         ("/corpora", "POST", corpora),
+        ("/corpora/{corpus_id}", "GET", check_corpus),
+        ("/corpora/{corpus_id}/request", "POST", request_invite),
+        ("/corpora/{corpus_id}/request/discard", "DELETE", discard_invites),
         ("/corpora/{corpora_id}/meta/update", "PUT", corpora_meta_update),
         ("/create", "POST", make_schema),
         ("/document/{doc_id}", "POST", document),

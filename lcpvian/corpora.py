@@ -7,18 +7,34 @@ are needed for this request.
 """
 
 import copy
+import json
 import logging
+import os
+
+import smtplib
+
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 
 from json.decoder import JSONDecodeError
 
-from .utils import _filter_corpora
-from .utils import _remove_sensitive_fields_from_corpora
+from .utils import (
+    _filter_corpora,
+    _remove_sensitive_fields_from_corpora,
+    get_pending_invites,
+)
 from .typed import JSONObject
 
 from aiohttp import web
 from aiohttp.client_exceptions import ClientOSError
 from rq.job import Job
 from typing import cast
+
+MESSAGE_TTL = int(os.getenv("REDIS_WS_MESSSAGE_TTL", 5000))
+MAIL_SERVER = os.getenv("MAIL_SERVER", "")
+MAIL_PORT = os.getenv("MAIL_PORT", "50")
+MAIL_SUBJECT_PREFIX = os.getenv("MAIL_SUBJECT_PREFIX", "")
+MAIL_FROM_EMAIL = os.getenv("MMAIL_FROM_EMAIL", "")
 
 
 async def corpora(request: web.Request) -> web.Response:
@@ -59,6 +75,129 @@ async def corpora(request: web.Request) -> web.Response:
     corpora = copy.deepcopy(corpora)
     corpora = _remove_sensitive_fields_from_corpora(corpora)
     return web.json_response({"config": corpora})
+
+
+async def check_corpus(request: web.Request) -> web.Response:
+    """
+    Return whether the corpus exists
+    """
+    authenticator = request.app["auth_class"](request.app)
+    try:
+        await authenticator.user_details(request)
+    except ClientOSError as err:
+        return web.json_response({"error": "Failed to log in.", "status": 401})
+    corpus_id = request.match_info["corpus_id"]
+    ret = {"status": 404, "error": "Corpus not found."}
+    if str(corpus_id) in request.app["config"]:
+        ret = {"status": 200, "message": "Corpus found."}
+    return web.json_response(ret)
+
+
+async def discard_invites(request: web.Request) -> web.Response:
+    """
+    Remove the redis key for the invite to this corpus
+    """
+    authenticator = request.app["auth_class"](request.app)
+    try:
+        user_data = await authenticator.user_details(request)
+    except ClientOSError as err:
+        return web.json_response({"error": "Failed to log in.", "status": 401})
+    subscriptions = user_data.get("subscription", {}).get("subscriptions", {})
+    pending_invites = get_pending_invites(request, subscriptions)
+    no_pending_res = {"error": "No pending invites for this user.", "status": 401}
+    if not pending_invites:
+        return web.json_response(no_pending_res)
+    corpus_id = request.match_info["corpus_id"]
+    if corpus_id not in pending_invites:
+        return web.json_response(no_pending_res)
+    request_id = f"request_invite::{corpus_id}"
+    request.app["redis"].delete(request_id)
+    return web.json_response({"status": 200, "message": "Invitation discarded."})
+
+
+async def request_invite(request: web.Request) -> web.Response:
+    """
+    Send an email to the owner of the project of the corpus to request an invite
+    """
+    authenticator = request.app["auth_class"](request.app)
+    try:
+        user_data = await authenticator.user_details(request)
+    except ClientOSError as err:
+        return web.json_response({"error": "Failed to log in.", "status": 401})
+    user = cast(dict, user_data.get("user", user_data.get("account", {})))
+    user_id = user.get("id")
+    user_name = user.get("name", "")
+    user_email = user.get("email", "")
+    if not user_id:
+        return web.json_response(
+            {"error": "Could not identify the user.", "status": 401}
+        )
+    corpus_id = request.match_info["corpus_id"]
+    if str(corpus_id) not in request.app["config"]:
+        return web.json_response({"status": 401, "message": "Corpus not found."})
+
+    request_id = f"request_invite::{corpus_id}"
+    existing_invites = json.loads(request.app["redis"].get(request_id) or "null")
+    # if existing_invites and user_email in existing_invites:
+    #     return web.json_response(
+    #         {"error": "Access to this corpus has already been requested", "status": 401}
+    #     )
+    corpus = request.app["config"][corpus_id]
+    project_id = corpus.get("project_id", "")
+    corpus_name = corpus.get(
+        "name", corpus.get("shortname", corpus.get("meta", {}).get("name", ""))
+    )
+
+    project_users = await authenticator.project_users(request, project_id)
+
+    admin_users = [u for u in project_users.get("registred", []) if u.get("isAdmin")]
+    admin_user = admin_users[0]
+    if len(admin_users) == 0:
+        return web.json_response(
+            {"status": 401, "message": "No admin found for the project."}
+        )
+    elif len(admin_users) > 1:
+        non_invited_admins = [u for u in admin_users if not u.get("invitedFromEmail")]
+        admin_user = non_invited_admins[0] if non_invited_admins else admin_users[0]
+
+    admin_name = admin_user.get("displayName", "")
+    admin_email = admin_user.get("email", "")
+
+    message_html = f"""Hello {admin_name},<br><br>
+        The LCP user named "{user_name}" ({user_email}) wants to access the corpus named "{corpus_name}" (ID: {corpus_id}).
+        This corpus belongs to a group of corpora of which you are an administrator.
+        You can decide to invite {user_name} to the group: they would then have access to all the corpora in this group.
+        Should you decide to grant {user_name} access to the group that contains the corpus {corpus_name},
+        you can visit LCP and paste the email address {user_email} in the "Permissions" tab of the group's settings,
+        and click "Invite".<br><br>
+
+        Kind Regards<br><br>
+        LCP"""
+    message_plain = f"""Hello {admin_name},\nThe LCP user named "{user_name}" ({user_email}) wants to access the corpus named "{corpus_name}" (ID: {corpus_id}). This corpus belongs to a group of corpora of which you are an administrator. You can decide to invite {user_name} to the group: they would then have access to all the corpora in this group. Should you decide to grant {user_name} access to the group that contains the corpus {corpus_name}, you can visit LCP and paste the email address {user_email} in the "Permissions" tab of the group's settings, and click "Invite".\nKind Regards\nLCP"""
+
+    try:
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = (
+            f"{MAIL_SUBJECT_PREFIX}Invitation request for corpus {corpus_name} [LCP]"
+        )
+        msg["From"] = MAIL_FROM_EMAIL
+        msg["To"] = admin_email
+        msg.attach(MIMEText(message_html, "html", "utf-8"))
+        msg.attach(MIMEText(message_plain, "plain"))
+
+        s = smtplib.SMTP(MAIL_SERVER, int(MAIL_PORT))
+        s.sendmail(MAIL_FROM_EMAIL, [admin_email], msg.as_string())
+        s.quit()
+    except Exception as e:
+        print("Could not send an email.", e)
+        print(f"HTML email: {message_html}")
+
+    existing_invites = json.loads(request.app["redis"].get(request_id) or "[]")
+    if user_email not in existing_invites:
+        existing_invites.append(user_email)
+        request.app["redis"].set(request_id, json.dumps(existing_invites))
+        # request.app["redis"].expire(request_id, MESSAGE_TTL)
+    return web.json_response({"status": 200, "message": "Invitation request sent."})
 
 
 async def corpora_meta_update(request: web.Request) -> web.Response:

@@ -209,7 +209,7 @@ class Exporter:
         """
         q = Queue("internal", connection=connection)
         q.enqueue(
-            _handle_export,  # init_export
+            _handle_export,  # finish export
             on_failure=Callback(_general_failure),
             args=(qhash, "xml"),
             kwargs={
@@ -375,14 +375,26 @@ class Exporter:
             stats_attrs = [
                 x["name"] for x in self._qi.result_sets[k_in_rs]["attributes"]
             ]
+            total_stats = [
+                x["name"] for x in self._qi.result_sets[k_in_rs].get("total", {})
+            ]
             all_stats.append(
                 getattr(E, stats_type)(
                     *[
-                        E.observation(
-                            *[
-                                getattr(E, aname)(str(aval))
-                                for aname, aval in zip(stats_attrs, l)
-                            ]
+                        (
+                            E.observation(
+                                *[
+                                    getattr(E, aname)(str(aval))
+                                    for aname, aval in zip(
+                                        (
+                                            stats_attrs
+                                            if l[0] in (False, "False")
+                                            else total_stats
+                                        ),
+                                        l[1:],
+                                    )
+                                ]
+                            )
                         )
                         for l in res[k]
                     ],
@@ -670,6 +682,9 @@ class Exporter:
                 E.delivered(str(req.lines_sent_so_far)),
                 E.coverage(str(percentage_words_done)),
                 E.json("\n" + json.dumps(self._qi.json_query, indent=2) + "\n  "),
+                E.locals(
+                    *[getattr(E, k)(v) for k, v in self._qi.local_queries.items()]
+                ),
             )
             output.write(_node_to_string(query_node, prefix="  "))
             # STATS

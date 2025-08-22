@@ -66,6 +66,15 @@ export const useCorpusStore = defineStore("corpusData", {
         return response.data;
       });
     },
+    getCorpus(corpusId) {
+      return httpApi.get(`/corpora/${corpusId}`);
+    },
+    requestInvite(corpusId) {
+      return httpApi.post(`/corpora/${corpusId}/request`);
+    },
+    discardInvites(corpusId) {
+      return httpApi.delete(`/corpora/${corpusId}/request/discard`);
+    },
     fetchCorpora() {
       httpApi.post(`/corpora`).then((response) => {
         this.corporaJson = response.data;

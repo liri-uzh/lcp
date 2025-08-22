@@ -54,6 +54,9 @@
         {{$t('modal-details-revison')}}: {{ corpusModal.meta.revision }}
       </p>
       <p class="word-count mb-0">
+        {{$t('modal-details-date')}}: {{ corpusModal.meta.date }}
+      </p>
+      <p class="word-count mb-0">
         {{$t('modal-details-url')}}:
         <a :href="getURLWithProtocol(corpusModal.meta.url)" target="_blank">{{
           corpusModal.meta.url

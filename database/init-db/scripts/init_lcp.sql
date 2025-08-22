@@ -29,9 +29,12 @@ CREATE TABLE main.corpus (
  , schema_path       text           NOT NULL
  , token_counts      jsonb
  , version_history   jsonb
- , UNIQUE (schema_path, enabled, current_version)
 );
 
+CREATE UNIQUE INDEX
+    ON main.corpus (schema_path, enabled, current_version)
+ WHERE enabled
+     ;
 
 
 CREATE TYPE main.corpus_state AS (

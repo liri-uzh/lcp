@@ -4,8 +4,8 @@
       <img class="logo" src="../assets/logos/uzh.svg" alt="UZH">
     </div>
     <hr>
-    Copyright &copy; 2024 LiRI 
-    | 
+    Copyright &copy; {{ year }} LiRI
+    |
     <a style="color: white;" href="mailto:lcp@linguistik.uzh.ch?subject=Bug%20report">{{ $t('footer-report') }}</a>
   </footer>
 </template>
@@ -56,5 +56,10 @@ hr {
 <script>
 export default {
   name: "FooterView",
+  data() {
+    return {
+      year: new Date().getFullYear(),
+    }
+  },
 };
 </script>

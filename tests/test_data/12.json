@@ -1,0 +1,196 @@
+{
+    "query": [
+        {
+            "unit": {
+                "layer": "Document",
+                "label": "d",
+                "constraints": [
+                    {
+                        "comparison": {
+                            "left": {
+                                "reference": "classCode"
+                            },
+                            "comparator": "=",
+                            "right": {
+                                "regex": {
+                                    "pattern": "^S"
+                                }
+                            }
+                        }
+                    }
+                ]
+            }
+        },
+        {
+            "unit": {
+                "layer": "Segment",
+                "partOf": [
+                    {
+                        "partOfStream": "d"
+                    }
+                ],
+                "label": "s"
+            }
+        },
+        {
+            "unit": {
+                "layer": "Token",
+                "partOf": [
+                    {
+                        "partOfStream": "s"
+                    }
+                ],
+                "label": "t3",
+                "constraints": [
+                    {
+                        "comparison": {
+                            "left": {
+                                "reference": "xpos2"
+                            },
+                            "comparator": "=",
+                            "right": {
+                                "string": "SUBST"
+                            }
+                        }
+                    }
+                ]
+            }
+        },
+        {
+            "set": {
+                "label": "prox",
+                "members": [
+                    {
+                        "unit": {
+                            "layer": "Token",
+                            "partOf": [
+                                {
+                                    "partOfStream": "s"
+                                }
+                            ],
+                            "label": "tx",
+                            "constraints": [
+                                {
+                                    "comparison": {
+                                        "left": {
+                                            "function": {
+                                                "functionName": "position",
+                                                "arguments": [
+                                                    {
+                                                        "entity": "tx"
+                                                    }
+                                                ]
+                                            }
+                                        },
+                                        "comparator": ">",
+                                        "right": {
+                                            "math": {
+                                                "operation": {
+                                                    "left": {
+                                                        "function": {
+                                                            "functionName": "position",
+                                                            "arguments": [
+                                                                {
+                                                                    "entity": "t3"
+                                                                }
+                                                            ]
+                                                        }
+                                                    },
+                                                    "operator": "-",
+                                                    "right": {
+                                                        "math": "20"
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                },
+                                {
+                                    "comparison": {
+                                        "left": {
+                                            "function": {
+                                                "functionName": "position",
+                                                "arguments": [
+                                                    {
+                                                        "entity": "tx"
+                                                    }
+                                                ]
+                                            }
+                                        },
+                                        "comparator": "<",
+                                        "right": {
+                                            "math": {
+                                                "operation": {
+                                                    "left": {
+                                                        "function": {
+                                                            "functionName": "position",
+                                                            "arguments": [
+                                                                {
+                                                                    "entity": "t3"
+                                                                }
+                                                            ]
+                                                        }
+                                                    },
+                                                    "operator": "+",
+                                                    "right": {
+                                                        "math": "20"
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                },
+                                {
+                                    "comparison": {
+                                        "left": {
+                                            "reference": "tx"
+                                        },
+                                        "comparator": "!=",
+                                        "right": {
+                                            "reference": "t3"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        }
+    ],
+    "results": [
+        {
+            "label": "kwic",
+            "resultsPlain": {
+                "context": [
+                    "s"
+                ],
+                "entities": [
+                    "t3"
+                ]
+            }
+        },
+        {
+            "label": "results2",
+            "resultsCollocation": {
+                "center": "t3",
+                "window": {
+                    "leftSpan": "-2",
+                    "rightSpan": "2"
+                },
+                "attribute": {
+                    "reference": "form"
+                }
+            }
+        },
+        {
+            "label": "results3",
+            "resultsCollocation": {
+                "space": "prox",
+                "attribute": {
+                    "reference": "form"
+                }
+            }
+        }
+    ]
+}

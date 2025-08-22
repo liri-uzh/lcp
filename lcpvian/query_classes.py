@@ -518,6 +518,7 @@ class QueryInfo:
         post_processes: dict | None = None,
         languages: list[str] | None = None,
         config: dict | None = None,
+        local_queries: dict = {},
     ):
         self._connection = connection
         self.hash = qhash
@@ -529,6 +530,7 @@ class QueryInfo:
         self.result_sets: list = self.meta_json.get("result_sets", [])
         self.meta_labels: list[str] = qi.get("meta_labels", [])
         self.languages: list[str] = languages or qi.get("languages", [])
+        self.local_queries: dict = local_queries or qi.get("local_queries", {})
         if not qi:
             self.update()
 

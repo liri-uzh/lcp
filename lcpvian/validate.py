@@ -36,6 +36,10 @@ def process_refs(
             ).items():
                 ret[l] = ret.get(l, set()).union(l_attrs)
         return ret
+    if "set" in obj and "label" in obj["set"]:
+        ret[obj["set"]["label"]] = set()
+    if "sequence" in obj and "label" in obj["sequence"]:
+        ret[obj["sequence"]["label"]] = set()
     if "unit" in obj:
         recent_layer = obj["unit"].get("layer", "")
         recent_label = obj["unit"].get("label", "")
@@ -76,7 +80,7 @@ def process_refs(
             )
             if recent_label and ref not in (refs := ret.get(recent_label, set())):
                 ret[recent_label] = refs.union({ref})
-    if obj.get("attribute", "").count(".") == 1:
+    if isinstance(obj.get("attribute"), str) and obj["attribute"].count(".") == 1:
         _, aname = obj["attribute"].split(".")
         assert any(
             aname in _get_all_attributes(x, conf) for x in conf["layer"]
@@ -93,6 +97,47 @@ def process_refs(
         ).items():
             ret[l] = ret.get(l, set()).union(l_attrs)
     return ret
+
+
+def check_refs(
+    all_refs: dict[str, set[str]],
+    obj: list | dict,
+):
+    """
+    Inspect the object for part of's and other back-references and check their validity
+    """
+    to_check = obj if isinstance(obj, list) else obj.values()
+    for x in to_check:
+        if not isinstance(x, (list, dict)):
+            continue
+        check_refs(all_refs, x)
+    if isinstance(obj, list):
+        return
+    for po in obj.get("partOf", []):
+        ref = next(x for x in po.values())
+        assert ref in all_refs, ReferenceError(f"Could find no entity labeled '{ref}'.")
+    if isinstance(obj.get("attribute"), str):
+        prefix, *_ = obj["attribute"].split(".")
+        assert prefix in all_refs, ReferenceError(
+            f"Could find no entity labeled '{prefix}'."
+        )
+    if isinstance(obj.get("entity"), str):
+        assert obj["entity"] in all_refs, ReferenceError(
+            f"Could find no entity labeled '{obj['entity']}'."
+        )
+    if isinstance(obj.get("results"), list):
+        for r in obj["results"]:
+            if "resultsPlain" in r:
+                context_and_entities = [
+                    *r["resultsPlain"].get("context", []),
+                    *r["resultsPlain"].get("entities", []),
+                ]
+                for x in context_and_entities:
+                    assert x in all_refs, ReferenceError(
+                        f"Could find no entity labeled '{x}'."
+                    )
+            else:
+                pass
 
 
 def validate(
@@ -217,13 +262,14 @@ def validate(
         try:
             all_labels = _get_all_labels(json_query)
             all_refs = process_refs(conf, json_query, labels=all_labels)
+            check_refs(all_refs, json_query)
             result["all_refs"] = {k: sorted(v) for k, v in all_refs.items()}  # type: ignore
         except Exception as e:
             result = {
-                "kind": kind,
                 "valid": False,
                 "action": "validate",
                 "error": str(e),
                 "status": 400,
             }
+        result["kind"] = kind
     return result

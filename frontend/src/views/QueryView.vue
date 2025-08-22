@@ -54,7 +54,16 @@
           </div>
         </div>
       </div>
-      <div class="row mt-5" v-if="selectedCorpora">
+      <div class="row mt-5" v-if="noCorpus">
+        <div class="col-12 mt-3" v-if="userData && userData.user && userData.user.id">
+          {{ noCorpus.message }}
+          <a href="#" class="btn-light" @click.stop.prevent="requestInvite" v-if="noCorpus.link">{{ noCorpus.link }}</a>
+        </div>
+        <div class="col-12 mt-3" v-else>
+          Either there is no corpus at this address, or it is not publicly accessible. Please log in and check again.
+        </div>
+      </div>
+      <div class="row mt-5" v-else-if="selectedCorpora">
         <div class="col-12 mt-3">
           <div class="form-floating mb-3">
             <nav>
@@ -94,36 +103,6 @@
               <div class="tab-pane fade pt-3"
                 :class="{ active: activeMainTab === 'query', show: activeMainTab === 'query' }" id="nav-query"
                 role="tabpanel" aria-labelledby="nav-query-tab">
-                <div class="mt-3">
-                  <button type="button" @click="submit" class="btn btn-primary me-1 mb-1"
-                    :disabled="isSubmitDisabled || !currentQuery">
-                    <FontAwesomeIcon :icon="['fas', 'magnifying-glass-chart']" />
-                    {{ loading == "resubmit" ? $t('common-resubmit') : $t('common-submit') }}
-                  </button>
-
-                  <button
-                    type="button"
-                    v-if="queryStatus in {'satisfied':1,'finished':1} && !loading && userData.user.anon != true"
-                    class="btn btn-primary me-1 mb-1"
-                    data-bs-toggle="modal"
-                    data-bs-target="#exportModal"
-                    @click="setExportFilename('xml')"
-                  >
-                    <FontAwesomeIcon :icon="['fas', 'file-export']" />
-                    {{ $t('common-export') }}
-                  </button>
-
-                  <button type="button" v-if="queryStatus == 'satisfied' && !loading && userData.user.anon != true"
-                    @click="submitFullSearch" class="btn btn-primary me-1 mb-1">
-                    <FontAwesomeIcon :icon="['fas', 'magnifying-glass-chart']" />
-                    {{ $t('common-search-whole') }}
-                  </button>
-                  <button v-else-if="loading" type="button" @click="stop" :disabled="loading == false"
-                    class="btn btn-primary me-1 mb-1">
-                    <FontAwesomeIcon :icon="['fas', 'xmark']" />
-                    {{ $t('common-stop') }}
-                  </button>
-                </div>
                 <div class="row">
                   <div class="col-12 col-md-6">
                     <div class="form-floating mb-3">
@@ -159,6 +138,13 @@
                       <div class="tab-content" id="nav-query-tabContent">
                         <div class="tab-pane fade show active pt-3" id="nav-plaintext" role="tabpanel"
                           aria-labelledby="nav-plaintext-tab">
+                          <span
+                            class="btn icon-x col-sm-1"
+                            @click.stop="toggleModal('text')"
+                            v-if="selectedCorpora && selectedCorpora.corpus"
+                          >
+                            <FontAwesomeIcon :icon="['fas', 'circle-info']" />
+                          </span>
                           <input class="form-control" type="text" :placeholder="$t('common-plain-query')" :class="isQueryValidData == null || isQueryValidData.valid == true
                             ? 'ok'
                             : 'error'
@@ -170,6 +156,13 @@
                         </div>
                         <div class="tab-pane fade pt-3" id="nav-dqd" role="tabpanel"
                           aria-labelledby="nav-results-tab">
+                          <span
+                            class="btn icon-x col-sm-1"
+                            @click.stop="toggleModal('dqd')"
+                            v-if="selectedCorpora && selectedCorpora.corpus"
+                          >
+                            <FontAwesomeIcon :icon="['fas', 'circle-info']" />
+                          </span>
                           <EditorView :query="queryDQD" :defaultQuery="defaultQueryDQD" :corpora="selectedCorpora"
                             :invalidError="isQueryValidData && isQueryValidData.valid != true
                               ? isQueryValidData.error
@@ -182,6 +175,13 @@
                           </p>
                         </div>
                         <div class="tab-pane fade pt-3" id="nav-cqp" role="tabpanel" aria-labelledby="nav-cqp-tab">
+                          <span
+                            class="btn icon-x col-sm-1"
+                            @click.stop="toggleModal('cqp')"
+                            v-if="selectedCorpora && selectedCorpora.corpus"
+                          >
+                            <FontAwesomeIcon :icon="['fas', 'circle-info']" />
+                          </span>
                           <textarea class="form-control query-field" :placeholder="$t('common-cqp-query')"
                             :class="isQueryValidData == null || isQueryValidData.valid == true
                               ? 'ok'
@@ -210,8 +210,39 @@
                       </div>
                     </div>
                     <div class="mt-5">
+
+                      <button type="button" @click="submit" class="btn btn-primary me-2 mb-2"
+                        :disabled="isSubmitDisabled || !currentQuery">
+                        <FontAwesomeIcon :icon="['fas', 'magnifying-glass-chart']" />
+                        {{ loading == "resubmit" ? $t('common-resubmit') : $t('common-submit') }}
+                      </button>
+
+                      <button
+                        type="button"
+                        class="btn btn-primary me-2 mb-2"
+                        v-if="queryStatus in {'satisfied':1,'finished':1} && !loading && userData.user.anon != true"
+                        data-bs-toggle="modal"
+                        data-bs-target="#exportModal"
+                        @click="setExportFilename('xml')"
+                      >
+                        <FontAwesomeIcon :icon="['fas', 'file-export']" />
+                        {{ $t('common-export') }}
+                      </button>
+
+                      <button type="button" v-if="queryStatus == 'satisfied' && !loading && userData.user.anon != true && currentQuery == querySatisfied"
+                        @click="submitFullSearch" class="btn btn-primary me-2 mb-2">
+                        <FontAwesomeIcon :icon="['fas', 'magnifying-glass-chart']" />
+                        {{ $t('common-search-whole') }}
+                      </button>
+                      <button v-else-if="loading" type="button" @click="stop" :disabled="loading == false"
+                        class="btn btn-primary me-1 mb-1">
+                        <FontAwesomeIcon :icon="['fas', 'xmark']" />
+                        {{ $t('common-stop') }}
+                      </button>
+
                       <button type="button" v-if="!loading && userData.user.anon != true && userQueryVisible()"
                         :disabled="saveQueryDisabled" class="btn btn-primary me-2 mb-2"
+                        style="float: right;"
                         data-bs-toggle="modal" data-bs-target="#saveQueryModal">
                         <FontAwesomeIcon :icon="['fas', 'file-export']" />
                         {{ $t('common-save-query') }}
@@ -689,10 +720,80 @@
     </div>
 
 
+    <div class="modal fade" id="DQDModal" tabindex="-1" aria-labelledby="DQDModalLabel"
+      aria-hidden="true" ref="DQDModal">
+      <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="DQDModalLabel">
+              DQD query information
+            </h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body text-start">
+            <span>DQD is the LCP-specific query language. for more information on it, please visit the <a href="https://lcp.linguistik.uzh.ch/manual/dqd.html" target="_blank">Manual</a>.</span>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+              {{ $t('common-close') }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal fade" id="CQPModal" tabindex="-1" aria-labelledby="CQPModalLabel"
+      aria-hidden="true" ref="CQPModal">
+      <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="CQPModalLabel">
+              CQP query information
+            </h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body text-start">
+            <span>CQP is the query language developed for the <a href="https://cwb.sourceforge.io/" target="_blank">CWB (Corpus Work Bench)</a>. The basic functionalities described <a href="https://www.sketchengine.eu/documentation/cql-basics/" target="_blank">here</a> are implemented in LCP.</span>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+              {{ $t('common-close') }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal fade" id="TextModal" tabindex="-1" aria-labelledby="TextModalLabel"
+      aria-hidden="true" ref="TextModal">
+      <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="TextModalLabel">
+              Text query information
+            </h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body text-start">
+            <span>Specifying a query in plain text is straightforward: just enter the word or sequence of words you are interested in, e.g. <code class="queryExample">Européenne</code>, <code class="queryExample">der internationale Währungsfond</code>, <code class="queryExample">I have a dream</code>.<br>Search strings are interpreted case-sensitive and literally and can match either the form or the lemma of a token.</span>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+              {{ $t('common-close') }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+
   </div>
 </template>
 
 <style scoped>
+.queryExample {
+  background-color: lightcoral;
+}
 .export {
   float: left;
 }
@@ -830,6 +931,7 @@ export default {
       percentageTotalDone: 0,
       percentageWordsDone: 0,
       loading: false,
+      querySatisfied: "",
       requestId: "",
       stats: null,
       queryTest: "const noop = () => {}",
@@ -870,6 +972,7 @@ export default {
       // timelineEntry: null,
 
       modalIndexKey: 0,
+      noCorpus: null,
       local: window.location.hostname == "localhost"
     };
   },
@@ -887,9 +990,10 @@ export default {
   watch: {
     corpora: {
       handler() {
-        if (this.preselectedCorporaId) {
+        const preselectedCorporaId = this.preselectedCorporaId;
+        if (preselectedCorporaId) {
           let corpus = this.corpora.filter(
-            (corpus) => corpus.meta.id == this.preselectedCorporaId
+            (corpus) => corpus.meta.id == preselectedCorporaId
           );
           if (corpus.length) {
             this.selectedCorpora = {
@@ -897,6 +1001,7 @@ export default {
               value: corpus[0].meta.id,
               corpus: corpus[0],
             };
+            this.noCorpus = null;
             this.checkAuthUser()
             this.defaultQueryDQD = this.getSampleQuery();
             this.queryDQD = this.getSampleQuery();
@@ -904,6 +1009,18 @@ export default {
             this.showGraph = 'main'
             setTimeout(() => this.graphIndex++, 1)
             this.fetch(); // Retrieve the saved queries
+          }
+          else {
+            useCorpusStore().getCorpus(preselectedCorporaId).then(r=>{
+              if (this.selectedCorpora)
+                return;
+              this.noCorpus = {message: "There is no corpus at this address."}
+              if (r.data.status != 200)
+                return;
+              this.noCorpus.message = "You do not have access to this corpus.";
+              this.noCorpus.link = "Click here to send an access request to the owner.";
+              this.noCorpus.id = preselectedCorporaId;
+            });
           }
           this.validate();
         }
@@ -955,6 +1072,7 @@ export default {
         //   setTimeout(() => (this.corpusGraph = this.selectedCorpora.corpus), 1);
         this.showGraph = 'main'
         setTimeout(() => this.graphIndex++, 1)
+        this.noCorpus = null;
       } else {
         history.pushState({}, null, `/query/`);
       }
@@ -970,6 +1088,7 @@ export default {
         this.percentageTotalDone = 0;
         this.failedStatus = false;
         this.loading = false;
+        this.querySatisfied = "";
         this.WSDataResults = {};
         this.WSDataMeta = {};
         this.WSDataSentences = {};
@@ -1041,6 +1160,24 @@ export default {
     // },
   },
   methods: {
+    toggleModal(language) {
+    	let modalEl;
+
+    	switch (language) {
+      	case "cqp":
+          modalEl = this.$refs.CQPModal;
+          break;
+      	case "dqd":
+          modalEl = this.$refs.DQDModal;
+          break;
+      	case "text":
+          modalEl = this.$refs.TextModal;
+          break;
+    	}
+
+      const modal = new Modal(modalEl)
+      modal.show()
+    },
     getLanguageName(lg) {
       const cl = this.corpusLanguages.find(v=>v.value.toLowerCase() == lg.toLowerCase());
       if (cl)
@@ -1097,6 +1234,7 @@ export default {
       if (["satisfied", "overtime"].includes(status)) {
         this.percentageDone = 100;
         this.loading = false;
+        this.querySatisfied = this.currentQuery;
       }
     },
     updatePage(currentPage) {
@@ -1139,6 +1277,21 @@ export default {
       ) {
         window.location.replace("/login");
       }
+    },
+    requestInvite() {
+      if (!this.noCorpus || !this.noCorpus.id) return;
+      useCorpusStore().requestInvite(this.noCorpus.id).then(r=>{
+        if (r.data.status == 200)
+          useNotificationStore().add({
+            type: "success",
+            text: `Invitation request sent.`
+          });
+        else
+          useNotificationStore().add({
+            type: "error",
+            text: r.data.error,
+          });
+      })
     },
     openCorpusDetailsModal(corpus) {
       this.corpusModal = { ...corpus };
@@ -1212,7 +1365,7 @@ export default {
           // console.log("Query validation", data);
           if (data.kind in { dqd: 1, text: 1, cqp: 1 } && data.valid == true)
             this.query = JSON.stringify(data.json, null, 2);
-          else
+          else if (data.kind != "json")
             this.query = "";
           if (data.kind == "cqp" && !data.valid)
             data.error = "Incomplete query or invalid CQP syntax";
@@ -1513,6 +1666,8 @@ export default {
       this.submit(null, /*resumeQuery=*/resume, /*cleanResults=*/false, /*full=*/full, /*to_export=*/to_export);
     },
     submitFullSearch() {
+      if (this.currentQuery != this.querySatisfied)
+        return;
       this.submit(null, true, false, true);
     },
     async submit(
@@ -1537,6 +1692,8 @@ export default {
       let data = {
         corpus: this.selectedCorpora.value,
         query: this.query,
+        localQuery: this.currentQuery,
+        kind: this.currentTab,
         user: this.userData.user.id,
         room: this.roomId,
         languages: this.selectedLanguages,
@@ -1645,6 +1802,10 @@ export default {
       useCorpusStore().fetchQueries(data);
     },
     handleQuerySelection(selectedQuery) {
+      if (this.currentQuery.trim()) {
+        if (!confirm("Loading this saved query will overwrite the current one, which will be lost. Are you sure you want to proceed?"))
+          return;
+      }
       if (this.currentTab == "text") {
         this.textsearch = selectedQuery.query.query;
       }
@@ -1750,7 +1911,7 @@ export default {
       return (this.selectedCorpora && this.selectedCorpora.length == 0) ||
         this.loading === true ||
         (this.isQueryValidData != null && this.isQueryValidData.valid == false) ||
-        !this.query ||
+        !this.query.trim() ||
         !this.selectedLanguages
     },
     noResults() {
@@ -1758,7 +1919,6 @@ export default {
       const ds = JSON.parse(JSON.stringify(this.WSDataSentences)) || {};
       dr.result = dr.result || {};
       ds.result = ds.result || {};
-      console.log("dr", dr, "ds", ds);
       return [dr,ds].every(d=>Object.entries(d.result).every(([k,v])=>k==0 || !v || v.length==0));
     }
   },

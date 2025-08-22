@@ -85,7 +85,7 @@ results_analysis_filter : "filter" _NL _INDENT ((comparison | comparison) _NL*)+
 
 results_collocation : "collocation" _NL _INDENT "space" _NL _INDENT space _NL* _DEDENT results_collocation_attribute _DEDENT  // rename: results_collocation_attribute>attribute
                     | "collocation" _NL _INDENT "center" _NL _INDENT center _NL* _DEDENT "window" _NL _INDENT window _NL* _DEDENT results_collocation_attribute _DEDENT
-results_collocation_attribute : "attribute" _NL _INDENT reference _NL* _DEDENT // skip: reference
+results_collocation_attribute : "attribute" _NL _INDENT (reference | reference) _NL* _DEDENT // dirty trick to force 'reference' key after lark_to_cobquec
 
 query : ((quantification | sequence | set | unit | constraint) _NL*)+
 

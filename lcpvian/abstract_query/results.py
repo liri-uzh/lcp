@@ -1,6 +1,7 @@
-from typing import Any, cast
-
 import re
+
+from psycopg import sql
+from typing import Any, cast
 
 from .constraint import _get_constraints, Constraint, Constraints, process_set
 from .sequence import SQLSequence
@@ -11,7 +12,6 @@ from .typed import (
     JSONObject,
     ConfigJSON,
     ResultMetadata,
-    SQLRef,
     JSON,
     Attribs,
     Details,
@@ -32,6 +32,7 @@ from .utils import (
     _parse_comparison,
     _parse_repetition,
 )
+from ..utils import _get_all_attributes
 
 # TODO: add a count(DISTINCT resX.*) on each plain result table
 # this way FE can detect differences and warn user about it
@@ -318,52 +319,41 @@ class ResultsMaker:
         # space = result.get("space", [])
         sql: SQLCorpus = self.r.sql
         space = result.get("space", "")
-        feat = cast(str, result.get("attribute", "lemma"))
+        center = result.get("center", "")
+        feat = cast(str, result.get("attribute", {}).get("reference", "lemma"))
 
-        if not space:
-            center = result["center"]
+        alias = space or center
+        if space:
+            if space in self.r.set_objects:
+                formed = process_set(
+                    self.conf,
+                    self.r,
+                    self._n,
+                    self.token,
+                    self.segment,
+                    self._underlang,
+                    self.find_set(space) or {},
+                    seg_label="___seglabel___",
+                    attribute=feat,
+                    label=f"{space}_{feat}",
+                )
+            else:
+                # TODO: must be the label of a unit that contains tokens or of a sequence
+                pass
+        else:
             if center in self.r.set_objects:
                 raise ValueError(f"center cannot be set ({center})")
             else:
                 center_ref = sql.layer(center, self.token, pointer=True)
-                formed = sql_str(f"{center_ref} AS {LR}", center_ref.alias)
+                alias = center_ref.alias
+                formed = sql_str(f"{center_ref} AS {LR}", alias)
                 self.r.selects.add(formed)
-                self.r.entities.add(center_ref.alias)
+                self.r.entities.add(alias)
             return None
-
-        # in_entities = False if not space else space[0].lower() in self.r.entities
-        layer, _ = self.r.label_layer[space]
-        attr_ref = sql.attribute(
-            space or result.get("center", ""), layer, feat, pointer=True
-        )
-        # feat_maybe_id = f"{feat}_id" if need_id and not feat.endswith("_id") else feat
-        assert layer == self.token, TypeError("Cannot use a space that is not a token")
-        space_ref = sql.layer(space, self.token, pointer=True)
-        formed = sql_str(f"{space_ref} AS {LR}", space_ref.alias)
-        self._n += 1
-
-        if space not in self.r.set_objects:
-            self.r.selects.add(formed)
-            self.r.entities.add(space_ref.alias)
-            # formed = f"{space}.{feat_maybe_id} AS {space}_{feat_maybe_id}"
-            formed = sql_str(f"{attr_ref} AS {LR}", attr_ref.alias)
-        # thead.lemma_id AS thead_lemma_id
-        else:
-            formed = process_set(
-                self.conf,
-                self.r,
-                self._n,
-                self.token,
-                self.segment,
-                self._underlang,
-                self.find_set(space) or {},
-                seg_label="___seglabel___",
-                attribute=feat,
-            )
 
         self.r.selects.add(formed)
         # add entity: thead_lemma_id
-        self.r.entities.add(attr_ref.alias)
+        self.r.entities.add(alias)
 
     def _update_context(self, context: str) -> None:
         """
@@ -1094,7 +1084,7 @@ WHERE {ent_stream_ref} && {cont_tok_stream_ref}
         return " WHERE " + " AND ".join(formed)
 
     @staticmethod
-    def _parse_window(window: dict[str, str], center: str | None) -> str:
+    def _parse_window(window: dict[str, str]) -> str:
         """
         Parse the x..y format window into an SQL string
         """
@@ -1105,23 +1095,15 @@ WHERE {ent_stream_ref} && {cont_tok_stream_ref}
             cast(str, window.get("leftSpan", "1")).strip(),
             cast(str, window.get("rightSpan", "1")).strip(),
         )
+        center_ph = "{center}"
         if "*" in a and "*" in b:
             return ""
         elif "*" not in a and "*" in b:  # *..5
-            return f">= {center} + ({a})"
+            return f">= {center_ph} + ({a})"
         elif "*" in a and "*" not in b:  # 3..*
-            return f"<= {center} + ({b})"
+            return f"<= {center_ph} + ({b})"
         else:  # 3..4
-            return f"BETWEEN {center} + ({a}) AND {center} + ({b})"
-
-    @staticmethod
-    def _within_sent(segment_id, seg_name: str = "__seglabel__", **kwargs) -> str:
-        """
-        If we are limiting the collocation to the sentence, make that condition here
-
-        Right now it is not controllable. Could fail if query doesn't involve segment data maybe?
-        """
-        return f"AND tx.{segment_id} = match_list.{seg_name}"
+            return f"BETWEEN {center_ph} + ({a}) AND {center_ph} + ({b})"
 
     def collocation(
         self,
@@ -1140,32 +1122,7 @@ WHERE {ent_stream_ref} && {cont_tok_stream_ref}
         space = cast(str, result.get("space", ""))
         center = cast(str | None, result.get("center"))
         assert not (space and center), "Only one of space/center allowed!"
-        freq_n = self._freq_n_table()
-        freq_table = self._freq_table()
-        windowed = self._parse_window(
-            cast(
-                dict[str, str],
-                result.get("window", {"leftSpan": "*", "rightSpan": "*"}),
-            ),
-            center,
-        )
-        feat = cast(str, result.get("attribute", "lemma"))
-        attribs = cast(JSONObject, self.conf_layer[self.token])["attributes"]
-        assert isinstance(attribs, dict)
-        att_feat = cast(JSONObject, cast(JSONObject, attribs)[feat])
-        is_text = cast(str, att_feat.get("type", "")) == "text"
-
-        seg_lab: str = ""  # the segment label of center's parent
-
-        need_id = feat in attribs and is_text
-        feat_maybe_id = f"{feat}_id" if need_id and not feat.endswith("_id") else feat
-        space_feat, lany, rbrack = "", "", ""
-        if space:
-            space_feat = f"{space}_{feat_maybe_id}"
-            if space in self.r.set_objects:
-                lany = " ANY ( "
-                rbrack = " ) "
-        elif center and (token_meta := self.r.label_layer.get(center)):
+        if center and (token_meta := self.r.label_layer.get(center)):
             seg_depth = 999  # start with a ridiculously deep value
             # Use the label of the first segment layer found in label_layer as a fallback
             seg_lab = next(
@@ -1199,70 +1156,113 @@ WHERE {ent_stream_ref} && {cont_tok_stream_ref}
                     )
                 part_ofs = new_part_ofs
 
-        token_id = f"{self.token}_id"
-        segment_id = f"{self.segment}_id"
-
-        null_fields = self._other_fields(feat, freq_table)
-        feat_tab: str = feat
-        config: dict[str, dict] = cast(dict[str, dict], self.config)
-        mapping: dict[str, Any] = config["mapping"]["layer"].get(self.token, {})
-        if mapping:
-            attributes: dict[str, Any] = mapping.get("attributes", {})
-            if self.lang and (partitions := mapping.get("partitions")):
-                attributes = partitions.get(self.lang, {}).get("attributes", {})
-            feat_tab = attributes.get(feat, {}).get("name", feat)
-        # feat_tab = f"{feat}{self._underlang}"
-        within_sent = self._within_sent(segment_id, seg_lab)
-
-        if is_text:
-            join_for_text_field = f"JOIN {self.schema}.{feat_tab} ON {feat_tab}.{feat_maybe_id} = x.{feat_maybe_id}"
-        else:
-            join_for_text_field = ""
+        feat = cast(
+            str, cast(dict, result.get("attribute", {})).get("reference", "lemma")
+        )
+        token_attribs = _get_all_attributes(self.token, self.config, self.lang)
+        assert feat in token_attribs, ReferenceError(
+            f"Could find no attribute named '{feat}' on the {self.token} layer."
+        )
+        tok_lab = f"_token_collocate{i}"
+        tok_ref = self.r.sql.layer(tok_lab, self.token, pointer=True)
+        tok_attr_ref = self.r.sql.attribute(tok_lab, self.token, feat, pointer=True)
+        cte_tables = {"match_list": 1}
+        cte_wheres = {}
+        for tab, conds in tok_attr_ref.joins.items():
+            cte_tables[tab] = 1
+            for c in conds:
+                cte_wheres[c] = 1
 
         if space:
-            if need_id:
-                cte = f"""
-                    collocates{i} AS (
-                        SELECT {feat_tab}.{feat_maybe_id}
-                        FROM match_list
-                            CROSS JOIN {self.schema}.{feat_tab} {feat_tab}
-                        WHERE {feat_tab}.{feat_maybe_id} = {lany}{space_feat}{rbrack}),
-                """
-            else:
-                select_feat = space_feat
-                if space in self.r.set_objects:
-                    select_feat = f"unnest({space_feat})"
-                cte = f"""
-                    collocates{i} AS (
-                        SELECT {select_feat} AS {feat_maybe_id}
-                        FROM match_list),
-                """
-        else:
+            cte_wheres[sql_str(f"{tok_ref} = ANY(unnest({LR}))", space)] = 1
+            # cte = f"""
+            #     collocates{i} AS (
+            #         SELECT {tok_attr_ref}
+            #         FROM {' CROSS JOIN '.join(t for t in cte_tables)}
+            #         WHERE {' AND '.join(w for w in cte_wheres)}),
+            # """
+            attr_ref_suffix = tok_attr_ref.ref.split(".")[-1]
+            cte = sql_str(
+                f"""
+                collocates{i} AS (
+                    SELECT unnest(match_list.{LR}) AS {attr_ref_suffix}
+                    FROM match_list
+                ),""",
+                f"{space}_{feat}",
+            )
+        elif center:
+            center_ref = self.r.sql.layer(center, self.token)
+            windowed = sql_str(
+                self._parse_window(
+                    cast(
+                        dict[str, str],
+                        result.get("window", {"leftSpan": "*", "rightSpan": "*"}),
+                    ),
+                ),
+                center=sql.Identifier(center_ref.alias),
+            )
+            seg_id = self.segment.lower() + "_id"
+            center_seg = self.r.sql.not_attribute(center, self.token, seg_id)
+            self.r.selects.add(center_seg.ref + sql_str(" AS {}", center_seg.alias))
+            cte_wheres[sql_str(f"{tok_ref} <> match_list.{LR}", center_ref.alias)] = 1
+            cte_wheres[
+                sql_str(
+                    f"{LR}.{LR} = match_list.{LR}",
+                    tok_ref.alias,
+                    seg_id,
+                    center_seg.alias,
+                )
+            ] = 1
+            cte_wheres[f"{tok_ref} {windowed}"] = 1
             cte = f"""
             collocates{i} AS (
-                SELECT tx.{feat_maybe_id}
-                FROM match_list
-                        JOIN {self.schema}.{self.batch} tx ON tx.{token_id} {windowed}
-                    AND tx.{token_id} <> {center}
-                    {within_sent}),
+                SELECT {tok_attr_ref}
+                FROM {' CROSS JOIN '.join(t for t in cte_tables)}
+                WHERE {' AND '.join(w for w in cte_wheres)}),
             """
 
-        out = f"""
+        freq_n = self._freq_n_table()
+        freq_table = self._freq_table()
+        null_fields = self._other_fields(feat, freq_table)
+
+        attr_ref = self.r.sql.attribute(
+            f"collocates{i}", self.token, feat, pointer=False
+        )
+        attr_ref_pointer = self.r.sql.attribute(
+            f"collocates{i}", self.token, feat, pointer=True
+        )
+        join_for_lookup_field = ""
+        wheres_for_lookup_field = ""
+        if len(attr_ref.joins) > 1:
+            tab, conds = next((t, c) for t, c in attr_ref.joins.items() if c)
+            join_for_lookup_field = f"CROSS JOIN {tab}"
+            wheres_for_lookup_field = " WHERE " + " AND ".join(c for c in conds)
+            wheres_for_lookup_field = re.sub(
+                sql_str("{}", f"collocates{i}"), "x", wheres_for_lookup_field
+            )
+        feat = attr_ref_pointer.ref.split(".")[-1]
+
+        out = sql_str(
+            f"""
             {cte}
             resXn{i} AS (SELECT count(*) AS freq FROM collocates{i}),
             res{i} AS
                 (SELECT {i}::int2 AS rstype,
-                    jsonb_build_array({feat}, o, e)
-                FROM (SELECT {feat}, o, 1. * x.freq / {freq_n}.freq * resXn{i}.freq AS e
-                    FROM (SELECT {feat_maybe_id}, freq, count(*) AS o
+                    jsonb_build_array({LR}, o, e)
+                FROM (SELECT {attr_ref} AS {LR}, o, 1. * x.freq / {freq_n}.freq * resXn{i}.freq AS e
+                    FROM (SELECT {attr_ref_pointer}, freq, count(*) AS o
                         FROM collocates{i}
-                                JOIN {self.schema}.{freq_table} USING ({feat_maybe_id})
+                        JOIN {self.schema}.{freq_table} USING ({feat})
                         {null_fields}
-                        GROUP BY {feat_maybe_id}, freq) x
-                            {join_for_text_field}
+                        GROUP BY {feat}, freq) x
+                            {join_for_lookup_field}
                             CROSS JOIN {self.schema}.{freq_n}
-                            CROSS JOIN resXn{i}) x)
-        """
+                            CROSS JOIN resXn{i}
+                            {wheres_for_lookup_field}) x)
+        """,
+            attr_ref.alias,
+            attr_ref.alias,
+        )
 
         meta_attribs: list[dict[str, str]] = [
             {"name": "Text", "type": "str"},

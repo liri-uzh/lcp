@@ -1,0 +1,25 @@
+Document d
+    classCode = /^S/
+
+Segment@d s
+
+Token@s t3
+    xpos2 = "SUBST"
+
+set prox
+    Token@s tx
+        position(tx) > position(t3) - 20
+        position(tx) < position(t3) + 20
+        tx != t3
+
+kwic => plain
+    context
+        s
+    entities
+        t3
+
+results3 => collocation
+    space
+        prox
+    attribute
+        form

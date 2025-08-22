@@ -22,6 +22,25 @@ QueryJSON: TypeAlias = dict[str, QueryPart]
 LabelLayer: TypeAlias = dict[str, tuple[str, dict[str, JSONObject]]]
 
 
+class RichStr(str):
+    """
+    Strings with a meta attribute to store information
+    """
+
+    @property
+    def meta(self) -> dict[str, Any]:
+        ret: dict[str, Any] = {}
+        try:
+            ret = self._meta  # type: ignore
+        except:
+            self._meta = ret
+        return ret
+
+    @meta.setter
+    def meta(self, meta: dict[str, Any]):
+        self._meta = meta
+
+
 @dataclass
 class SQLRef:
     """
@@ -31,7 +50,7 @@ class SQLRef:
     entity: str
     ref: str
     alias: str  # alias to use in SELECT
-    joins: dict[str, dict[str, int]]
+    joins: dict[RichStr, dict[str, int]]
 
     def __str__(self):
         return self.ref
@@ -54,7 +73,7 @@ ResultMetadata: TypeAlias = dict[str, str | Attribs | bool | list[JSONObject]]
 
 # Joins are stored as dict keys, with None as values. If the value is True,
 # the join will be put at the end of the list of joins (for performance reasons)
-Joins: TypeAlias = dict[str, None | Literal[True] | set]
+Joins: TypeAlias = dict[str | RichStr, None | Literal[True] | set]
 
 # a Layer is either None or (label, layer)
 Layer: TypeAlias = None | tuple[str, str]

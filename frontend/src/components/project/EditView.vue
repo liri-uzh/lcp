@@ -205,17 +205,33 @@
               <span v-if="currentProject.api">
                 <div class="mb-3">
                   <label for="url" class="form-label">{{ $t('common-key') }}</label>
-                  <input type="text" class="form-control" id="api-key" disabled :value="currentProject.api.key" />
+                  <div class="input-group">
+                    <input type="text" class="form-control" id="api-key" disabled :value="currentProject.api.key" />
+                    <button class="btn btn-outline-primary" type="button" @click="copyToClipboard(currentProject.api.key, 'API Key')">
+                      <FontAwesomeIcon :icon="['fas', 'copy']" />
+                    </button>
+                  </div>
                 </div>
+
                 <div class="mb-3">
                   <label for="secret" class="form-label">{{ $t('common-secret') }}</label>
-                  <input type="text" class="form-control" id="secret-key" disabled :value="currentProject.api.secret
-                ? currentProject.api.secret
-                : currentProject.api.secretPart.replace(
-                  '_',
-                  '*********************************************************'
-                )
-                " />
+                  <div class="input-group">
+                    <input type="text" class="form-control" id="secret-key" disabled :value="currentProject.api.secret
+                      ? currentProject.api.secret
+                      : currentProject.api.secretPart.replace(
+                        '_',
+                        '*********************************************************'
+                      )
+                    " />
+                    <button
+                      class="btn btn-outline-primary"
+                      type="button"
+                      :disabled="!currentProject.api.secret"
+                      @click="copyToClipboard(currentProject.api.secret, 'API Secret')
+                    ">
+                      <FontAwesomeIcon :icon="['fas', 'copy']" />
+                    </button>
+                  </div>
                   <div id="secretHelp" v-if="currentProject.api.secret" class="form-text text-danger">
                     <b>{{ $t('common-help-1') }}</b><br />{{ $t('common-help-2') }}
                   </div>
@@ -319,6 +335,13 @@ export default {
     },
     makeDataPublic() {
       console.log("makeDataPublic", this.isSuperAdmin);
+    },
+    copyToClipboard(text, name) {
+      Utils.copyToClipboard(text);
+      useNotificationStore().add({
+        type: "success",
+        text: `${name} has been copied to clipboard`,
+      });
     },
     formatDate: Utils.formatDate,
     async APIKeyRevoke(projectId, apiKeyId) {
