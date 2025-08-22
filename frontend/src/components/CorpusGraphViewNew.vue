@@ -176,7 +176,7 @@ export default {
     }
     for (let entity of entities)
       entity.parentId = entity.parentId || "_root";
-    const rootLabel = this.corpus.shortname || this.corpus.meta.shortname;
+    const rootLabel = (this.corpus.meta||{}).name || this.corpus.shortname;
     entities.unshift({id:"_root", label: rootLabel, width: displayTextWidth(rootLabel)});
     entities.forEach((e)=>e.folded = e.folded || false);
     return {
