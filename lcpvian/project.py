@@ -19,6 +19,16 @@ AIO_PORT = os.getenv("AIO_PORT", 9090)
 MESSAGE_TTL = int(os.getenv("REDIS_WS_MESSSAGE_TTL", 5000))
 
 
+async def project_check_title(request: web.Request) -> web.Response:
+    authenticator: Authentication = request.app["auth_class"](request.app)
+    request_data: dict[str, str] = await request.json()
+    res = await authenticator.project_check_title(
+        request,
+        request_data["title"]
+    )
+    return web.json_response(res)
+
+
 async def project_create(request: web.Request) -> web.Response:
     authenticator: Authentication = request.app["auth_class"](request.app)
     request_data: dict[str, str] = await request.json()

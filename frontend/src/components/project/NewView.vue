@@ -10,6 +10,9 @@
             <div id="titleHelp" v-if="titleState == false" class="form-text text-danger pre-line">
               {{ $t('modal-project-title-error') }}
             </div>
+            <div id="titleHelp" v-if="titleWithTheSameNameExistsState == true" class="form-text text-danger">
+              {{ $t('modal-project-title-unique-error') }}
+            </div>
           </div>
         </div>
         <div class="col-12 col-lg-4">
@@ -69,6 +72,7 @@
 <script>
 import { mapState } from "pinia";
 import { useUserStore } from "@/stores/userStore";
+import { useProjectStore } from "@/stores/projectStore";
 
 export default {
   name: 'ProjectNewView',
@@ -89,6 +93,7 @@ export default {
       titleState: null,
       startDateState: null,
       finishDateState: null,
+      titleWithTheSameNameExistsState: null,
     };
   },
   computed: {
@@ -101,13 +106,20 @@ export default {
         date > new Date(new Date().getTime() + 4 * 365 * 24 * 3600 * 1000)
       );
     },
-    validate() {
+    async validate() {
       this.titleState = this.model.title.trim().replace(/\s\s+/g, ' ').length >= 7;
       this.startDateState = this.model.startDate ? true : false;
       this.finishDateState = this.model.finishDate ? true : false;
 
+      if (this.titleState) {
+        await useProjectStore().checkTitle(this.model.title).then((data) => {
+          this.titleWithTheSameNameExistsState = data.exists;
+        });
+      }
+
       let validated =
         this.titleState &&
+        this.titleWithTheSameNameExistsState != true &&
         this.startDateState &&
         this.finishDateState;
       this.$emit('updated', validated, this.model);

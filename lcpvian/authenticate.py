@@ -89,6 +89,14 @@ class Authentication:
 
     ## Handle creation, update and removal of projects and users
 
+    async def project_check_title(
+        self, request: web.Request, title: str
+    ) -> JSONObject:
+        ret: JSONObject = cast(
+            JSONObject, {"exists": False, "msg": ""}
+        )
+        return ret
+
     async def project_create(
         self, request: web.Request, project_data: dict[str, str]
     ) -> JSONObject:

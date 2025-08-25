@@ -54,5 +54,14 @@ export const useProjectStore = defineStore("projectData", {
       let response = await httpApi.post(url, data)
       return await response.data;
     },
+    async checkTitle(title) {
+      let url = `/project/check-title`
+      let response = await httpApi.post(
+        url,
+        {title: title}
+      )
+      let data = await response.data;
+      return data
+    },
   },
 });
