@@ -85,7 +85,7 @@ async def project_users_invite(request: web.Request) -> web.Response:
     request_data: dict[str, str] = await request.json()
     project_id: str = request.match_info["project"]
     res = await authenticator.project_users_invite(
-        request, project_id, request_data["emails"]
+        request, project_id, request_data["emails"], request_data.get("byLink", False)
     )
     for cid, corpus in request.app["config"].items():
         if project_id != corpus.get("project_id"):

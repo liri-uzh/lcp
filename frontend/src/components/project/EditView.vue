@@ -168,6 +168,7 @@
                     <tr>
                       <th scope="col">{{ $t('common-email') }}</th>
                       <th scope="col">{{ $t('common-invited') }}</th>
+                      <th scope="col">{{ $t('common-by-link') }}</th>
                       <th scope="col">{{ $t('common-active') }}</th>
                     </tr>
                   </thead>
@@ -175,6 +176,18 @@
                     <tr v-for="invitation in users.invited" :key="invitation.id">
                         <td v-html="invitation.email"></td>
                         <td v-html="formatDate(invitation.addedOn)"></td>
+                        <td>
+                          <span v-if="invitation.byLink">
+                            <button
+                              class="btn btn-outline-primary btn-sm"
+                              type="button"
+                              @click="copyInvitationLinkToClipboard(invitation.invitationHash)"
+                            >
+                              <FontAwesomeIcon :icon="['fas', 'copy']" />
+                            </button>
+                          </span>
+                          <span v-else>-</span>
+                        </td>
                         <td>
                           <button
                             class="btn btn-sm btn-danger ms-1 mb-1"
@@ -194,6 +207,14 @@
                 <div class="input-group mb-1">
                   <input type="text" v-model="inviteEmails" class="form-control"
                     :placeholder="$t('modal-project-invite-placeholder')" />
+                  <div class="input-group-text">
+                    <div class="form-check">
+                      <input class="form-check-input" type="checkbox" value="" id="checkDefault" v-model="inviteByLink">
+                      <label class="form-check-label" for="checkDefault">
+                        {{ $t('common-allow-by-link') }}
+                      </label>
+                    </div>
+                  </div>
                   <button class="btn btn-outline-secondary" type="button" id="inviteButton" @click="inviteUsers">
                     {{ $t('common-invite') }}
                   </button>
@@ -274,6 +295,8 @@ import Utils from "@/utils";
 import { useUserStore } from "@/stores/userStore";
 import { useProjectStore } from "@/stores/projectStore";
 import { useNotificationStore } from "@/stores/notificationStore";
+import config from "@/config";
+
 
 export default {
   name: 'ProjectEditView',
@@ -292,6 +315,7 @@ export default {
       startDateState: this.project.startDate ? true : false,
       visibility: this.project.additionalData && this.project.additionalData.visibility ? this.project.additionalData.visibility : "private",
       inviteEmails: '',
+      inviteByLink: false,
       users: [],
       lamaUserId: null,
       isSuperAdmin: useUserStore().isSuperAdmin
@@ -343,6 +367,10 @@ export default {
         text: `${name} has been copied to clipboard`,
       });
     },
+    copyInvitationLinkToClipboard(linkHash) {
+      let link = `${config.appLinks.lama}/invitation/${linkHash}`;
+      this.copyToClipboard(link, 'Invitation link')
+    },
     formatDate: Utils.formatDate,
     async APIKeyRevoke(projectId, apiKeyId) {
       let retval = await useProjectStore().revokeApiKey(projectId, apiKeyId);
@@ -369,7 +397,7 @@ export default {
     },
     async inviteUsers() {
       let emails = this.inviteEmails.split(",").map((email) => email.trim()).filter(email => Utils.validateEmail(email));
-      useProjectStore().inviteUsers(this.currentProject.id, emails).then(() => {
+      useProjectStore().inviteUsers(this.currentProject.id, emails, this.inviteByLink).then(() => {
         this.loadUsers()
         this.inviteEmails = '';
       });

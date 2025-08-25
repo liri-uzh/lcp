@@ -169,6 +169,7 @@ if (process.env.NODE_ENV == "production") {
     "catchphrase": "https://catchphrase.linguistik.uzh.ch",
     "soundscript": "https://soundscript.linguistik.uzh.ch",
     "videoscope": "https://videoscope.linguistik.uzh.ch",
+    "lama": "https://lama.linguistik.uzh.ch",
   }
 }
 else if (process.env.NODE_ENV == "staging") {
@@ -176,7 +177,8 @@ else if (process.env.NODE_ENV == "staging") {
     "lcphome": "https://lcp.test.linguistik.uzh.ch",
     "catchphrase": "https://catchphrase.test.linguistik.uzh.ch",
     "soundscript": "https://soundscript.test.linguistik.uzh.ch",
-    "videoscope": "https://videoscope.test.linguistik.uzh.ch"
+    "videoscope": "https://videoscope.test.linguistik.uzh.ch",
+    "lama": "https://lama.test.linguistik.uzh.ch",
   }
 }
 else {
@@ -184,7 +186,8 @@ else {
     "lcphome": "http://localhost:8080",
     "catchphrase": "http://localhost:8081",
     "soundscript": "http://localhost:8082",
-    "videoscope": "http://localhost:8083"
+    "videoscope": "http://localhost:8083",
+    "lama": "http://localhost:8081",
   }
 }
 

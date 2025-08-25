@@ -207,10 +207,10 @@ class Lama(Authentication):
         return res
 
     async def project_users_invite(
-        self, request: web.Request, project_id: str, emails: Any
+        self, request: web.Request, project_id: str, emails: Any, byLink: bool = False
     ) -> JSONObject:
         res = await _lama_invitation_add(
-            request.headers, project_id, {"emails": emails}
+            request.headers, project_id, {"emails": emails, "byLink": byLink}
         )
         return res
 
