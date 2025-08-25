@@ -528,7 +528,11 @@ export default {
         }
       }
       if (this.languageFilter instanceof Array)
-        corpora = corpora.filter(c=>this.languageFilter.includes(c.meta.language) || (!c.meta.language && this.languageFilter.includes("und")));
+        corpora = corpora.filter(c=>
+          this.languageFilter.includes(c.meta.language) ||
+          (c.partitions && c.partitions.values.some(p=>this.languageFilter.includes(p))) ||
+          (!c.meta.language && this.languageFilter.includes("und"))
+        );
 
       function compare(a, b) {
         if (a.meta.name < b.meta.name) {
@@ -663,12 +667,16 @@ export default {
     }),
     ...mapState(useUserStore, ["projects", "userData"]),
     allLanguages() {
-      const ret = Object.values(Object.fromEntries(
-        this.corpora
-          .filter(c=>c.meta.language)
-          .map(c=>[c.meta.language,{langCode: c.meta.language, langName: this.getLanguage(c.meta.language)}])
-      )).sort((a,b)=>a.langName > b.langName);
-      return ret;
+      const lgDict = {};
+      for (let c of this.corpora) {
+        if (c.meta.language)
+          lgDict[c.meta.language] = {langCode: c.meta.language, langName: this.getLanguage(c.meta.language)};
+        else if (c.partitions && c.partitions.values instanceof Array) {
+          for (let p of c.partitions.values)
+            lgDict[p] = {langCode: p, langName: this.getLanguage(p)};
+        }
+      }
+      return Object.values(lgDict).sort((a,b)=>a.langName > b.langName);
     },
     projectsGroups() {
       const isSuperAdmin = useUserStore().isSuperAdmin;
