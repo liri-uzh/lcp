@@ -466,6 +466,7 @@ def _config(
         "action": action,
         "msg_id": msg_id,
     }
-    if publish:
-        _publish_msg(connection, cast(JSONObject, jso), msg_id)
+    if publish:  # refresh the config for all instances
+        _sharepublish_msg(cast(JSONObject, jso), msg_id)
+        # _publish_msg(connection, cast(JSONObject, jso), msg_id)
     return jso
