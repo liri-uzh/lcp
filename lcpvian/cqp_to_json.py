@@ -259,8 +259,12 @@ def full_cqp_to_json(cqp: str, conf: dict[str, Any] = {}):
     seg_label = "s"
 
     label = "match"
-    obj_label = "sequence" if "sequence" in query_json else "unit"
-    obj = query_json[obj_label]
+    obj_label: str = "sequence" if "sequence" in query_json else "unit"
+    obj: dict = query_json[obj_label]
+    rep = obj.get("repetition", {})
+    if str(rep.get("min", 1)) != "1" or str(rep.get("max", 1)) != 1:
+        obj = {"members": [{"sequence": obj}]}
+
     obj["label"] = label
     obj["partOf"] = [{"partOfStream": seg_label}]
 

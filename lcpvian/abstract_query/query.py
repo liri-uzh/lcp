@@ -923,12 +923,26 @@ class QueryMaker:
                 min_label = min_seq.split(" AS ")[-1]
                 max_label = max_seq.split(" AS ")[-1]
                 jttable = self.r.unique_label("t", layer=self.token)
-                infrom: str = f"{self.conf.schema}.{tok}{batch_suffix} {jttable}"
-                inwhere: str = (
-                    f"{jttable}.{self.segment.lower()}_id = gather.{seg_lab} AND {jttable}.{tok}_id BETWEEN gather.{min_label}::bigint AND gather.{max_label}::bigint"
+                infrom: str = sql_str(
+                    "{}.{} {}", self.conf.schema, f"{tok}{batch_suffix}", jttable
+                )
+                inwhere: str = sql_str(
+                    "{}.{} = gather.{} AND {}.{} BETWEEN gather.{}::bigint AND gather.{}::bigint",
+                    jttable,
+                    f"{self.segment.lower()}_id",
+                    seg_lab,
+                    jttable,
+                    f"{tok}_id",
+                    min_label,
+                    max_label,
                 )
                 self.selects.add(
-                    f"ARRAY(SELECT {jttable}.{tok}_id FROM {infrom} WHERE {inwhere}) AS {seqlab}"
+                    sql_str(
+                        f"ARRAY(SELECT {LR}.{LR} FROM {infrom} WHERE {inwhere}) AS {LR}",
+                        jttable,
+                        f"{tok}_id",
+                        seqlab,
+                    )
                 )
 
             additional_from: str = last_table
@@ -958,7 +972,7 @@ class QueryMaker:
                     s.replace("___lasttable___", last_table)
                     for s in self.selects
                     if not any(
-                        s.split(" as ")[-1] == self._get_label_as(x)
+                        s.split(" AS ")[-1] == self._get_label_as(x)
                         for x in self.selects
                         if x != s
                     )
