@@ -141,7 +141,7 @@ let hoveringAnnotation = null;
 const padding = 180;
 let width = document.body.clientWidth - 20;
 const paddingBeforeTimeline = 40;
-const MAX_ZOOM_LEVEL = 100
+const MAX_ZOOM_LEVEL = 200;
 const DEFAULT_ZOOM_LEVEL = 20;
 
 export default {
@@ -547,7 +547,7 @@ export default {
     // Create zoom behavior
     zoom = d3
       .zoom()
-      .scaleExtent([1, 75])
+      .scaleExtent([1, 200])
       .translateExtent([
         [padding, -Infinity],
         [width, Infinity],
