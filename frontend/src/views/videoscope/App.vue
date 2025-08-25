@@ -112,6 +112,8 @@ import LoadingView from "@/components/LoadingView.vue";
 import FooterView from "@/components/FooterView.vue";
 import NotificationView from "@/components/NotificationView.vue";
 import config from "@/config";
+import Utils from "@/utils";
+import { useNotificationStore } from "@/stores/notificationStore";
 
 export default {
   name: "AppVideoscope",
