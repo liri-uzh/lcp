@@ -87,6 +87,16 @@ async def _lama_invitation_add(
             return jso
 
 
+async def _lama_project_check_title(headers: Headers, title_json: dict) -> JSONObject:
+    url = f"{os.environ['LAMA_API_URL']}/profile/check-title"
+    async with ClientSession() as session:
+        async with session.post(
+                url, json=title_json, headers=_extract_lama_headers(headers)
+            ) as resp:
+            jso: JSONObject = await resp.json()
+            return jso
+
+
 async def _lama_project_users(headers: Headers, project_id: str) -> JSONObject:
     url = f"{os.environ['LAMA_API_URL']}/profile/{project_id}/accounts"
     async with ClientSession() as session:

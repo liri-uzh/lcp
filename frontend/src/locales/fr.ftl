@@ -221,6 +221,7 @@ modal-project-title = Titre
 modal-project-title-error =
  Le titre est obligatoire (sept lettres minimum).
  Le titre sera vérifié manuellement : il doit être concis et informatif.
+modal-project-title-unique-error = Un groupe portant le même titre existe déjà. Veuillez choisir un autre titre.
 modal-project-start-date = Début
 modal-project-start-date-error = La Début est obligatoire.
 modal-project-end-date = Fin
