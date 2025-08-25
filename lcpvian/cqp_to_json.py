@@ -262,7 +262,7 @@ def full_cqp_to_json(cqp: str, conf: dict[str, Any] = {}):
     obj_label: str = "sequence" if "sequence" in query_json else "unit"
     obj: dict = query_json[obj_label]
     rep = obj.get("repetition", {})
-    if str(rep.get("min", 1)) != "1" or str(rep.get("max", 1)) != 1:
+    if str(rep.get("min", 1)) != "1" or str(rep.get("max", 1)) != "1":
         obj = {"members": [{"sequence": obj}]}
 
     obj["label"] = label
