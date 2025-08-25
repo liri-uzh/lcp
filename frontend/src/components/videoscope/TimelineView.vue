@@ -1,6 +1,9 @@
 <template>
   <div>
     <div class="button-container" :style="mobileOrientationStyle">
+      <button class="btn btn-primary btn-sm me-1" @click="center">
+        Center
+      </button>
       <button
         class="btn btn-primary btn-sm me-1"
         :disabled="zoomValue <= 1"
@@ -160,12 +163,13 @@ export default {
   },
   watch: {
     hoveredResult() {
-      console.log("hoveredResult", this.hoveredResult);
+      // console.log("hoveredResult", this.hoveredResult);
       if (this.hoveredResult && this.hoveredResult instanceof Array && this.hoveredResult.length > 2)
         console.log("frame range of hovered line", [...this.hoveredResult[2]]);
     },
     playerIsPlaying() {
       playerState = this.playerIsPlaying;
+      this.center();
       // console.log("playerState", playerState);
     },
     playerCurrentTime() {
@@ -177,15 +181,19 @@ export default {
       const scaleRatio = this.zoomValue / currentScale;
       let xPosition = 0;
 
-      if (!this.playerIsPlaying) {
-        // Zoom relative to the position of the vertical line
-        const verticalLine = svg.selectAll(".vertical-line");
-        xPosition = verticalLine.attr("x1");
-      } else {
-        // Zoom relative to the center of the timeline
-        const svgBounds = svg.node().getBoundingClientRect();
-        xPosition = (svgBounds.width / 2 - transform.x) / currentScale;
-      }
+      // if (!this.playerIsPlaying) {
+      //   // Zoom relative to the position of the vertical line
+      //   const verticalLine = svg.selectAll(".vertical-line");
+      //   xPosition = verticalLine.attr("x1");
+      // } else {
+      //   // Zoom relative to the center of the timeline
+      //   const svgBounds = svg.node().getBoundingClientRect();
+      //   xPosition = (svgBounds.width / 2 - transform.x) / currentScale;
+      // }
+
+      // Zoom relative to the position of the vertical line
+      const verticalLine = svg.selectAll(".vertical-line");
+      xPosition = verticalLine.attr("x1");
 
       // Apply the zoom while keeping the center in place
       svg.transition().call(zoom.scaleBy, scaleRatio, [xPosition, 0]);
@@ -241,7 +249,7 @@ export default {
       // If the global currentTime is in the visible domain, show the line; otherwise hide it
       const inDomain = (this.currentTime >= domainStart && this.currentTime <= domainEnd);
 
-      console.log('IN DOMAIN? ', inDomain)
+      // console.log('IN DOMAIN? ', inDomain)
       verticalLine
         .attr("x1", xPosition)
         .attr("x2", xPosition)
@@ -341,6 +349,7 @@ export default {
 
       // Update the zoom transform with the new translation
       svg.call(zoom.transform, d3.zoomIdentity.translate(newTx, currentTransform.y).scale(currentTransform.k));
+      this.center();
     },
     setResizeOrientationListeners() {
       // kick off initial check and update on resize/orientationchange
