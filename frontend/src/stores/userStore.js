@@ -22,6 +22,7 @@ export const useUserStore = defineStore("userData", {
     projects: [],
     dataFetched: false,
     debug: false,
+    _ready: null,
   }),
   getters: {
     isSuperAdmin() {
@@ -29,9 +30,8 @@ export const useUserStore = defineStore("userData", {
     }
   },
   actions: {
-    fetchUserData() {
+    async fetchUserData() {
       return httpApi.get(`/settings`).then((r) => {
-        this.dataFetched = true
         this.userData = {
           publicProfiles: {},
           subscription: {subscriptions: []},
@@ -58,7 +58,13 @@ export const useUserStore = defineStore("userData", {
         if (this.userData.user.id === undefined) {
           this.userData.user = {"id": Utils.uuidv4(), "anon": true}
         }
+        this.dataFetched = true
       });
+    },
+    async checkLoaded () {
+      if (this.dataFetched) return
+      if (!this._ready) this._ready = this.fetchUserData().finally(() => (this._ready = null))
+      return this._ready
     },
   },
 });
