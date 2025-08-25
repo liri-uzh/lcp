@@ -125,7 +125,7 @@ class Authentication:
         return {}
 
     async def project_users_invite(
-        self, request: web.Request, project_id: str, emails
+        self, request: web.Request, project_id: str, emails, byLink: bool = False
     ) -> JSONObject:
         return {}
 
