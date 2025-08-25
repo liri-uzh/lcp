@@ -25,6 +25,31 @@
               <FontAwesomeIcon :icon="['fas', 'magnifying-glass']" />
             </span>
             <input type="text" class="form-control" v-model="corporaFilter" :placeholder="$t('platform-general-find-corpora')" />
+            <span class="input-group-text" id="basic-addon1" @click="switchLanguageFilter">
+              <FontAwesomeIcon :icon="['fas', 'filter']" />
+            </span>
+            <div id="languagesFilter" v-if="languageFilter instanceof Array && showLanguageFilters">
+              <div
+                class="title"
+                @click="languageFilter = allLanguages.some(l=>!languageFilter.includes(l.langCode)) ? allLanguages.map(l=>l.langCode) : []"
+              >
+                <input
+                  type="checkbox"
+                  :id="`language-filter-allLanguages`"
+                  :checked="allLanguages.every(l=>this.languageFilter.includes(l.langCode))"
+                />
+                <label :for="`language-filter-allLanguages`">Languages</label>
+              </div>
+              <span v-for="language in allLanguages" :key="language.langCode">
+                <input
+                  type="checkbox"
+                  :id="`language-filter-${language.langCode}`"
+                  :value="language.langCode"
+                  v-model="languageFilter"
+                />
+                <label :for="`language-filter-${language.langCode}`">{{ language.langName }} ({{ language.langCode }})</label>
+              </span>
+            </div>
           </div>
           <div v-if="corporaFilter && filterError && filterError.message" class="alert notification alert-danger">
             {{ filterError.message }}
@@ -394,6 +419,8 @@ export default {
       appType: config.appType,
       // tooltips: [],
       corporaFilter: "",
+      showLanguageFilters: true,
+      languageFilter: null,
       currentProject: null,
       filterError: null,
       currentEditTab: "metadata",
@@ -411,8 +438,14 @@ export default {
     ProjectEdit,
   },
   methods: {
+    switchLanguageFilter() {
+      this.showLanguageFilters = !this.showLanguageFilters;
+      if (this.languageFilter instanceof Array) return;
+      this.languageFilter = this.allLanguages.map(l=>l.langCode);
+    },
     hasAccessToCorpus: Utils.hasAccessToCorpus,
     getLanguage(lg) {
+      if (!lg) return "Undefined";
       const cl = this.corpusLanguages.find(v=>v.value.toLowerCase() == lg.toLowerCase());
       if (cl)
         return cl.name;
@@ -494,6 +527,8 @@ export default {
           this.filterError = null;
         }
       }
+      if (this.languageFilter instanceof Array)
+        corpora = corpora.filter(c=>this.languageFilter.includes(c.meta.language) || (!c.meta.language && this.languageFilter.includes("und")));
 
       function compare(a, b) {
         if (a.meta.name < b.meta.name) {
@@ -627,6 +662,14 @@ export default {
       corpusLanguages: "languages",
     }),
     ...mapState(useUserStore, ["projects", "userData"]),
+    allLanguages() {
+      const ret = Object.values(Object.fromEntries(
+        this.corpora
+          .filter(c=>c.meta.language)
+          .map(c=>[c.meta.language,{langCode: c.meta.language, langName: this.getLanguage(c.meta.language)}])
+      )).sort((a,b)=>a.langName > b.langName);
+      return ret;
+    },
     projectsGroups() {
       const isSuperAdmin = useUserStore().isSuperAdmin;
       let projects = {};
@@ -961,5 +1004,17 @@ export default {
 
 .horizontal-space {
   margin: 0em 1em;
+}
+
+#languagesFilter {
+  position: absolute;
+  right: 0;
+  max-width: 300px;
+  margin-top: 2.3em;
+  background-color: var(--bs-tertiary-bg);
+  border: solid 1px var(--bs-border-color);
+  z-index: 99;
+  display: flex;
+  flex-direction: column;
 }
 </style>

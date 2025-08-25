@@ -23,6 +23,7 @@ import {
   faDownload,
   faExpand,
   faFileExport,
+  faFilter,
   faFont,
   faForward,
   faGear,
@@ -78,6 +79,7 @@ library.add(faDatabase);
 library.add(faDownload);
 library.add(faExpand);
 library.add(faFileExport);
+library.add(faFilter);
 library.add(faFont);
 library.add(faForward);
 library.add(faGear);
