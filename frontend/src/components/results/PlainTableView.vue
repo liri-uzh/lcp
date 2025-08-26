@@ -22,12 +22,20 @@
           v-for="(item, resultIndex) in results"
           :key="`tr-results-${resultIndex}`"
           :data-index="resultIndex"
-          :class="resultIndex == this.selectedLine ? 'selected' : ''"
+          :class="resultIndex == this.selectedLine ? `selected ${this.detachSelectedLine ? 'detached' : ''}` : ''"
           @mousemove="hoverResultLine(resultIndex)"
           @mouseleave="hoverResultLine(null)"
-          @click="selectedLine = resultIndex"
+          @click="selectLine(resultIndex, this.detachSelectedLine)"
         >
           <td scope="row" class="results">
+            <div
+              v-if="resultIndex == this.selectedLine && this.detachSelectedLine"
+              class="unpin"
+              @click="selectLine(resultIndex, false)"
+            >
+              <FontAwesomeIcon :icon="['fas', 'thumb-tack']" />
+              Unpin
+            </div>
             <span :title="$t('common-copy-clipboard')" @click="copyToClip(item)" class="action-button">
               <FontAwesomeIcon :icon="['fas', 'copy']" />
             </span>
@@ -315,6 +323,25 @@
 tr.selected {
   outline: solid 2px green;
 }
+tr.detached {
+  position: fixed;
+  bottom: 1em;
+  z-index: 99;
+  left: 2.5vw;
+  width: 95vw;
+  box-shadow: 0px 0px 14px 0px black;
+}
+div.unpin {
+  position: absolute;
+  right: 0;
+  top: 0;
+  transform: translate(2px, -100%);
+  background-color: white;
+  border-top: solid 2px green;
+  border-right: solid 2px green;
+  border-left: solid 2px green;
+  border-radius: 0.1em;
+}
 td.icons {
   min-width: 100px;
 }
@@ -552,7 +579,8 @@ export default {
       randInt: Math.floor(Math.random() * 1000),
       playIndex: -1,
       image: null,
-      selectedLine: -1
+      selectedLine: -1,
+      detachSelectedLine: false
     };
   },
   components: {
@@ -579,6 +607,13 @@ export default {
     //   groups.push(tmpGroup.sort());
     //   return groups;
     // },
+    selectLine(index, detach) {
+      if (detach && (this.showAudio(index) || this.showVideo(index)))
+        this.detachSelectedLine = true;
+      else
+        this.detachSelectedLine = false;
+      this.selectedLine = index;
+    },
     getGroups(data, initial=false) {
       let groups = [];
       let tmpGroup = [];
@@ -831,6 +866,8 @@ export default {
           endTime: endTime,
           type: "audio"
         });
+
+        this.selectLine(resultIndex, true);
       }
     },
     showVideo(resultIndex) {
@@ -867,6 +904,7 @@ export default {
           type: "video"
         })
       }
+      this.selectLine(resultIndex, true);
     },
     strPopover(attribute) {
       if (attribute && attribute.constructor.name == 'Object')

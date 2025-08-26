@@ -2,9 +2,9 @@
   <div :style="`width: ${width}px; height: ${height}px; overflow: hidden;`">
     <svg id="corpusDiagram"></svg>
     <div id="zoomControls">
-      <div id="zoomPlus" @click="zoom = Math.min(2.0, zoom - 0.1)">+</div>
+      <div id="zoomPlus" @click="zoom = Math.max(zoomMin, zoom - 0.1)">+</div>
       <div id="zoomReset" @click="placeInit()">reset</div>
-      <div id="zoomMinus" @click="zoom = Math.max(0.2, zoom + 0.1)">-</div>
+      <div id="zoomMinus" @click="zoom = Math.min(zoomMax, zoom + 0.1)">-</div>
     </div>
   </div>
 </template>
@@ -70,11 +70,13 @@ export default {
   name: "CorpusGraphView",
   data() {
     const layers = this.corpus.layer;
-    Object.entries(layers).forEach(([layerName,layerProps])=>{
+    const firstClass = Object.values(this.corpus.firstClass);
+    const sortedLayers = Object.entries(layers).sort(l=>!firstClass.includes(l[0]));
+    sortedLayers.forEach(([layerName,layerProps])=>{
       if (layerProps.contains && typeof(layerProps.contains)=="string")
-        // typeof(layerProps.contains) == 'string' ? layerProps.contains = [layerProps.contains] : layerProps.contains.push
         layerProps.contains = [layerProps.contains];
       if (!layerProps.partOf) return;
+      // Partitioned corpora
       if (!layers[layerProps.partOf].contains)
         layers[layerProps.partOf].contains = [];
       if (typeof(layers[layerProps.partOf].contains) == "string")
@@ -84,7 +86,8 @@ export default {
     const globalAttributesDones = {};
     const additionalParents = {};
     const entities = [];
-    for (let [layerName, layerProps] of Object.entries(layers)) {
+    // Main build
+    for (let [layerName, layerProps] of sortedLayers) {
       const attributes = layerProps.attributes || {};
       if ("meta" in attributes && typeof(attributes.meta)=="object" && Object.keys(attributes.meta).length>=1) {
         for (let [metaAttrName, metaAttrProps] of Object.entries(attributes.meta))
@@ -157,11 +160,13 @@ export default {
         label: layerName,
         width: displayTextWidth(layerName),
         nAttrs: nAttrs,
-        anchors: ["stream","time","location"].filter(a=>Utils.isAnchored(layerName,this.corpus.layer,a))
+        anchors: ["stream","time","location"].filter(a=>Utils.isAnchored(layerName,this.corpus.layer,a)),
+        description: layerProps.description || ""
       };
       entities.push(layerEntity);
     }
-    for (let [layerName, layerProps] of Object.entries(this.corpus.layer)) {
+    // Additional parents
+    for (let [layerName, layerProps] of sortedLayers) {
       if (!layerProps.contains) continue;
       const children = entities.filter((e)=>layerProps.contains.includes(e.id));
       if (children.length==0) continue;
@@ -185,7 +190,9 @@ export default {
       viewBoxOffset: {x: 0, y: 0},
       zoom: 1,
       width: WIDTH,
-      height: HEIGHT
+      height: HEIGHT,
+      zoomMax: 4.0,
+      zoomMin: 0.2
     };
   },
   props: ["corpus"],
@@ -194,6 +201,7 @@ export default {
       const svgInDOM = document.querySelector("#corpusDiagram");
       this.viewBoxOffset = {x: -1 * Math.round(WIDTH/2), y: 0};
       svgInDOM.setAttribute("viewBox", `${this.viewBoxOffset.x} ${this.viewBoxOffset.y} ${WIDTH} ${HEIGHT}`);
+      this.zoom = 1;
     },
     title(node) {
       const props = node.data.props;
@@ -382,7 +390,7 @@ export default {
     svgInDOM.parentElement.addEventListener("wheel", (e)=>{
       e.preventDefault();
       e.stopPropagation();
-      this.zoom = Math.max(0.2, Math.min(2.0, this.zoom + e.deltaY/250));
+      this.zoom = Math.max(this.zoomMin, Math.min(this.zoomMax, this.zoom + e.deltaY/250));
     });
     setTooltips();
   },

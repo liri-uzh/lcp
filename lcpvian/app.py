@@ -61,7 +61,7 @@ from .exporter_swissdox import Exporter as ExporterSwissdox
 from .user import user_data
 from .message import get_message
 from .project import project_api_create, project_api_revoke
-from .project import project_create, project_update
+from .project import project_create, project_update, project_check_title
 from .project import project_users_invite, project_users
 from .project import project_users_invitation_remove, project_user_update
 from .query import post_query
@@ -261,6 +261,7 @@ async def create_app(test: bool = False) -> web.Application:
         ("/fetch", "POST", fetch_queries),
         ("/get_message/{fn}", "GET", get_message),
         ("/project", "POST", project_create),
+        ("/project/check-title", "POST", project_check_title),
         ("/project/{project}", "POST", project_update),
         ("/project/{project}/api/create", "POST", project_api_create),
         ("/project/{project}/api/{key}/revoke", "POST", project_api_revoke),

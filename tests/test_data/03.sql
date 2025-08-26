@@ -120,10 +120,10 @@ SET ordercol ,
       ORDER BY ordercol) traversal0) ,
     match_list AS
   (SELECT ARRAY
-     (SELECT t.token_id
-      FROM bnc1.tokenrest t
-      WHERE t.segment_id = gather.s
-        AND t.token_id BETWEEN gather.min_seq::bigint AND gather.max_seq::bigint) AS seq,
+     (SELECT "t"."token_id"
+      FROM "bnc1"."tokenrest" "t"
+      WHERE "t"."segment_id" = gather."s"
+        AND "t"."token_id" BETWEEN gather."min_seq"::bigint AND gather."max_seq"::bigint) AS "seq",
           gather."d" AS "d",
           gather."d_char_range" AS "d_char_range",
           gather."d_classCode" AS "d_classCode",

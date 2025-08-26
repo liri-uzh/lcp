@@ -1008,7 +1008,8 @@ export default {
             this.preselectedCorporaId = null;
             this.showGraph = 'main'
             setTimeout(() => this.graphIndex++, 1)
-            this.fetch(); // Retrieve the saved queries
+            if (this.userData && this.userData.user && this.userData.user.displayName)
+              this.fetch(); // Retrieve the saved queries
           }
           else {
             useCorpusStore().getCorpus(preselectedCorporaId).then(r=>{

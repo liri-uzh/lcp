@@ -31,9 +31,9 @@ export const useProjectStore = defineStore("projectData", {
       this.queryData = await response.data;
       return this.queryData
     },
-    async inviteUsers(projectId, emails) {
+    async inviteUsers(projectId, emails, inviteByLink) {
       let url = `/project/${projectId}/users/invite`
-      let response = await httpApi.post(url, {emails: emails})
+      let response = await httpApi.post(url, {emails: emails, byLink: inviteByLink})
       this.queryData = await response.data;
       return this.queryData
     },
@@ -53,6 +53,15 @@ export const useProjectStore = defineStore("projectData", {
       let url = `/project/${projectId}/user/${userId}/update`
       let response = await httpApi.post(url, data)
       return await response.data;
+    },
+    async checkTitle(title) {
+      let url = `/project/check-title`
+      let response = await httpApi.post(
+        url,
+        {title: title}
+      )
+      let data = await response.data;
+      return data
     },
   },
 });

@@ -3,6 +3,8 @@ import { getUserLocale } from "@/fluent";
 import httpApi from "@/httpApi";
 import { t } from '@/i18n';
 
+import { useUserStore } from "@/stores/userStore";
+
 export const useCorpusStore = defineStore("corpusData", {
   state: () => ({
     queryData: null,
@@ -51,7 +53,9 @@ export const useCorpusStore = defineStore("corpusData", {
         return response.data;
       });
     },
-    fetchQueries(data) {
+    async fetchQueries(data) {
+      const userStore = useUserStore()
+      await userStore.checkLoaded()
       return httpApi.post(`/fetch`, data).then((response) => {
         this.fetchedQueries = response.data;
         return response.data;
@@ -66,7 +70,9 @@ export const useCorpusStore = defineStore("corpusData", {
         return response.data;
       });
     },
-    getCorpus(corpusId) {
+    async getCorpus(corpusId) {
+      const userStore = useUserStore()
+      await userStore.checkLoaded()
       return httpApi.get(`/corpora/${corpusId}`);
     },
     requestInvite(corpusId) {

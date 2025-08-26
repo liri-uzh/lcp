@@ -133,6 +133,8 @@ def check_refs(
                     *r["resultsPlain"].get("entities", []),
                 ]
                 for x in context_and_entities:
+                    if x == "*":
+                        continue
                     assert x in all_refs, ReferenceError(
                         f"Could find no entity labeled '{x}'."
                     )

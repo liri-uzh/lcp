@@ -42,6 +42,8 @@ common-admin = Admin
 common-login = Login
 common-logout = Logout
 common-active = Active
+common-allow-by-link = Allow joining by link
+common-by-link = By link
 common-ready = Ready
 common-ok = Ok
 common-invited = Invited
@@ -219,6 +221,7 @@ modal-project-title = Title
 modal-project-title-error =
  Title is mandatory (min. length is seven letters).
  Title will be manually checked. Try to be concise and informative.
+modal-project-title-unique-error = A group with the same title already exists. Please choose a different title.
 modal-project-start-date = Start date
 modal-project-start-date-error = Start date is mandatory.
 modal-project-end-date = End date

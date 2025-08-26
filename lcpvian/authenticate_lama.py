@@ -10,6 +10,7 @@ from .lama import (
     _lama_project_user_update,
     _lama_invitation_remove,
     _lama_invitation_add,
+    _lama_project_check_title,
     _lama_project_users,
     _lama_project_create,
     _lama_project_update,
@@ -165,6 +166,12 @@ class Lama(Authentication):
 
     ## Handle creation, update and removal of projects and users
 
+    async def project_check_title(
+        self, request: web.Request, title: str
+    ) -> JSONObject:
+        res = await _lama_project_check_title(request.headers, {"title": title})
+        return res
+
     async def project_create(
         self, request: web.Request, project_data: dict[str, str]
     ) -> JSONObject:
@@ -207,10 +214,10 @@ class Lama(Authentication):
         return res
 
     async def project_users_invite(
-        self, request: web.Request, project_id: str, emails: Any
+        self, request: web.Request, project_id: str, emails: Any, byLink: bool = False
     ) -> JSONObject:
         res = await _lama_invitation_add(
-            request.headers, project_id, {"emails": emails}
+            request.headers, project_id, {"emails": emails, "byLink": byLink}
         )
         return res
 
