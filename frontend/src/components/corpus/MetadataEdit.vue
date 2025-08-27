@@ -179,13 +179,31 @@
             v-model="props.description"
             :placeholder="$t('modal-structure-no-desc')"
           />
-          <div v-for="(aprops, attribute) in getLayerAttributes(props.attributes)" :key="`attribute-${layer}-${attribute}`" class="attribute">
+          <div
+            v-for="(aprops, attribute) in getMetaAttributes(props.attributes)"
+            :key="`attribute-${layer}-meta-${attribute}`"
+            class="attribute"
+          >
+            <label :for="`attribute-${layer}-meta-${attribute}`" class="form-label">{{ attribute }}</label>
+            <input
+              type="text"
+              class="form-control"
+              :id="`attribute-${layer}-meta-${attribute}`"
+              v-model="props.attributes.meta[attribute].description"
+              :placeholder="$t('modal-structure-no-desc')"
+            />
+          </div>
+          <div
+            v-for="(aprops, attribute) in getNonMetaAttributes(props.attributes)"
+            :key="`attribute-${layer}-${attribute}`"
+            class="attribute"
+          >
             <label :for="`attribute-${layer}-${attribute}`" class="form-label">{{ attribute }}</label>
             <input
               type="text"
               class="form-control"
               :id="`attribute-${layer}-${attribute}`"
-              v-model="aprops.description"
+              v-model="props.attributes[attribute].description"
               :placeholder="$t('modal-structure-no-desc')"
             />
           </div>
@@ -656,15 +674,6 @@ export default {
   methods: {
     corpusDataType: Utils.corpusDataType,
     getUserLocale: getUserLocale,
-    getLayerAttributes: (attributes) => {
-      let ret = attributes;
-      if ("meta" in (attributes || {}) && typeof(attributes.meta) != "string") {
-        ret = Object.fromEntries(Object.entries(attributes).filter(v=>v[0] != "meta"));
-        for (let [k,v] of Object.entries(attributes.meta))
-          ret[k] = v;
-      }
-      return ret;
-    },
     submitSWISSUbase() {
       this.corpusData.meta.swissubase.submittedOn = new Date().toISOString();
       this.$emit("submitSWISSUbase")
@@ -676,6 +685,21 @@ export default {
         this.corpusData.corpus_id
       )
     },
+    getMetaAttributes(layerAttributes) {
+      let ret = {}
+      if ("meta" in layerAttributes && typeof(layerAttributes.meta) != "string")
+        ret = layerAttributes.meta;
+      return ret;
+    },
+    getNonMetaAttributes(layerAttributes) {
+      const ret = {};
+      for (let [k,v] of Object.entries(layerAttributes)) {
+        if (k == "meta" && typeof(v) != "string")
+          continue;
+        ret[k] = v
+      }
+      return ret;
+    }
   },
   mounted() {
     useSWISSUbaseStore().clearCheckReponse()

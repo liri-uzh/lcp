@@ -286,41 +286,8 @@
             </h5>
             <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
           </div>
-          <div class="modal-body text-start" v-if="corpusModal">
-            <!-- <div class="row mb-2" v-if="hasAccessToCorpus(corpusModal, userData)">
-              <div class="col-12">
-                <div
-                  class="btn btn-primary btn-sm btn-catchphrase me-1 tooltips"
-                  @click="openQueryWithCorpus(corpusModal)"
-                  data-bs-dismiss="modal"
-                  title="Query corpus with catchphrase"
-                >
-                  <FontAwesomeIcon :icon="['fas', 'magnifying-glass-chart']" class="me-2" />
-                  <i>catchphrase</i>
-                </div>
-                <div
-                  class="btn btn-primary btn-sm btn-soundscript me-1 tooltips"
-                  @click="openQueryWithCorpus(corpusModal)"
-                  data-bs-dismiss="modal"
-                  title="Query corpus with soundscript"
-                  v-if="['audio', 'video'].includes(corpusDataType(corpusModal))"
-                >
-                  <FontAwesomeIcon :icon="['fas', 'music']" class="me-2" />
-                  <i>soundscript</i>
-                </div>
-                <div
-                  class="btn btn-primary btn-sm btn-videoscope me-1 tooltips"
-                  @click="openQueryWithCorpus(corpusModal)"
-                  data-bs-dismiss="modal"
-                  title="Query corpus with videoscope"
-                  v-if="['video'].includes(corpusDataType(corpusModal))"
-                >
-                  <FontAwesomeIcon :icon="['fas', 'video']" class="me-2" />
-                  <i>videoscope</i>
-                </div>
-              </div>
-            </div> -->
-            <CorpusDetailsModal :corpusModal="corpusModal" :key="modalIndexKey" />
+          <div class="modal-body text-start" v-if="corpusDetailsModal">
+            <CorpusDetailsModal :corpusModal="corpusDetailsModal" :key="modalIndexKey" />
           </div>
           <div class="modal-footer">
             <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
@@ -413,6 +380,7 @@ export default {
   data() {
     return {
       corpusModal: null,
+      corpusDetailsModal: null,
       allowProjectModalSave: false,
       modalProjectData: null,
       appName: config.appName,
@@ -547,7 +515,7 @@ export default {
       return corpora;
     },
     openCorpusDetailsModal(corpus) {
-      this.corpusModal = { ...corpus };
+      this.corpusDetailsModal = { ...corpus };
       let modal = new Modal(document.getElementById('corpusDetailsModal'));
       this.modalIndexKey++
       modal.show()
@@ -557,7 +525,7 @@ export default {
       // let tab = Tab.getInstance(this.$refs);
       this.modalIndexKey++
       let modal = new Modal(document.getElementById('corpusEditModal'));
-      modal.show()
+      modal.show();
     },
     openQueryWithCorpus(corpus) {
       if (this.hasAccessToCorpus(corpus, this.userData)) {
