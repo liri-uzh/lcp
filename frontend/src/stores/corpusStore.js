@@ -63,7 +63,24 @@ export const useCorpusStore = defineStore("corpusData", {
     },
     updateMeta(data) {
       const lg = getUserLocale().value;
-      const toSend = {lg: lg, metadata: data.metadata, descriptions: data.descriptions}
+      const corpus = this.corpora.find(c=>c.corpus_id == data.corpusId);
+      const descriptions = {};
+      // make sure we store meta attributes in meta
+      for (let [layer, props] of Object.entries(data.descriptions)) {
+        const corpusAttrs = corpus.layer[layer].attributes || {};
+        descriptions[layer] = {attributes: {}};
+        if ("description" in props)
+          descriptions[layer].description = props.description;
+        for (let [attr, desc] of Object.entries(props.attributes)) {
+          if ("meta" in corpusAttrs && attr in corpusAttrs.meta) {
+            descriptions[layer].attributes.meta = descriptions[layer].attributes.meta || {};
+            descriptions[layer].attributes.meta[attr] = desc;
+          }
+          else
+            descriptions[layer].attributes[attr] = desc;
+        }
+      }
+      const toSend = {lg: lg, metadata: data.metadata, descriptions: descriptions}
       if ("projects" in data)
         toSend.projects = data.projects;
       httpApi.put(`/corpora/${data.corpusId}/meta/update`, toSend).then((response) => {
