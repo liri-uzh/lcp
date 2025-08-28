@@ -1089,6 +1089,7 @@ export default {
         this.percentageTotalDone = 0;
         this.failedStatus = false;
         this.loading = false;
+        this.requestId = null;
         this.querySatisfied = "";
         this.WSDataResults = {};
         this.WSDataMeta = {};
@@ -1128,6 +1129,7 @@ export default {
 
       if (this.WSDataResults.percentage_done >= 100) {
         this.loading = false;
+        this.requestId = null;
       }
     },
     currentTab() {
@@ -1231,10 +1233,12 @@ export default {
         this.percentageDone = 100;
         this.percentageTotalDone = 100;
         this.loading = false;
+        this.requestId = null;
       }
       if (["satisfied", "overtime"].includes(status)) {
         this.percentageDone = 100;
         this.loading = false;
+        this.requestId = null;
         this.querySatisfied = this.currentQuery;
       }
     },
@@ -1345,6 +1349,7 @@ export default {
         if (data["action"] === "interrupted") {
           console.log("Query interrupted", data);
           this.loading = false;
+          this.requestId = null;
           useNotificationStore().add({
             type: "error",
             text: data.toString(),
@@ -1458,9 +1463,10 @@ export default {
               type: "success",
               text: "Query stopped",
             });
-            this.loading = false;
-            if (this.requestId == data.request)
+            if (this.requestId == data.request) {
+              this.loading = false;
               this.requestId = null;
+            }
           }
           return;
         } else if (data["action"] == "started_export") {
