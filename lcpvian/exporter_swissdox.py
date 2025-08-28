@@ -276,7 +276,9 @@ class Exporter:
         print(
             f"[SWISSDOX Export {self._request.id}] Running query with {len(article_ids)} article IDs"
         )
-        res = await _db_query(query, {"article_ids": [aid for aid in article_ids]})
+        res = await _db_query(
+            query, {"article_ids": [aid for aid in article_ids]}, is_main=True
+        )
         print("export complete!")
         dest_folder = os.path.join(RESULTS_SWISSDOX, "exports")
         if not os.path.exists(dest_folder):
