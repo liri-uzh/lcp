@@ -814,16 +814,9 @@ class QueryMaker:
         disjunction_ctes: list[str] = []
         n_disj_cte = 0
         table_suffix: str = (
-            self._table[1] if self._table else next(s for s in seg_suffixes)
+            self._table[1] if self._table else next((s for s in seg_suffixes), "")
         )
         using: list[str] = [table_suffix]
-        # for anchor in ("char_range", "frame_range", "xy_box"):
-        #     if not any(
-        #         sel.lower().endswith(f"as {table_suffix}_{anchor}".lower())
-        #         for sel in selects_in_fixed
-        #     ):
-        #         continue
-        #     using.append(f"{table_suffix}_{anchor}")
         shift_unbound: dict[str, str] = {}
         for elab, elay in unbound_labels.items():
             e_ref = self.r.sql.layer(elab, elay, pointer=True)
