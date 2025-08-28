@@ -476,7 +476,11 @@ async def push_msg(
     A message can be sent to all users by passing an empty string as session_id
     """
     sent_to: set[tuple[str | None, str]] = set()
-    for room, users in sockets.items():
+    # for room, users in sockets.items():
+    for room in list(sockets):  # prevent size change during iteration
+        if room not in sockets:  # in case sockets changed during iteration
+            continue
+        users = sockets[room]
         if session_id and room != session_id:
             continue
         for conn, user_id in users:
