@@ -213,7 +213,7 @@ export default {
                 (node.data.anchors||[]).map(a=>Object({stream:"character-",time:"time-",location:"location-"})[a]).join(" and ") +
                 "aligned";
       if (props && props.values instanceof Array)
-        title += "; Possible values: " + node.data.props.values.join(" ");
+        title += "; Possible values: " + node.data.props.values.sort().join(" ");
       if ("entity" in (props||{}))
         title += `; points to ${props.entity}`
       return title;
