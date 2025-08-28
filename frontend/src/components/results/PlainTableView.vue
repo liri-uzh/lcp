@@ -649,7 +649,8 @@ export default {
       this.closePopover();
       resultIndex = resultIndex + (this.currentPage - 1) * this.resultsPerPage;
       const sentenceId = this.data[resultIndex][0];
-      this.currentMeta = {...this.meta[sentenceId]};
+      const layer = this.corpora.corpus.layer;
+      this.currentMeta = Object.fromEntries(Object.entries(this.meta[sentenceId]).sort((x,y)=>y[0] != layer[x[0]]?.contains));
       for (let layer in this.currentMeta) {
         const submeta = this.currentMeta[layer].meta;
         if (!submeta || (this.corpora.corpus.mapping[layer]||{}).hasMeta === false) continue
@@ -662,8 +663,8 @@ export default {
           if (!(k in submeta)) continue;
           const isString = typeof(submeta[k]) == "string";
           if (isString)
-            this.currentMeta[layer][k] = this.currentMeta[layer][k].trim();
-          if (isString && this.currentMeta[layer][k].match(/^0+(\.0+)?$/))
+            this.currentMeta[layer][k] = submeta[k].trim();
+          if (isString && submeta[k].match(/^0+(\.0+)?$/))
             this.currentMeta[layer][k] = "<span>0</span>";
           if (typeof(this.currentMeta[layer][k]) == "object" && Object.keys(this.currentMeta[layer][k]).length == 0)
             this.currentMeta[layer][k] = null;
