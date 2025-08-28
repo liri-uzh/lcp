@@ -1,11 +1,11 @@
 <template>
-  <div id="corpus-warning">
+  <!-- <div id="corpus-warning">
     <div class="row">
       <div class="col-12" style="font-style: italic;">
         {{ $t('modal-meta-warning-before') }} {{ getUserLocale().name }}{{ $t('modal-meta-warning-after') }}
       </div>
     </div>
-  </div>
+  </div> -->
   <div class="nav nav-tabs mt-3" id="nav-main-tab" role="tablist">
     <button class="nav-link" :class="{ active: activeMainTab === 'metadata' }" id="nav-metadata-tab"
       data-bs-toggle="tab" data-bs-target="#nav-metadata" type="button" role="tab" aria-controls="nav-metadata"
