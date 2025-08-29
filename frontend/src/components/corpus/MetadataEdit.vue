@@ -67,13 +67,13 @@
           </div>
           <div class="col-6">
             <div class="mb-3">
-              <label for="corpus-revision" class="form-label">{{ $t('modal-meta-revision') }}</label>
-              <input type="text" class="form-control" v-model="corpusData.meta.revision" :disabled="isDisabled" id="corpus-revision" />
+              <label for="corpus-date" class="form-label">{{ $t('modal-meta-date') }}</label>
+              <input type="text" class="form-control" v-model="corpusData.meta.date" :disabled="isDisabled" id="corpus-date" />
             </div>
           </div>
         </div>
         <div class="row">
-          <div class="col-4">
+          <div class="col-6">
             <div class="mb-3">
               <label for="corpus-language" class="form-label">{{ $t('modal-meta-language') }} </label>
               <multiselect
@@ -92,6 +92,12 @@
               <label for="corpus-license" class="form-label">{{ $t('modal-meta-data-type') }} <b>{{ corpusDataType(corpusData) }}</b></label>
             </div>
           </div> -->
+          <div class="col-6">
+            <div class="mb-3">
+              <label for="corpus-revision" class="form-label">{{ $t('modal-meta-revision') }}</label>
+              <input type="text" class="form-control" v-model="corpusData.meta.revision" :disabled="isDisabled" id="corpus-revision" />
+            </div>
+          </div>
         </div>
         <div class="row">
           <div class="col-12">
@@ -180,32 +186,32 @@
             :placeholder="$t('modal-structure-no-desc')"
           />
           <div
-            v-for="(aprops, attribute) in getMetaAttributes(props.attributes)"
-            :key="`attribute-${layer}-meta-${attribute}`"
+            v-for="(ainfo, aname) in getAttributes(props.attributes)"
+            :key="`attribute-${layer}-${ainfo.isMeta ? 'meta-' : ''}${aname}`"
             class="attribute"
           >
-            <label :for="`attribute-${layer}-meta-${attribute}`" class="form-label">{{ attribute }}</label>
+            <label :for="`attribute-${layer}-${ainfo.isMeta ? 'meta-' : ''}${aname}`" class="form-label">{{ aname }}</label>
             <input
               type="text"
               class="form-control"
-              :id="`attribute-${layer}-meta-${attribute}`"
-              v-model="props.attributes.meta[attribute].description"
+              :id="`attribute-${layer}-${ainfo.isMeta ? 'meta-' : ''}${aname}`"
+              v-model="(ainfo.isMeta ? props.attributes.meta : props.attributes)[aname].description"
               :placeholder="$t('modal-structure-no-desc')"
             />
-          </div>
-          <div
-            v-for="(aprops, attribute) in getNonMetaAttributes(props.attributes)"
-            :key="`attribute-${layer}-${attribute}`"
-            class="attribute"
-          >
-            <label :for="`attribute-${layer}-${attribute}`" class="form-label">{{ attribute }}</label>
-            <input
-              type="text"
-              class="form-control"
-              :id="`attribute-${layer}-${attribute}`"
-              v-model="props.attributes[attribute].description"
-              :placeholder="$t('modal-structure-no-desc')"
-            />
+            <div
+              v-for="(subainfo, subaname) in ainfo.sub"
+              :key="`attribute-${ainfo.global ? 'global-'+ainfo.global : layer+'-'+aname}-${subaname}`"
+              class="attribute"
+            >
+              <label :for="`attribute-${layer}-${aname}-${subaname}`" class="form-label">{{ subaname }}</label>
+              <input
+                type="text"
+                class="form-control"
+                :id="`attribute-${layer}-${aname}-${subaname}`"
+                v-model="(ainfo.global ? corpus.globalAttributes[ainfo.global].keys : props.attributes[aname].keys)[subaname].description"
+                :placeholder="$t('modal-structure-no-desc')"
+              />
+            </div>
           </div>
         </div>
       </div>
@@ -685,19 +691,33 @@ export default {
         this.corpusData.corpus_id
       )
     },
-    getMetaAttributes(layerAttributes) {
-      let ret = {}
-      if ("meta" in layerAttributes && typeof(layerAttributes.meta) != "string")
-        ret = layerAttributes.meta;
-      return ret;
+    subAttributes(attribute) {
+      if (attribute.keys && attribute.keys instanceof Object)
+        return attribute.keys;
+      if (attribute.ref && this.corpus.globalAttributes && attribute.ref in this.corpus.globalAttributes)
+        return this.corpus.globalAttributes[attribute.ref].keys || {};
+      return {};
     },
-    getNonMetaAttributes(layerAttributes) {
+    getAttributes(layerAttributes) {
       const ret = {};
+      let meta = {};
       for (let [k,v] of Object.entries(layerAttributes)) {
-        if (k == "meta" && typeof(v) != "string")
+        if (k == "meta" && typeof(v) != "string") {
+          meta = v;
           continue;
-        ret[k] = v
+        }
+        ret[k] = {
+          isMeta: 0,
+          sub: this.subAttributes(v),
+          global: (
+            "ref" in v && v.ref in (this.corpus.globalAttributes || {})
+            ? v.ref
+            : ""
+          )
+        };
       }
+      for (let [k,v] of Object.entries(meta))
+        ret[k] = {isMeta: 1, sub: this.subAttributes(v), global: false};
       return ret;
     }
   },

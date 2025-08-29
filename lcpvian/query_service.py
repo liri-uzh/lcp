@@ -455,7 +455,8 @@ class QueryService:
     def update_descriptions(
         self,
         corpus_id: int,
-        query_data: JSONObject,
+        layer_descs: JSONObject,
+        global_descs: JSONObject,
         lg: str = "en",
         queue: str = "internal",
     ) -> Job:
@@ -471,12 +472,12 @@ class QueryService:
             "has_return": False,
             "refresh_config": True,
         }
-        query = f"""CALL main.update_corpus_descriptions(:corpus_id, :descriptions ::jsonb);"""
+        query = f"""CALL main.update_corpus_descriptions(:corpus_id, :descriptions ::jsonb, :globals ::jsonb);"""
         params: dict[str, str | int | None | JSONObject] = {
             "corpus_id": corpus_id,
-            "descriptions": json.dumps(query_data),
+            "descriptions": json.dumps(layer_descs),
+            "globals": json.dumps(global_descs),
         }
-        self.app["config"][str(corpus_id)]["meta"] = query_data
         job: Job = self.app[queue].enqueue(
             _db_query,
             result_ttl=self.query_ttl,

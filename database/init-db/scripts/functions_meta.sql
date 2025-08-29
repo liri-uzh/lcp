@@ -28,6 +28,7 @@ GRANT EXECUTE ON PROCEDURE main.update_corpus_meta TO lcp_production_importer;
 CREATE OR REPLACE PROCEDURE main.update_corpus_descriptions(
    corpus_id         int
  , descriptions      jsonb
+ , globals           jsonb
 )
 AS $$
    DECLARE
@@ -37,6 +38,10 @@ AS $$
       avalue   jsonb;
       mk       text;
       mvalue   jsonb;
+      gk       text;
+      gval     jsonb;
+      gak      text;
+      gavalue  jsonb;
    BEGIN
       -- Loop over each key-value pair in the updates JSON object
       FOR k, val IN
@@ -84,6 +89,24 @@ AS $$
                      )
                   WHERE mc.corpus_id = $1;
             END IF;
+         END LOOP;
+      END LOOP;
+      -- global attributes now
+      FOR gk, gval IN
+         SELECT * FROM jsonb_each(globals)
+      LOOP
+         FOR gak, gavalue IN
+            SELECT * FROM jsonb_each(gval)
+         LOOP
+            UPDATE main.corpus mc
+               SET
+                  corpus_template = jsonb_set(
+                     corpus_template,
+                     format('{globalAttributes,%s,keys,%s,description}', gk, gak)::text[],
+                     gavalue::jsonb,
+                     TRUE
+                  )
+               WHERE mc.corpus_id = $1;
          END LOOP;
       END LOOP;
    END;

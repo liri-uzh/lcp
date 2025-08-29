@@ -80,7 +80,7 @@ export const useCorpusStore = defineStore("corpusData", {
             descriptions[layer].attributes[attr] = desc;
         }
       }
-      const toSend = {lg: lg, metadata: data.metadata, descriptions: descriptions}
+      const toSend = {lg: lg, metadata: data.metadata, descriptions: descriptions, globals: data.globals}
       if ("projects" in data)
         toSend.projects = data.projects;
       httpApi.put(`/corpora/${data.corpusId}/meta/update`, toSend).then((response) => {

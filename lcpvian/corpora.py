@@ -211,6 +211,7 @@ async def corpora_meta_update(request: web.Request) -> web.Response:
     request_data: JSONObject = await request.json()
     metadata: dict = cast(dict, request_data.get("metadata", {}))
     descriptions: dict = cast(dict, request_data.get("descriptions", {}))
+    global_descs: dict = cast(dict, request_data.get("globals", {}))
 
     if not authenticator.check_corpus_allowed(
         str(corpora_id),
@@ -272,7 +273,20 @@ async def corpora_meta_update(request: web.Request) -> web.Response:
         }
         for k, v in descriptions.items()
     }
-    args_desc = (corpora_id, to_store_desc, request_data.get("lg") or "en")
+    to_store_globals = {
+        glob_name: {
+            k: v["description"]
+            for k, v in glob_props.get("keys", {}).items()
+            if "description" in v
+        }
+        for glob_name, glob_props in global_descs.items()
+    }
+    args_desc = (
+        corpora_id,
+        to_store_desc,
+        to_store_globals,
+        request_data.get("lg") or "en",
+    )
     job_desc: Job = request.app["query_service"].update_descriptions(*args_desc)
 
     jobs_payload = [str(job_meta.id), str(job_desc.id)]
