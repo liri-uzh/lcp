@@ -21,6 +21,7 @@ from json.decoder import JSONDecodeError
 from .utils import (
     _filter_corpora,
     _remove_sensitive_fields_from_corpora,
+    _structure_descriptions,
     get_pending_invites,
 )
 from .typed import JSONObject
@@ -249,30 +250,7 @@ async def corpora_meta_update(request: web.Request) -> web.Response:
     )
     args_meta = (corpora_id, to_store_meta, request_data.get("lg") or "en")
     job_meta: Job = request.app["query_service"].update_metadata(*args_meta)
-    to_store_desc = {
-        k: {
-            vk: (
-                vv
-                if vk == "description"
-                else {
-                    vvk: (
-                        {
-                            vvvk: vvvv["description"]
-                            for vvvk, vvvv in vvv.items()
-                            if "description" in vvvv
-                        }
-                        if vvk == "meta" and isinstance(vvv, dict)
-                        else vvv["description"]
-                    )
-                    for vvk, vvv in vv.items()
-                    if "description" in vvv or vvk == "meta"
-                }
-            )
-            for vk, vv in v.items()
-            if vk in ("description", "attributes")
-        }
-        for k, v in descriptions.items()
-    }
+    to_store_desc = _structure_descriptions(descriptions)
     to_store_globals = {
         glob_name: {
             k: v["description"]

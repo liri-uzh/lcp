@@ -525,6 +525,26 @@ async def _set_config(payload: JSONObject, app: web.Application) -> None:
     return None
 
 
+def _structure_descriptions(descs: dict) -> dict:
+    ret: dict = {}
+    for k, v in descs.items():
+        ret[k] = {}
+        if "attributes" in v and isinstance(v["attributes"], dict):
+            if attrs := _structure_descriptions(v["attributes"]):
+                ret[k]["attributes"] = attrs
+        if "keys" in v and isinstance(v["keys"], dict):
+            if ks := _structure_descriptions(v["keys"]):
+                ret[k]["keys"] = ks
+        if "description" in v and isinstance(v["description"], str):
+            if not ret[k]:
+                ret[k] = v["description"]
+            else:
+                ret[k]["description"] = v["description"]
+        if not ret[k]:
+            ret.pop(k)
+    return ret
+
+
 @ensure_authorised
 async def refresh_config(request: web.Request) -> web.Response:
     """

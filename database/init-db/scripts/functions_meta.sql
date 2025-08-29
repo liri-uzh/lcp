@@ -38,6 +38,8 @@ AS $$
       avalue   jsonb;
       mk       text;
       mvalue   jsonb;
+      subk     text;
+      subvalue jsonb;
       gk       text;
       gval     jsonb;
       gak      text;
@@ -65,29 +67,85 @@ AS $$
             SELECT * FROM jsonb_each(val->'attributes')
          LOOP
             IF ak = 'meta' AND jsonb_typeof(avalue) = 'object' THEN
+               -- Meta sub-attributes
                FOR mk, mvalue IN
                   SELECT * FROM jsonb_each(avalue)
                LOOP
+                  IF jsonb_typeof(mvalue) = 'object' THEN
+                     IF 'description' ? mvalue THEN
+                        UPDATE main.corpus mc
+                           SET
+                              corpus_template = jsonb_set(
+                                 corpus_template,
+                                 format('{layer,%s,attributes,meta,%s,description}', k, mk)::text[],
+                                 mvalue::jsonb->'description',
+                                 TRUE
+                              )
+                           WHERE mc.corpus_id = $1;
+                     END IF;
+                     FOR subk, subvalue IN
+                        SELECT * FROM jsonb_each(mvalue::jsonb->'keys')
+                     LOOP
+                        UPDATE main.corpus mc
+                           SET
+                              corpus_template = jsonb_set(
+                                 corpus_template,
+                                 format('{layer,%s,attributes,meta,%s,keys,%s,description}', k, mk, subk)::text[],
+                                 subvalue::jsonb,
+                                 TRUE
+                              )
+                           WHERE mc.corpus_id = $1;
+                     END LOOP;
+                  ELSE
+                     UPDATE main.corpus mc
+                        SET
+                           corpus_template = jsonb_set(
+                              corpus_template,
+                              format('{layer,%s,attributes,meta,%s,description}', k, mk)::text[],
+                              mvalue::jsonb,
+                              TRUE
+                           )
+                        WHERE mc.corpus_id = $1;
+                  END IF;
+               END LOOP;
+            ELSE
+               -- Non-meta attribute
+               IF jsonb_typeof(avalue) = 'object' THEN
+                  IF avalue ? 'description' THEN
+                     UPDATE main.corpus mc
+                        SET
+                           corpus_template = jsonb_set(
+                              corpus_template,
+                              format('{layer,%s,attributes,%s,description}', k, ak)::text[],
+                              avalue::jsonb->'description',
+                              TRUE
+                           )
+                        WHERE mc.corpus_id = $1;
+                  END IF;
+                  FOR subk, subvalue IN
+                     SELECT * FROM jsonb_each(avalue::jsonb->'keys')
+                  LOOP
+                     UPDATE main.corpus mc
+                        SET
+                           corpus_template = jsonb_set(
+                              corpus_template,
+                              format('{layer,%s,attributes,%s,keys,%s,description}', k, ak, subk)::text[],
+                              subvalue::jsonb,
+                              TRUE
+                           )
+                        WHERE mc.corpus_id = $1;
+                  END LOOP;
+               ELSE
                   UPDATE main.corpus mc
                      SET
                         corpus_template = jsonb_set(
                            corpus_template,
-                           format('{layer,%s,attributes,meta,%s,description}', k, mk)::text[],
-                           mvalue::jsonb,
+                           format('{layer,%s,attributes,%s,description}', k, ak)::text[],
+                           avalue::jsonb,
                            TRUE
                         )
                      WHERE mc.corpus_id = $1;
-               END LOOP;
-            ELSE
-               UPDATE main.corpus mc
-                  SET
-                     corpus_template = jsonb_set(
-                        corpus_template,
-                        format('{layer,%s,attributes,%s,description}', k, ak)::text[],
-                        avalue::jsonb,
-                        TRUE
-                     )
-                  WHERE mc.corpus_id = $1;
+               END IF;
             END IF;
          END LOOP;
       END LOOP;
