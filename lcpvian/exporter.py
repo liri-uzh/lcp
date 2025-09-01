@@ -30,6 +30,23 @@ RESULTS_DIR = os.getenv("RESULTS", "results")
 RESULTS_USERS = os.environ.get("RESULTS_USERS", os.path.join("results", "users"))
 
 
+def _btoa(val: str) -> str:
+    encs = ("utf-8", "iso-8859-1")
+    if not val:
+        return ""
+    ret: str = ""
+    for enc in encs:
+        try:
+            ret = btoa(val).decode(enc)  # type: ignore
+            if ret:
+                break
+        except:
+            pass
+    if not ret:
+        raise Exception(f"Could not decode {val}")
+    return ret
+
+
 def _token_value(val: str) -> str:
     try:
         ret = json.loads(val)
@@ -682,7 +699,14 @@ class Exporter:
                 if k not in ("sample_query", "swissubase")
             }
             try:
-                meta["userLicense"] = btoa(meta["userLicense"]).decode("utf-8")  # type: ignore
+                if isinstance(meta["userLicense"], str):
+                    meta["userLicense"] = _btoa(meta["userLicense"])  # type: ignore
+                else:
+                    new_user_license = {
+                        k: _btoa(v)  # type: ignore
+                        for k, v in meta["userLicense"].items()
+                    }
+                    meta["userLicense"] = new_user_license
             except:
                 pass
             partitions = config.get("partitions", {}).get("values", [])
