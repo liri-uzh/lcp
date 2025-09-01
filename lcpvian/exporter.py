@@ -19,7 +19,7 @@ from uuid import uuid4
 from xml.sax.saxutils import escape, quoteattr
 
 from .callbacks import _general_failure
-from .jobfuncs import _handle_export
+from .jobfuncs import _export_db
 from .query_classes import Request, QueryInfo
 from .typed import CorpusConfig
 from .utils import _get_iso639_3, _get_mapping, _publish_msg, sanitize_filename
@@ -217,11 +217,11 @@ class Exporter:
         """
         q = Queue("internal", connection=connection)
         q.enqueue(
-            _handle_export,  # finish export
+            _export_db,  # finish export
             on_failure=Callback(_general_failure),
             args=(qhash, xp_format),
             kwargs={
-                "create": False,
+                "operation": "finish",
                 "offset": offset,
                 "requested": requested,
                 "delivered": delivered,
@@ -276,7 +276,7 @@ class Exporter:
         )
         should_run = not os.path.exists(filepath)
         app["internal"].enqueue(
-            _handle_export,  # init_export
+            _export_db,  # init_export
             on_success=Callback(cls.try_finish_immediately),
             on_failure=Callback(_general_failure),
             result_ttl=EXPORT_TTL,
