@@ -23,6 +23,7 @@ RESULTS_SWISSDOX = os.environ.get("RESULTS_SWISSDOX", "results/swissdox")
 
 
 class Exporter(ExporterXML):
+    xp_format = "xml"
 
     def __init__(self, request: Request, qi: QueryInfo) -> None:
         super().__init__(request, qi)

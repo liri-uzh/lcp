@@ -11,7 +11,8 @@
             class="notif"
             :key="`notif-${n}`"
         >
-            {{`[${notif.when}] ${notif.msg}`}}
+            <span>[{{ notif.when }}] </span>
+            <span>{{ notif.msg }}</span>
             <span
               v-if="notif.dl_info && notif.dl_info.status == 'ready'"
               @click="fetch(notif.dl_info)"
@@ -92,12 +93,12 @@ export default {
     onSocketMessage(data) {
       const nowStr = new Date().toLocaleString();
       if (data["action"] == "started_export") {
-        const info = {created_at: nowStr, status: "exporting", hash: data.hash};
+        const info = {created_at: nowStr, status: data.status || "exporting", hash: data.hash};
         this.notifs = [{when: nowStr, msg: `Started exporting to ${data.format}`, dl_info: info, warn: true}, ...this.notifs];
         this.warn = true;
       }
       if (data["action"] == "export_complete") {
-        const info = {created_at: nowStr, status: "downloading", hash: data.hash};
+        const info = {created_at: nowStr, status: data.status || "downloading", hash: data.hash};
         this.notifs = [{when: nowStr, msg: `Downloading ${data.format} export file`, dl_info: info, warn: true}, ...this.notifs];
         this.warn = true;
       }
@@ -129,6 +130,10 @@ export default {
             created_at: created_at
           };
           const obj = {when: d, msg: `Exported ${filename}`, dl_info: info};
+          if (status == "failed")
+            obj.msg = `Error ${filename}: ${msg}`;
+          else if (status != "ready")
+            obj.msg = `Progress: ${msg}`;
           const json_obj = JSON.stringify(obj);
           if (_notifs.map(n=>JSON.stringify(n)).includes(json_obj))
             continue

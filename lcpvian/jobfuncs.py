@@ -91,7 +91,14 @@ async def _export_db(
         export_params["need_querying"] = "TRUE" if kwargs.get("should_run") else "FALSE"
         export_query = "CALL main.init_export('{query_hash}', '{format}', {offset}, {requested}, '{user_id}', {need_querying}, '{userpath}', {corpus_id});"
     elif operation == "update":
-        export_query = "CALL main.update_export('{query_hash}', '{format}', {offset}, {requested}, {delivered});"
+        export_query = "CALL main.update_export('{query_hash}', '{format}', {offset}, {requested}, '{status}', '{message}');"
+        export_params.pop("user_id", "")
+        export_params["status"] = (
+            "export"
+            if "export" in kwargs
+            else ("query" if "query" in kwargs else "failure")
+        )
+        export_params["message"] = kwargs.get("message", "")
     elif operation == "finish":
         # if path := kwargs.get("path"):
         #     RESULTS_DIR = os.getenv("RESULTS_USERS", os.path.join("results","users/"))

@@ -54,20 +54,31 @@ CREATE OR REPLACE PROCEDURE main.update_export(
  , format            text
  , n_offset          int
  , requested         int
- , delivered         int
+ , stat              text
+ , msg               text
 )
 AS $$
+   DECLARE
+      st             text;
    BEGIN
 
+      SELECT
+         CASE
+            WHEN $5 = 'export' THEN 'exporting'
+            WHEN $5 = 'query' THEN 'querying'
+            ELSE 'failed'
+         END
+        INTO st
+           ;
+
       UPDATE main.exports e
-         SET status = 'exporting'::main.export_status
-           , delivered = $5
-           , modified_at = now()
+         SET "status" = st::main.export_status
+           , "message" = $6
+           , "modified_at" = now()
        WHERE e.query_hash = $1
          AND e.format = $2
          AND e.n_offset = $3
          AND e.requested = $4
-         AND e.status IS DISTINCT FROM 'failed'
          ;
 
    END;

@@ -13,6 +13,7 @@ from lxml.builder import E
 from redis import Redis as RedisConnection
 from rq import Callback, Queue
 from rq.job import get_current_job, Job
+from types import TracebackType
 from typing import Any, cast
 from uuid import uuid4
 
@@ -144,6 +145,7 @@ def _get_top_layer(config: CorpusConfig, restrict: set = set()) -> str:
 
 
 class Exporter:
+    xp_format = "xml"
 
     def __init__(self, request: Request, qi: QueryInfo) -> None:
         self._request: Request = request
@@ -201,6 +203,31 @@ class Exporter:
             connection, qhash, offset, requested, requested, full, xp_format
         )
 
+    @staticmethod
+    def error_export(
+        job: Job,
+        connection: RedisConnection,
+        typ: type,
+        value: BaseException,
+        trace: TracebackType,
+    ) -> None:
+        """
+        Callback calling _general_failure
+        """
+        qhash, xp_format, _, offset, requested = job.args
+        msg = str(value)
+        q = Queue("internal", connection=connection)
+        q.enqueue(
+            _export_db,  # finish export
+            on_failure=Callback(_general_failure),
+            args=(qhash, xp_format, "update", offset, requested),
+            kwargs={
+                "failure": True,
+                "message": msg,
+            },
+        )
+        _general_failure(job, connection, typ, value, trace)
+
     @classmethod
     def finish_export_db(
         cls,
@@ -218,12 +245,9 @@ class Exporter:
         q = Queue("internal", connection=connection)
         q.enqueue(
             _export_db,  # finish export
-            on_failure=Callback(_general_failure),
-            args=(qhash, xp_format),
+            on_failure=Callback(cls.error_export),
+            args=(qhash, xp_format, "finish", offset, requested),
             kwargs={
-                "operation": "finish",
-                "offset": offset,
-                "requested": requested,
                 "delivered": delivered,
                 "path": cls.get_dl_path_from_hash(
                     qhash, offset, requested, full, filename=True
@@ -278,10 +302,10 @@ class Exporter:
         app["internal"].enqueue(
             _export_db,  # init_export
             on_success=Callback(cls.try_finish_immediately),
-            on_failure=Callback(_general_failure),
+            on_failure=Callback(cls.error_export),
             result_ttl=EXPORT_TTL,
             job_timeout=EXPORT_TTL,
-            args=(shash, xp_format, True, request.offset, request.requested),
+            args=(shash, xp_format, "create", request.offset, request.requested),
             kwargs={
                 "user_id": request.user,
                 "userpath": userpath,
@@ -312,12 +336,22 @@ class Exporter:
         requested = request.requested
         full = request.full
         try:
+            upd_exp_args = (qhash, cls.xp_format, "update", offset, requested)
+            await _export_db(
+                *upd_exp_args,
+                export=True,
+                message=f"{payload.get('percentage_done', 'NA')}%",
+            )
             exporter = cls(request, qi)
             wpath = exporter.get_working_path()
             await exporter.process_lines(payload)
             if not request.is_done(qi):
                 return
-            # each payload needs corresponding *_query/*_segments subfolders
+            await _export_db(
+                *upd_exp_args,
+                export=True,
+                message=f"100% - finalizing...",
+            )  # each payload needs corresponding *_query/*_segments subfolders
             qb_hashes = [bh for bh, _ in qi.query_batches.values()]
             for h, nlines in request.sent_hashes.items():
                 if h not in qb_hashes or nlines <= 0:
@@ -346,6 +380,15 @@ class Exporter:
             )
         except Exception as e:
             shutil.rmtree(cls.get_dl_path_from_hash(qhash, offset, requested, full))
+            await _export_db(
+                qhash,
+                cls.xp_format,
+                "update",
+                offset,
+                requested,
+                failure=True,
+                message=str(e),
+            )
             raise e
 
     def get_working_path(self, subdir: str = "") -> str:
