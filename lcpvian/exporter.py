@@ -458,7 +458,8 @@ class Exporter:
                                     for aname, aval in zip(
                                         (
                                             stats_attrs
-                                            if l[0] in (False, "False")
+                                            if stats_type == "collocation"
+                                            or l[0] in (False, "False")
                                             else total_stats
                                         ),
                                         l[1:],
@@ -640,6 +641,16 @@ class Exporter:
             seg_path = self.get_working_path(prefix)
             fpath = os.path.join(seg_path, f"{sid}.xml")
             with open(fpath, "w") as seg_output:
+                for annotation in annotations:
+                    ann_layer, ann_occurs = next((k, v) for k, v in annotation.items())
+                    for ann_pos, n_anns, ann_props in ann_occurs:
+                        props = {
+                            "from": str(ann_pos),
+                            "to": str(ann_pos + n_anns),
+                            **{k: str(v) for k, v in ann_props.items()},
+                        }
+                        ann_node = getattr(E, ann_layer)(**props)
+                        seg_output.write(_node_to_string(ann_node))
                 for token in self.build_tokens(offset, tokens):
                     seg_output.write(_node_to_string(token))
         for top_id, attrs in all_layers[top_layer].items():

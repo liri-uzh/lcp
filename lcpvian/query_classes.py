@@ -436,7 +436,8 @@ class Request:
     ):
         print(f"[{self.id}] Error while running the query:", error)
         if self.to_export:
-            await _export_db(
+            qi.enqueue(
+                _export_db,
                 qi.hash,
                 self.to_export.get("format", "xml"),
                 "update",
