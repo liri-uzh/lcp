@@ -2,8 +2,8 @@ import { defineStore } from "pinia";
 import { getUserLocale } from "@/fluent";
 import httpApi from "@/httpApi";
 import { t } from '@/i18n';
-
 import { useUserStore } from "@/stores/userStore";
+import config from "@/config";
 
 export const useCorpusStore = defineStore("corpusData", {
   state: () => ({
@@ -153,6 +153,8 @@ export const useCorpusStore = defineStore("corpusData", {
     async fetchExport(info) {
       const ampsInfo = Object.entries(info).map(([k,v])=>encodeURIComponent(k)+"="+encodeURIComponent(v)).join("&")
       let url = `${httpApi.getUri()}/download_export?${ampsInfo}`;
+      if (info.format == "swissdox")
+        url = config.appLinks.swissdoxviz;
       const a = document.createElement("A");
       a.target = "_blank";
       a.href = url;
