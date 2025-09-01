@@ -182,17 +182,24 @@ class Exporter:
         return requested_folder
 
     @staticmethod
-    def finish_immediately(
+    def try_finish_immediately(
         job: Job,
         connection: RedisConnection,
         result: Any,
     ) -> None:
+        """
+        Callback to initiate_db.
+        Immediately mark as finished if no need to run export.
+        """
         should_run: bool = cast(dict, job.kwargs).get("should_run", True)
         if should_run:
             return
         qhash, _, _, offset, requested = job.args
         full: bool = cast(dict, job.kwargs).get("full", False)
-        Exporter.finish_export_db(connection, qhash, offset, requested, requested, full)
+        xp_format: str = cast(str, job.args[1])
+        Exporter.finish_export_db(
+            connection, qhash, offset, requested, requested, full, xp_format
+        )
 
     @classmethod
     def finish_export_db(
@@ -203,6 +210,7 @@ class Exporter:
         requested: int,
         delivered: int,
         full: bool,
+        xp_format: str = "xml",
     ):
         """
         Mark an export in the DB as finished
@@ -211,7 +219,7 @@ class Exporter:
         q.enqueue(
             _handle_export,  # finish export
             on_failure=Callback(_general_failure),
-            args=(qhash, "xml"),
+            args=(qhash, xp_format),
             kwargs={
                 "create": False,
                 "offset": offset,
@@ -239,6 +247,7 @@ class Exporter:
         shash: str,
         config: dict,
         request: Request,
+        ext: str = ".xml",
     ) -> bool:
         """
         Mark an export in the DB as initiated and return whether a query should be run
@@ -249,7 +258,6 @@ class Exporter:
         epath = app["exporters"][xp_format].get_dl_path_from_hash(
             shash, request.offset, request.requested, request.full
         )
-        ext: str = ".xml"  # ".db" if xp_format == "swissdox" else ".xml"
         filename: str = cast(str, to_export.get("filename", ""))
         cshortname = config.get("shortname")
         if not filename:
@@ -269,7 +277,7 @@ class Exporter:
         should_run = not os.path.exists(filepath)
         app["internal"].enqueue(
             _handle_export,  # init_export
-            on_success=Callback(cls.finish_immediately),
+            on_success=Callback(cls.try_finish_immediately),
             on_failure=Callback(_general_failure),
             result_ttl=EXPORT_TTL,
             job_timeout=EXPORT_TTL,
@@ -343,6 +351,8 @@ class Exporter:
     def get_working_path(self, subdir: str = "") -> str:
         """
         The working path will be deleted after finalizing the results file
+        If subdir is defined, it will append it at the end of the path
+        Will create the directory if necessary
         """
         epath = Exporter.get_dl_path_from_hash(
             self._request.hash,
