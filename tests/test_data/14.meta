@@ -1,0 +1,617 @@
+{
+    "schema": "swissdox_3",
+    "schema_path": "swissdox_3",
+    "idx": 3,
+    "batch": "token_derest",
+    "document": "Article",
+    "segment": "Segment",
+    "token": "Token",
+    "meta": {
+        "url": "https://liri.linguistik.uzh.ch/wiki/langtech/swissdox/",
+        "date": "17.04.2024",
+        "name": "Swissdox@LiRI",
+        "source": {
+            "en": ""
+        },
+        "authors": {
+            "en": "Jonathan Schaber"
+        },
+        "license": "",
+        "version": 1,
+        "dataType": {
+            "en": ""
+        },
+        "language": "und",
+        "revision": "",
+        "swissubase": {
+            "licence": null,
+            "keywords": "",
+            "projectId": "",
+            "requestDoi": false,
+            "versionNote": "",
+            "datasetTitle": {
+                "de": "",
+                "en": "",
+                "fr": "",
+                "it": ""
+            },
+            "resourceType": 1,
+            "apiAccessToken": null,
+            "datasetLanguage": "en",
+            "datasetDescription": "",
+            "resourceDescription": "",
+            "documentationRemarks": "",
+            "validationInformation": ""
+        },
+        "institution": {
+            "en": ""
+        },
+        "userLicense": {
+            "en": ""
+        },
+        "sample_query": {
+            "en": ""
+        },
+        "corpusDescription": "The Swissdox@LiRI database comprises 22 million published media articles in German, French and Italian from a wide range of Swiss media sources (both print and digital) covering many decades."
+    },
+    "layer": {
+        "Token": {
+            "abstract": true,
+            "anchoring": {
+                "time": false,
+                "stream": true,
+                "location": false
+            },
+            "layerType": "unit",
+            "attributes": {
+                "form": {
+                    "type": "text",
+                    "isGlobal": false,
+                    "nullable": false
+                },
+                "upos": {
+                    "type": "categorical",
+                    "isGlobal": true,
+                    "nullable": false
+                },
+                "lemma": {
+                    "type": "text",
+                    "isGlobal": false,
+                    "nullable": true
+                }
+            }
+        },
+        "DepRel": {
+            "abstract": true,
+            "layerType": "relation",
+            "attributes": {
+                "udep": {
+                    "type": "categorical",
+                    "isGlobal": true,
+                    "nullable": false
+                },
+                "source": {
+                    "name": "dependent",
+                    "entity": "Token",
+                    "nullable": false
+                },
+                "target": {
+                    "name": "head",
+                    "entity": "Token",
+                    "nullable": true
+                }
+            }
+        },
+        "Article": {
+            "abstract": true,
+            "contains": "Division",
+            "layerType": "span",
+            "attributes": {
+                "head": {
+                    "type": "text",
+                    "nullable": false
+                },
+                "meta": {
+                    "SMDId": {
+                        "type": "integer"
+                    },
+                    "author": {
+                        "type": "string"
+                    },
+                    "doctype": {
+                        "type": "string"
+                    },
+                    "articleId": {
+                        "type": "uuid"
+                    },
+                    "contentId": {
+                        "type": "uuid"
+                    },
+                    "articleURL": {
+                        "type": "string"
+                    },
+                    "otherPubList": {
+                        "type": "string"
+                    },
+                    "otherPubCount": {
+                        "type": "integer"
+                    }
+                },
+                "source": {
+                    "type": "text",
+                    "nullable": false
+                },
+                "pubdate": {
+                    "type": "date",
+                    "nullable": false
+                },
+                "subhead": {
+                    "type": "text"
+                },
+                "dateline": {
+                    "type": "text"
+                },
+                "embedding": {
+                    "type": "vector",
+                    "nullable": false
+                },
+                "source_name": {
+                    "type": "text",
+                    "nullable": false
+                }
+            }
+        },
+        "Segment": {
+            "abstract": true,
+            "contains": "Token",
+            "layerType": "span"
+        },
+        "Division": {
+            "abstract": true,
+            "contains": "Segment",
+            "layerType": "span",
+            "attributes": {
+                "type": {
+                    "type": "categorical",
+                    "values": [
+                        "Autor",
+                        "Kasten",
+                        "Lead",
+                        "Legende",
+                        "Link",
+                        "Paragraph",
+                        "Zwischentitel"
+                    ]
+                }
+            }
+        },
+        "Token:de": {
+            "partOf": "Token",
+            "attributes": {
+                "xpos": {
+                    "type": "categorical",
+                    "values": [
+                        "$(",
+                        "$,",
+                        "$.",
+                        "ADJA",
+                        "ADJD",
+                        "ADV",
+                        "APPO",
+                        "APPR",
+                        "APPRART",
+                        "APZR",
+                        "ART",
+                        "CARD",
+                        "FM",
+                        "ITJ",
+                        "KOKOM",
+                        "KON",
+                        "KOUI",
+                        "KOUS",
+                        "NE",
+                        "NN",
+                        "PAV",
+                        "PDAT",
+                        "PDS",
+                        "PIAT",
+                        "PIS",
+                        "PPER",
+                        "PPOSAT",
+                        "PPOSS",
+                        "PRELAT",
+                        "PRELS",
+                        "PRF",
+                        "PTKA",
+                        "PTKANT",
+                        "PTKNEG",
+                        "PTKVZ",
+                        "PTKZU",
+                        "PWAT",
+                        "PWAV",
+                        "PWS",
+                        "TRUNC",
+                        "VAFIN",
+                        "VAINF",
+                        "VAPP",
+                        "VMFIN",
+                        "VMINF",
+                        "VVFIN",
+                        "VVIMP",
+                        "VVINF",
+                        "VVIZU",
+                        "VVPP",
+                        "XY"
+                    ]
+                }
+            }
+        },
+        "Token:fr": {
+            "partOf": "Token",
+            "attributes": {
+                "xpos": {
+                    "type": "categorical",
+                    "values": [
+                        "ADJ",
+                        "ADP",
+                        "ADV",
+                        "AUX",
+                        "CCONJ",
+                        "DET",
+                        "INTJ",
+                        "NOUN",
+                        "NUM",
+                        "PRON",
+                        "PROPN",
+                        "PUNCT",
+                        "SCONJ",
+                        "SYM",
+                        "VERB",
+                        "X"
+                    ]
+                }
+            }
+        },
+        "Token:it": {
+            "partOf": "Token",
+            "attributes": {
+                "xpos": {
+                    "type": "categorical",
+                    "values": [
+                        "A",
+                        "AP",
+                        "B",
+                        "BN",
+                        "CC",
+                        "CS",
+                        "DD",
+                        "DE",
+                        "DI",
+                        "DQ",
+                        "DR",
+                        "E",
+                        "FB",
+                        "FC",
+                        "FF",
+                        "FS",
+                        "I",
+                        "N",
+                        "NO",
+                        "PC",
+                        "PD",
+                        "PE",
+                        "PI",
+                        "PQ",
+                        "PR",
+                        "RD",
+                        "RI",
+                        "S",
+                        "SP",
+                        "SW",
+                        "SYM",
+                        "T",
+                        "V",
+                        "VA",
+                        "VM",
+                        "X"
+                    ]
+                }
+            }
+        },
+        "NamedEntity": {
+            "abstract": true,
+            "contains": "Token",
+            "layerType": "span",
+            "attributes": {
+                "form": {
+                    "type": "text",
+                    "isGlobal": false,
+                    "nullable": false
+                },
+                "type": {
+                    "type": "categorical",
+                    "values": [
+                        "LOC",
+                        "MISC",
+                        "ORG",
+                        "PER"
+                    ]
+                }
+            }
+        }
+    },
+    "firstClass": {
+        "token": "Token",
+        "segment": "Segment",
+        "document": "Article"
+    },
+    "isSwissdox": true,
+    "partitions": {
+        "values": [
+            "de",
+            "fr",
+            "it"
+        ]
+    },
+    "authRequired": true,
+    "mapping": {
+        "layer": {
+            "Token": {
+                "partitions": {
+                    "de": {
+                        "batches": 14,
+                        "relation": "token_de<batch>",
+                        "attributes": {
+                            "form": {
+                                "name": "form_de",
+                                "type": "relation"
+                            },
+                            "upos": {
+                                "name": "upos",
+                                "type": "enum",
+                                "schema": "main"
+                            },
+                            "xpos": {
+                                "name": "xpos_de",
+                                "type": "enum",
+                                "schema": "swissdox_mini<version>"
+                            },
+                            "lemma": {
+                                "name": "lemma_de",
+                                "type": "relation"
+                            },
+                            "ufeat": {
+                                "name": "ufeat",
+                                "type": "relation"
+                            }
+                        }
+                    },
+                    "fr": {
+                        "batches": 12,
+                        "relation": "token_fr<batch>",
+                        "attributes": {
+                            "form": {
+                                "name": "form_fr",
+                                "type": "relation"
+                            },
+                            "upos": {
+                                "name": "upos",
+                                "type": "enum",
+                                "schema": "main"
+                            },
+                            "xpos": {
+                                "name": "xpos_fr",
+                                "type": "enum",
+                                "schema": "swissdox_mini<version>"
+                            },
+                            "lemma": {
+                                "name": "lemma_fr",
+                                "type": "relation"
+                            },
+                            "ufeat": {
+                                "name": "ufeat",
+                                "type": "relation"
+                            }
+                        }
+                    },
+                    "it": {
+                        "batches": 5,
+                        "relation": "token_it<batch>",
+                        "attributes": {
+                            "form": {
+                                "name": "form_it",
+                                "type": "relation"
+                            },
+                            "upos": {
+                                "name": "upos",
+                                "type": "enum",
+                                "schema": "main"
+                            },
+                            "xpos": {
+                                "name": "xpos_it",
+                                "type": "enum",
+                                "schema": "swissdox_mini<version>"
+                            },
+                            "lemma": {
+                                "name": "lemma_it",
+                                "type": "relation"
+                            },
+                            "ufeat": {
+                                "name": "ufeat",
+                                "type": "relation"
+                            }
+                        }
+                    }
+                }
+            },
+            "DepRel": {
+                "partitions": {
+                    "de": {
+                        "relation": "deprel_de"
+                    },
+                    "fr": {
+                        "relation": "deprel_fr"
+                    },
+                    "it": {
+                        "relation": "deprel_it"
+                    }
+                }
+            },
+            "Article": {
+                "partitions": {
+                    "de": {
+                        "relation": "article_de"
+                    },
+                    "fr": {
+                        "relation": "article_fr"
+                    },
+                    "it": {
+                        "relation": "article_it"
+                    }
+                }
+            },
+            "Segment": {
+                "partitions": {
+                    "de": {
+                        "prepared": {
+                            "relation": "prepared_segment_de",
+                            "columnHeaders": [
+                                "form",
+                                "lemma",
+                                "upos",
+                                "xpos",
+                                "ufeat",
+                                "head",
+                                "label",
+                                "spaceAfter"
+                            ]
+                        },
+                        "relation": "segment_de"
+                    },
+                    "fr": {
+                        "prepared": {
+                            "relation": "prepared_segment_fr",
+                            "columnHeaders": [
+                                "form",
+                                "lemma",
+                                "upos",
+                                "xpos",
+                                "ufeat",
+                                "head",
+                                "label",
+                                "spaceAfter"
+                            ]
+                        },
+                        "relation": "segment_fr"
+                    },
+                    "it": {
+                        "prepared": {
+                            "relation": "prepared_segment_it",
+                            "columnHeaders": [
+                                "form",
+                                "lemma",
+                                "upos",
+                                "xpos",
+                                "ufeat",
+                                "head",
+                                "label",
+                                "spaceAfter"
+                            ]
+                        },
+                        "relation": "segment_it"
+                    }
+                }
+            },
+            "Division": {
+                "partitions": {
+                    "de": {
+                        "relation": "division_de"
+                    },
+                    "fr": {
+                        "relation": "division_fr"
+                    },
+                    "it": {
+                        "relation": "division_it"
+                    }
+                }
+            },
+            "NamedEntity": {
+                "partitions": {
+                    "de": {
+                        "relation": "namedentity_de",
+                        "attributes": {
+                            "form": {
+                                "name": "namedentity_form_de",
+                                "type": "relation"
+                            },
+                            "type": {
+                                "key": "form",
+                                "name": "namedentity_form_de",
+                                "type": "relation",
+                                "schema": "swissdox_mini<version>"
+                            }
+                        }
+                    },
+                    "fr": {
+                        "relation": "namedentity_fr",
+                        "attributes": {
+                            "form": {
+                                "name": "namedentity_form_fr",
+                                "type": "relation"
+                            },
+                            "type": {
+                                "key": "form",
+                                "name": "namedentity_form_fr",
+                                "type": "relation",
+                                "schema": "swissdox_mini<version>"
+                            }
+                        }
+                    },
+                    "it": {
+                        "relation": "namedentity_it",
+                        "attributes": {
+                            "form": {
+                                "name": "namedentity_form_it",
+                                "type": "relation"
+                            },
+                            "type": {
+                                "key": "form",
+                                "name": "namedentity_form_it",
+                                "type": "relation",
+                                "schema": "swissdox_mini<version>"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "hasFTS": true,
+        "schema": "swissdox_mini_<version>",
+        "FTSvectorCols": {
+            "de": {
+                "1": "form",
+                "2": "lemma",
+                "3": "upos",
+                "4": "dep_out",
+                "5": "dep_in",
+                "6": "xpos"
+            },
+            "fr": {
+                "1": "form",
+                "2": "lemma",
+                "3": "upos",
+                "4": "dep_out",
+                "5": "dep_in",
+                "6": "xpos"
+            },
+            "it": {
+                "1": "form",
+                "2": "lemma",
+                "3": "upos",
+                "4": "dep_out",
+                "5": "dep_in",
+                "6": "xpos"
+            }
+        }
+    }
+}
