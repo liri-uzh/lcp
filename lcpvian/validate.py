@@ -48,8 +48,8 @@ def process_refs(
         )
         if obj_l := obj["unit"].get("label"):
             ret[obj_l] = set()
-    if "reference" in obj and recent_layer:
-        ref = obj["reference"]
+    if ("reference" in obj or "entity" in obj) and recent_layer:
+        ref = obj.get("reference", obj.get("entity", ""))
         # attrs = conf["layer"].get(recent_layer, {}).get("attributes", {})
         attrs = _get_all_attributes(recent_layer, conf)
         if "." in ref:
@@ -122,9 +122,9 @@ def check_refs(
             f"Could find no entity labeled '{prefix}'."
         )
     if isinstance(obj.get("entity"), str):
-        assert obj["entity"] in all_refs, ReferenceError(
-            f"Could find no entity labeled '{obj['entity']}'."
-        )
+        assert obj["entity"] in all_refs or obj["entity"] in set.union(
+            *all_refs.values()
+        ), ReferenceError(f"Could find no entity labeled '{obj['entity']}'.")
     if isinstance(obj.get("results"), list):
         for r in obj["results"]:
             if "resultsPlain" in r:
@@ -271,6 +271,7 @@ def validate(
                 "valid": False,
                 "action": "validate",
                 "error": str(e),
+                "json": json_query,
                 "status": 400,
             }
         result["kind"] = kind

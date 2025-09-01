@@ -1,6 +1,7 @@
 WITH RECURSIVE fixed_parts AS
   (SELECT "e"."alignment_id" AS "e",
           "e"."char_range" AS "e_char_range",
+          "e_aligned"."meta"->>'date' AS "e_aligned_date",
           "s"."char_range" AS "s_char_range",
           "s"."segment_id" AS "s"
    FROM "sparcling1".segment_enrest AS s
@@ -12,6 +13,7 @@ WITH RECURSIVE fixed_parts AS
                   FROM ("e_aligned"."meta"->>'date')::date))::numeric > (1999)::numeric ),
                match_list AS
   (SELECT fixed_parts."e" AS "e",
+          fixed_parts."e_aligned_date" AS "e_aligned_date",
           fixed_parts."e_char_range" AS "e_char_range",
           fixed_parts."s" AS "s",
           fixed_parts."s_char_range" AS "s_char_range"
