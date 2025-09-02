@@ -462,7 +462,7 @@ class Exporter:
                                             or l[0] in (False, "False")
                                             else total_stats
                                         ),
-                                        l[1:],
+                                        l if stats_type == "collocation" else l[1:],
                                     )
                                 ]
                             )
