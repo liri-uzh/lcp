@@ -701,7 +701,7 @@ export default {
     getAttributes(layerAttributes) {
       const ret = {};
       let meta = {};
-      for (let [k,v] of Object.entries(layerAttributes)) {
+      for (let [k,v] of Object.entries(layerAttributes || {})) {
         if (k == "meta" && typeof(v) != "string") {
           meta = v;
           continue;
@@ -718,6 +718,7 @@ export default {
       }
       for (let [k,v] of Object.entries(meta))
         ret[k] = {isMeta: 1, sub: this.subAttributes(v), global: false};
+      console.log("return getAttributes", JSON.parse(JSON.stringify(ret)));
       return ret;
     }
   },

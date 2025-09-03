@@ -71,7 +71,7 @@ export const useCorpusStore = defineStore("corpusData", {
         descriptions[layer] = {attributes: {}};
         if ("description" in props)
           descriptions[layer].description = props.description;
-        for (let [attr, desc] of Object.entries(props.attributes)) {
+        for (let [attr, desc] of Object.entries(props.attributes||{})) {
           if ("meta" in corpusAttrs && attr in corpusAttrs.meta) {
             descriptions[layer].attributes.meta = descriptions[layer].attributes.meta || {};
             descriptions[layer].attributes.meta[attr] = desc;
