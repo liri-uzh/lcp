@@ -188,8 +188,7 @@ def process_node(node: Any, members: list, conf: dict[str, Any] = {}) -> None:
 
         if string_node:
             comp: str = get_leaf_value(string_node)
-            # comp = f"/^{comp[1:-1]}$/"  # replace "s with /s
-            comp = comp[1:-1]
+            comp = f"/^{comp[1:-1]}$/"
             token["unit"]["constraints"] = [
                 {
                     "comparison": {
