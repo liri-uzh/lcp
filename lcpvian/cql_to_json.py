@@ -1,3 +1,9 @@
+"""
+cql_to_json.py: parse and convert to JSON a CQL query
+as defined by the CLARIN FCS specification:
+https://www.clarin.eu/content/federated-content-search-clarin-fcs-technical-details
+"""
+
 import os
 
 from lark import Lark, Tree, Token
