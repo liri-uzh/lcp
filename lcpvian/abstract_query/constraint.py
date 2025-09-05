@@ -1041,8 +1041,12 @@ def _get_constraints(
 
     references: dict[str, list[str]] = {}
 
+    is_relational = conf.config["layer"][layer].get("layerType") == "relation"
+
     part_ofs: list[str] = []
     for part in part_of or []:
+        if is_relational:
+            continue
         if not label and first_unit:
             label = first_unit.get("label", "")
         part_type, part_label = cast(

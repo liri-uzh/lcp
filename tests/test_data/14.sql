@@ -15,11 +15,11 @@ WITH RECURSIVE fixed_parts AS
      (SELECT Segment_id
       FROM swissdox_3.fts_vector_derest vec
       WHERE vec.vector @@ '3ADJ <1> 2Schweiz') AS fts_vector_s
-   CROSS JOIN "swissdox_3"."token_derest" "t1"
    CROSS JOIN "swissdox_3"."article_de" "a"
-   CROSS JOIN "swissdox_3"."token_derest" "t2"
    CROSS JOIN "swissdox_3"."segment_derest" "s"
+   CROSS JOIN "swissdox_3"."token_derest" "t1"
    CROSS JOIN "swissdox_3"."lemma_de" "t1_lemma"
+   CROSS JOIN "swissdox_3"."token_derest" "t2"
    CROSS JOIN "swissdox_3"."lemma_de" "t2_lemma"
    WHERE "a"."char_range" && "s"."char_range"
      AND "fts_vector_s"."segment_id" = "s"."segment_id"

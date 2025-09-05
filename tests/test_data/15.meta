@@ -1,0 +1,1048 @@
+{
+    "schema": "sparcling1",
+    "idx": 120,
+    "batch": "token_frrest",
+    "wordcount": 1,
+    "meta": {
+        "url": "https://pub.cl.uzh.ch/wiki/public/PaCoCo/Sparcling",
+        "date": "2019-08-03",
+        "name": "Sparcling (FEP9)",
+        "author": "Johannes Gra\\u00ebn",
+        "version": 1,
+        "corpusDescription": "The Sparcling corpus is built on top of a cleaned version of the Europarl corpus. (https://pub.cl.uzh.ch/wiki/public/PaCoCo/Sparcling)"
+    },
+    "layer": {
+        "Turn": {
+            "abstract": true,
+            "contains": "Segment",
+            "alignment": "multi",
+            "layerType": "span",
+            "attributes": {
+                "meta": {
+                    "Surname": {
+                        "type": "text",
+                        "nullable": true
+                    },
+                    "Forename": {
+                        "type": "text",
+                        "nullable": true
+                    },
+                    "MemberId": {
+                        "type": "integer",
+                        "nullable": true
+                    },
+                    "CountryCode": {
+                        "type": "text",
+                        "nullable": true
+                    },
+                    "IsPresident": {
+                        "type": "boolean",
+                        "nullable": true
+                    },
+                    "PoliticalGroup": {
+                        "type": "text",
+                        "nullable": true
+                    },
+                    "OriginalLanguage": {
+                        "type": "text",
+                        "nullable": true
+                    }
+                }
+            }
+        },
+        "Token": {
+            "abstract": true,
+            "alignment": "bi",
+            "anchoring": {
+                "time": false,
+                "stream": true,
+                "location": false
+            },
+            "layerType": "unit",
+            "attributes": {
+                "form": {
+                    "type": "text",
+                    "isGlobal": false,
+                    "nullable": false
+                },
+                "upos": {
+                    "type": "categorical",
+                    "isGlobal": true,
+                    "nullable": false
+                },
+                "lemma": {
+                    "type": "text",
+                    "isGlobal": false,
+                    "nullable": true
+                },
+                "xpos": {
+                    "name": "Penn Treebank",
+                    "type": "categorical",
+                    "values": [
+                        "'",
+                        "(",
+                        ")",
+                        ",",
+                        ":",
+                        "``",
+                        "$",
+                        "CC",
+                        "CD",
+                        "DT",
+                        "EX",
+                        "FW",
+                        "IN",
+                        "JJ",
+                        "JJR",
+                        "JJS",
+                        "LS",
+                        "MD",
+                        "NN",
+                        "NNS",
+                        "NP",
+                        "NPS",
+                        "PDT",
+                        "POS",
+                        "PP",
+                        "PP$",
+                        "RB",
+                        "RBR",
+                        "RBS",
+                        "RP",
+                        "SENT",
+                        "SYM",
+                        "TO",
+                        "UH",
+                        "VB",
+                        "VBD",
+                        "VBG",
+                        "VBN",
+                        "VBP",
+                        "VBZ",
+                        "WDT",
+                        "WP",
+                        "WP$",
+                        "WRB"
+                    ],
+                    "isGlobal": false,
+                    "nullable": true
+                }
+            }
+        },
+        "DepRel": {
+            "abstract": true,
+            "layerType": "relation",
+            "attributes": {
+                "udep": {
+                    "type": "categorical",
+                    "isGlobal": true,
+                    "nullable": false
+                },
+                "source": {
+                    "name": "dependent",
+                    "entity": "Token",
+                    "nullable": false
+                },
+                "target": {
+                    "name": "head",
+                    "entity": "Token",
+                    "nullable": true
+                }
+            }
+        },
+        "Chapter": {
+            "abstract": true,
+            "contains": "Turn",
+            "alignment": true,
+            "layerType": "span",
+            "attributes": {}
+        },
+        "Segment": {
+            "abstract": true,
+            "contains": "Token",
+            "alignment": {
+                "null": false,
+                "unit": "central",
+                "continuous": false
+            },
+            "layerType": "span"
+        },
+        "Session": {
+            "abstract": true,
+            "contains": "Chapter",
+            "alignment": true,
+            "layerType": "span",
+            "attributes": {
+                "meta": {
+                    "date": {
+                        "type": "text",
+                        "nullable": false
+                    }
+                }
+            }
+        },
+        "Token@de": {
+            "partOf": "Token",
+            "attributes": {
+                "xpos": {
+                    "name": "STTS",
+                    "type": "categorical",
+                    "values": [
+                        "$(",
+                        "$,",
+                        "$.",
+                        "ADJA",
+                        "ADJD",
+                        "ADV",
+                        "APPO",
+                        "APPR",
+                        "APPRART",
+                        "APZR",
+                        "ART",
+                        "CARD",
+                        "FM",
+                        "ITJ",
+                        "KOKOM",
+                        "KON",
+                        "KOUI",
+                        "KOUS",
+                        "NE",
+                        "NN",
+                        "PAV",
+                        "PDAT",
+                        "PDS",
+                        "PIAT",
+                        "PIS",
+                        "PPER",
+                        "PPOSAT",
+                        "PPOSS",
+                        "PRELAT",
+                        "PRELS",
+                        "PRF",
+                        "PTKA",
+                        "PTKANT",
+                        "PTKNEG",
+                        "PTKVZ",
+                        "PTKZU",
+                        "PWAT",
+                        "PWAV",
+                        "PWS",
+                        "TRUNC",
+                        "VAFIN",
+                        "VAINF",
+                        "VAPP",
+                        "VMFIN",
+                        "VMINF",
+                        "VVFIN",
+                        "VVIMP",
+                        "VVINF",
+                        "VVIZU",
+                        "VVPP",
+                        "XY"
+                    ],
+                    "isGlobal": false,
+                    "nullable": true
+                }
+            }
+        },
+        "Token@en": {
+            "partOf": "Token",
+            "attributes": {
+                "xpos": {
+                    "name": "Penn Treebank",
+                    "type": "categorical",
+                    "values": [
+                        "'",
+                        "(",
+                        ")",
+                        ",",
+                        ":",
+                        "``",
+                        "$",
+                        "CC",
+                        "CD",
+                        "DT",
+                        "EX",
+                        "FW",
+                        "IN",
+                        "JJ",
+                        "JJR",
+                        "JJS",
+                        "LS",
+                        "MD",
+                        "NN",
+                        "NNS",
+                        "NP",
+                        "NPS",
+                        "PDT",
+                        "POS",
+                        "PP",
+                        "PP$",
+                        "RB",
+                        "RBR",
+                        "RBS",
+                        "RP",
+                        "SENT",
+                        "SYM",
+                        "TO",
+                        "UH",
+                        "VB",
+                        "VBD",
+                        "VBG",
+                        "VBN",
+                        "VBP",
+                        "VBZ",
+                        "WDT",
+                        "WP",
+                        "WP$",
+                        "WRB"
+                    ],
+                    "isGlobal": false,
+                    "nullable": true
+                }
+            }
+        },
+        "Token@fr": {
+            "partOf": "Token",
+            "attributes": {
+                "xpos": {
+                    "name": "French TreeTagger part-of-speech tagset",
+                    "type": "categorical",
+                    "values": [
+                        "ABR",
+                        "ADJ",
+                        "ADV",
+                        "DET:ART",
+                        "DET:POS",
+                        "INT",
+                        "KON",
+                        "NAM",
+                        "NOM",
+                        "NUM",
+                        "PRO",
+                        "PRO:DEM",
+                        "PRO:IND",
+                        "PRO:PER",
+                        "PRO:POS",
+                        "PRO:REL",
+                        "PRP",
+                        "PRP:det",
+                        "PUN",
+                        "PUN:cit",
+                        "SENT",
+                        "SYM",
+                        "VER:cond",
+                        "VER:futu",
+                        "VER:impe",
+                        "VER:impf",
+                        "VER:infi",
+                        "VER:pper",
+                        "VER:ppre",
+                        "VER:pres",
+                        "VER:simp",
+                        "VER:subi",
+                        "VER:subp"
+                    ],
+                    "isGlobal": false,
+                    "nullable": true
+                }
+            }
+        }
+    },
+    "glob_attr": {
+        "udep": [
+            "xcomp:vcomp",
+            "parataxis:rel",
+            "parataxis:rep",
+            "parataxis:restart",
+            "parataxis:rt",
+            "parataxis:sentence",
+            "parataxis:trans",
+            "parataxis:url",
+            "punct",
+            "reparandum",
+            "root",
+            "vocative",
+            "vocative:cl",
+            "vocative:mention",
+            "xcomp",
+            "xcomp:adj",
+            "xcomp:cleft",
+            "xcomp:ds",
+            "xcomp:obj",
+            "xcomp:pred",
+            "xcomp:subj",
+            "acl",
+            "acl:adv",
+            "acl:attr",
+            "acl:cleft",
+            "acl:cmpr",
+            "acl:fixed",
+            "acl:inf",
+            "acl:relat",
+            "acl:relcl",
+            "acl:subj",
+            "acl:tmod",
+            "acl:tonp",
+            "advcl",
+            "advcl:abs",
+            "advcl:cau",
+            "advcl:cleft",
+            "advcl:cmpr",
+            "advcl:cond",
+            "advcl:coverb",
+            "advcl:eval",
+            "advcl:lcl",
+            "advcl:lto",
+            "advcl:mcl",
+            "advcl:objective",
+            "advcl:pred",
+            "advcl:relcl",
+            "advcl:svc",
+            "advcl:tcl",
+            "advmod",
+            "advmod:adj",
+            "advmod:arg",
+            "advmod:cau",
+            "advmod:comp",
+            "advmod:deg",
+            "advmod:det",
+            "advmod:df",
+            "advmod:dir",
+            "advmod:emph",
+            "advmod:eval",
+            "advmod:fixed",
+            "advmod:foc",
+            "advmod:freq",
+            "advmod:lfrom",
+            "advmod:lmod",
+            "advmod:lmp",
+            "advmod:loc",
+            "advmod:locy",
+            "advmod:lto",
+            "advmod:mmod",
+            "advmod:mode",
+            "advmod:neg",
+            "advmod:obl",
+            "advmod:que",
+            "advmod:tfrom",
+            "advmod:tlocy",
+            "advmod:tmod",
+            "advmod:to",
+            "advmod:tto",
+            "amod",
+            "amod:att",
+            "amod:attlvc",
+            "amod:flat",
+            "appos",
+            "appos:nmod",
+            "appos:trans",
+            "aux",
+            "aux:aff",
+            "aux:aspect",
+            "aux:caus",
+            "aux:clitic",
+            "aux:cnd",
+            "aux:ex",
+            "aux:exhort",
+            "aux:imp",
+            "aux:nec",
+            "aux:neg",
+            "aux:opt",
+            "aux:part",
+            "aux:pass",
+            "aux:pot",
+            "aux:q",
+            "aux:tense",
+            "case",
+            "case:acc",
+            "case:adv",
+            "case:aff",
+            "case:det",
+            "case:gen",
+            "case:loc",
+            "case:pred",
+            "case:voc",
+            "cc",
+            "cc:nc",
+            "cc:preconj",
+            "ccomp",
+            "ccomp:cleft",
+            "ccomp:obj",
+            "ccomp:obl",
+            "ccomp:pmod",
+            "ccomp:pred",
+            "clf",
+            "clf:det",
+            "compound",
+            "compound:a",
+            "compound:adj",
+            "compound:affix",
+            "compound:amod",
+            "compound:apr",
+            "compound:atov",
+            "compound:dir",
+            "compound:ext",
+            "compound:lvc",
+            "compound:nn",
+            "compound:preverb",
+            "compound:pron",
+            "compound:prt",
+            "compound:quant",
+            "compound:redup",
+            "compound:smixut",
+            "compound:svc",
+            "compound:verbnoun",
+            "compound:vmod",
+            "compound:vo",
+            "compound:vv",
+            "compound:z",
+            "conj",
+            "conj:expl",
+            "conj:extend",
+            "conj:redup",
+            "conj:svc",
+            "cop",
+            "cop:expl",
+            "cop:locat",
+            "cop:own",
+            "csubj",
+            "csubj:asubj",
+            "csubj:cleft",
+            "csubj:cop",
+            "csubj:outer",
+            "csubj:pass",
+            "csubj:pred",
+            "csubj:vsubj",
+            "dep",
+            "dep:aff",
+            "dep:agr",
+            "dep:alt",
+            "dep:ana",
+            "dep:aux",
+            "dep:comp",
+            "dep:conj",
+            "dep:cop",
+            "dep:emo",
+            "dep:infl",
+            "dep:mark",
+            "dep:mod",
+            "dep:pos",
+            "dep:redup",
+            "dep:ss",
+            "det",
+            "det:adj",
+            "det:clf",
+            "det:noun",
+            "det:numgov",
+            "det:nummod",
+            "det:pmod",
+            "det:poss",
+            "det:predet",
+            "det:pron",
+            "det:rel",
+            "discourse",
+            "discourse:conn",
+            "discourse:emo",
+            "discourse:filler",
+            "discourse:intj",
+            "discourse:sp",
+            "dislocated",
+            "dislocated:cleft",
+            "dislocated:csubj",
+            "dislocated:nsubj",
+            "dislocated:obj",
+            "dislocated:subj",
+            "dislocated:vo",
+            "expl",
+            "expl:comp",
+            "expl:impers",
+            "expl:pass",
+            "expl:poss",
+            "expl:pv",
+            "expl:subj",
+            "fixed",
+            "flat",
+            "flat:abs",
+            "flat:date",
+            "flat:dist",
+            "flat:foreign",
+            "flat:frac",
+            "flat:gov",
+            "flat:name",
+            "flat:num",
+            "flat:number",
+            "flat:range",
+            "flat:redup",
+            "flat:repeat",
+            "flat:sibl",
+            "flat:time",
+            "flat:title",
+            "flat:vv",
+            "goeswith",
+            "iobj",
+            "iobj:agent",
+            "iobj:appl",
+            "iobj:patient",
+            "list",
+            "mark",
+            "mark:adv",
+            "mark:advmod",
+            "mark:aff",
+            "mark:pcomp",
+            "mark:plur",
+            "mark:prt",
+            "mark:q",
+            "mark:rel",
+            "nmod",
+            "nmod:agent",
+            "nmod:appos",
+            "nmod:arg",
+            "nmod:att",
+            "nmod:attlvc",
+            "nmod:attr",
+            "nmod:bahuv",
+            "nmod:cau",
+            "nmod:comp",
+            "nmod:det",
+            "nmod:flat",
+            "nmod:gen",
+            "nmod:gobj",
+            "nmod:gsubj",
+            "nmod:lfrom",
+            "nmod:lmod",
+            "nmod:npmod",
+            "nmod:obj",
+            "nmod:obl",
+            "nmod:part",
+            "nmod:poss",
+            "nmod:pred",
+            "nmod:prep",
+            "nmod:prp",
+            "nmod:redup",
+            "nmod:relat",
+            "nmod:subj",
+            "nmod:tmod",
+            "nsubj",
+            "nsubj:advmod",
+            "nsubj:aff",
+            "nsubj:bfoc",
+            "nsubj:caus",
+            "nsubj:cleft",
+            "nsubj:cop",
+            "nsubj:expl",
+            "nsubj:ifoc",
+            "nsubj:lfoc",
+            "nsubj:lvc",
+            "nsubj:nc",
+            "nsubj:nn",
+            "nsubj:obj",
+            "nsubj:outer",
+            "nsubj:pass",
+            "nsubj:periph",
+            "nsubj:pred",
+            "nsubj:quasi",
+            "nsubj:x",
+            "nsubj:xsubj",
+            "nummod",
+            "nummod:det",
+            "nummod:entity",
+            "nummod:flat",
+            "nummod:gov",
+            "obj",
+            "obj:advmod",
+            "obj:advneg",
+            "obj:agent",
+            "obj:appl",
+            "obj:caus",
+            "obj:lvc",
+            "obj:obl",
+            "obj:periph",
+            "obl",
+            "obl:about",
+            "obl:ad",
+            "obl:adj",
+            "obl:adv",
+            "obl:advmod",
+            "obl:agent",
+            "obl:appl",
+            "obl:arg",
+            "obl:cau",
+            "obl:cmp",
+            "obl:cmpr",
+            "obl:comp",
+            "obl:dat",
+            "obl:freq",
+            "obl:inst",
+            "obl:iobj",
+            "obl:lfrom",
+            "obl:lmod",
+            "obl:lmp",
+            "obl:lto",
+            "obl:lvc",
+            "obl:mcl",
+            "obl:mod",
+            "obl:npmod",
+            "obl:obj",
+            "obl:orphan",
+            "obl:own",
+            "obl:patient",
+            "obl:pmod",
+            "obl:poss",
+            "obl:prep",
+            "obl:sentcon",
+            "obl:smod",
+            "obl:subj",
+            "obl:tmod",
+            "obl:with",
+            "orphan",
+            "orphan:missing",
+            "parataxis",
+            "parataxis:appos",
+            "parataxis:conj",
+            "parataxis:coord",
+            "parataxis:deletion",
+            "parataxis:discourse",
+            "parataxis:dislocated",
+            "parataxis:hashtag",
+            "parataxis:insert",
+            "parataxis:mod",
+            "parataxis:newsent",
+            "parataxis:nsubj",
+            "parataxis:obj",
+            "parataxis:parenth"
+        ],
+        "upos": [
+            "ADJ",
+            "ADP",
+            "ADV",
+            "AUX",
+            "CCONJ",
+            "CONJ",
+            "DET",
+            "INTJ",
+            "NOUN",
+            "NUM",
+            "PART",
+            "PRON",
+            "PROPN",
+            "PRT",
+            "PUNCT",
+            "SCONJ",
+            "SYM",
+            "VERB",
+            "X",
+            "."
+        ]
+    },
+    "firstClass": {
+        "token": "Token",
+        "segment": "Segment",
+        "document": "Chapter"
+    },
+    "partitions": {
+        "values": [
+            "de",
+            "en",
+            "fr"
+        ]
+    },
+    "projects": [
+        "all"
+    ],
+    "shortname": "Sparcling (FEP9)",
+    "corpus_id": 120,
+    "current_version": 1,
+    "version_history": null,
+    "description": "The Sparcling corpus is built on top of a cleaned version of the Europarl corpus. (https://pub.cl.uzh.ch/wiki/public/PaCoCo/Sparcling)",
+    "schema_path": "sparcling1",
+    "token_counts": {
+        "token_de0": 41107021,
+        "token_en0": 43151584,
+        "token_fr0": 47270588
+    },
+    "mapping": {
+        "layer": {
+            "Turn": {
+                "alignment": {
+                    "hasMeta": true,
+                    "relation": "turn_alignment"
+                },
+                "partitions": {
+                    "de": {
+                        "relation": "turn_de"
+                    },
+                    "en": {
+                        "relation": "turn_en"
+                    },
+                    "fr": {
+                        "relation": "turn_fr"
+                    }
+                }
+            },
+            "Token": {
+                "alignment": {
+                    "indirect": true
+                },
+                "partitions": {
+                    "de": {
+                        "batches": 7,
+                        "relation": "token_de<batch>",
+                        "attributes": {
+                            "form": {
+                                "name": "form_de",
+                                "type": "relation"
+                            },
+                            "upos": {
+                                "name": "upos",
+                                "type": "enum",
+                                "schema": "main"
+                            },
+                            "xpos": {
+                                "name": "xpos_de",
+                                "type": "enum",
+                                "schema": "sparcling<version>"
+                            },
+                            "lemma": {
+                                "name": "lemma_de",
+                                "type": "relation"
+                            },
+                            "ufeat": {
+                                "name": "ufeat",
+                                "type": "relation"
+                            }
+                        }
+                    },
+                    "en": {
+                        "batches": 7,
+                        "relation": "token_en<batch>",
+                        "attributes": {
+                            "form": {
+                                "name": "form_en",
+                                "type": "relation"
+                            },
+                            "upos": {
+                                "name": "upos",
+                                "type": "enum",
+                                "schema": "main"
+                            },
+                            "xpos": {
+                                "name": "xpos_en",
+                                "type": "enum",
+                                "schema": "sparcling<version>"
+                            },
+                            "lemma": {
+                                "name": "lemma_en",
+                                "type": "relation"
+                            },
+                            "ufeat": {
+                                "name": "ufeat",
+                                "type": "relation"
+                            }
+                        }
+                    },
+                    "fr": {
+                        "batches": 7,
+                        "relation": "token_fr<batch>",
+                        "attributes": {
+                            "form": {
+                                "name": "form_fr",
+                                "type": "relation"
+                            },
+                            "upos": {
+                                "name": "upos",
+                                "type": "enum",
+                                "schema": "main"
+                            },
+                            "xpos": {
+                                "name": "xpos_fr",
+                                "type": "enum",
+                                "schema": "sparcling<version>"
+                            },
+                            "lemma": {
+                                "name": "lemma_fr",
+                                "type": "relation"
+                            },
+                            "ufeat": {
+                                "name": "ufeat",
+                                "type": "relation"
+                            }
+                        }
+                    }
+                }
+            },
+            "DepRel": {
+                "partitions": {
+                    "de": {
+                        "relation": "deprel_de"
+                    },
+                    "en": {
+                        "relation": "deprel_en"
+                    },
+                    "fr": {
+                        "relation": "deprel_fr"
+                    }
+                }
+            },
+            "Chapter": {
+                "alignment": {
+                    "implicit": true
+                },
+                "partitions": {
+                    "de": {
+                        "hasMeta": true,
+                        "relation": "chapter_de"
+                    },
+                    "en": {
+                        "hasMeta": true,
+                        "relation": "chapter_en"
+                    },
+                    "fr": {
+                        "hasMeta": true,
+                        "relation": "chapter_fr"
+                    }
+                }
+            },
+            "Segment": {
+                "alignment": {
+                    "implicit": true,
+                    "indirect": true
+                },
+                "partitions": {
+                    "de": {
+                        "prepared": {
+                            "relation": "prepared_segment_de",
+                            "columnHeaders": [
+                                "form",
+                                "lemma",
+                                "upos",
+                                "xpos",
+                                "head",
+                                "label",
+                                "spaceAfter"
+                            ]
+                        },
+                        "relation": "segment_de"
+                    },
+                    "en": {
+                        "prepared": {
+                            "relation": "prepared_segment_en",
+                            "columnHeaders": [
+                                "form",
+                                "lemma",
+                                "upos",
+                                "xpos",
+                                "head",
+                                "label",
+                                "spaceAfter"
+                            ]
+                        },
+                        "relation": "segment_en"
+                    },
+                    "fr": {
+                        "prepared": {
+                            "relation": "prepared_segment_fr",
+                            "columnHeaders": [
+                                "form",
+                                "lemma",
+                                "upos",
+                                "xpos",
+                                "head",
+                                "label",
+                                "spaceAfter"
+                            ]
+                        },
+                        "relation": "segment_fr"
+                    }
+                }
+            },
+            "Session": {
+                "alignment": {
+                    "hasMeta": true,
+                    "relation": "session_alignment"
+                },
+                "partitions": {
+                    "de": {
+                        "relation": "session_de"
+                    },
+                    "en": {
+                        "relation": "session_en"
+                    },
+                    "fr": {
+                        "relation": "session_fr"
+                    }
+                }
+            }
+        },
+        "hasFTS": true,
+        "schema": "sparcling<version>",
+        "FTSvectorCols": {
+            "de": {
+                "1": "form",
+                "2": "lemma",
+                "3": "upos",
+                "4": "dep_out",
+                "5": "dep_in",
+                "6": "xpos"
+            },
+            "en": {
+                "1": "form",
+                "2": "lemma",
+                "3": "upos",
+                "4": "dep_out",
+                "5": "dep_in",
+                "6": "xpos"
+            },
+            "fr": {
+                "1": "form",
+                "2": "lemma",
+                "3": "upos",
+                "4": "dep_out",
+                "5": "dep_in",
+                "6": "xpos"
+            }
+        }
+    },
+    "enabled": true,
+    "segment": "Segment",
+    "token": "Token",
+    "document": "Chapter",
+    "column_names": {
+        "form": {
+            "type": "text",
+            "isGlobal": false,
+            "nullable": false
+        },
+        "upos": {
+            "type": "categorical",
+            "isGlobal": true,
+            "nullable": false
+        },
+        "lemma": {
+            "type": "text",
+            "isGlobal": false,
+            "nullable": true
+        }
+    },
+    "project_id": "00000000-0000-0000-0000-000000000000",
+    "_batches": {
+        "token_de1": 20553510,
+        "token_de2": 10276755,
+        "token_de3": 5138377,
+        "token_de4": 2569188,
+        "token_de5": 1284594,
+        "token_derest": 1284594,
+        "token_en1": 21575792,
+        "token_en2": 10787896,
+        "token_en3": 5393948,
+        "token_en4": 2696974,
+        "token_en5": 1348487,
+        "token_frrest": 1348487,
+        "token_fr1": 23635294,
+        "token_fr2": 11817647,
+        "token_fr3": 5908823,
+        "token_fr4": 2954411,
+        "token_fr5": 1477205,
+        "token_frrest": 1477205
+    }
+}

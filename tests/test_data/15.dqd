@@ -1,0 +1,22 @@
+# Test anonymous DepRel nested in a sequence's token
+
+Segment s
+
+sequence@s seq
+    Token ca
+        OR
+            form = "ça"
+            form = "cela"
+    sequence 0..*
+        Token
+    Token jouer
+        lemma = "jouer"
+        DepRel
+            head = jouer
+            dependent = ca
+
+res => plain
+    context
+        s
+    entities
+        seq

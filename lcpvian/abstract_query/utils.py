@@ -565,6 +565,16 @@ def _joinstring(joins: Joins) -> str:
     return "\n".join(strung + last_joins)
 
 
+def _to_leftjoins(joins: Joins) -> list[str]:
+    return sorted(
+        [
+            f"{tab} ON {' AND '.join(conds)}"
+            for tab, conds in joins.items()
+            if conds and isinstance(conds, (set, list))
+        ]
+    )
+
+
 def arg_sort_key(d: dict[str, Any] | Any) -> str:
     """
     for use in as sorted(args, key=arg_sort_key), to ensure

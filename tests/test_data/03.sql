@@ -16,9 +16,9 @@ WITH RECURSIVE fixed_parts AS
       WHERE vec.vector @@ '(1cat | 7ADJ <1> 1dog)'
         AND vec.vector @@ '7ART <1> (1cat | 7ADJ <1> 1dog) <1> 7VERB') AS fts_vector_s
    CROSS JOIN "bnc1"."document" "d"
+   CROSS JOIN "bnc1"."segmentrest" "s"
    CROSS JOIN "bnc1"."tokenrest" "t1"
    CROSS JOIN "bnc1"."tokenrest" "t4"
-   CROSS JOIN "bnc1"."segmentrest" "s"
    WHERE "d"."char_range" && "s"."char_range"
      AND "fts_vector_s"."segment_id" = "s"."segment_id"
      AND "s"."segment_id" = "t1"."segment_id"

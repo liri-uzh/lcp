@@ -1,0 +1,135 @@
+{
+    "query": [
+        {
+            "unit": {
+                "layer": "Segment",
+                "label": "s"
+            }
+        },
+        {
+            "sequence": {
+                "partOf": [
+                    {
+                        "partOfStream": "s"
+                    }
+                ],
+                "label": "seq",
+                "members": [
+                    {
+                        "unit": {
+                            "layer": "Token",
+                            "label": "ca",
+                            "constraints": [
+                                {
+                                    "logicalExpression": {
+                                        "naryOperator": "OR",
+                                        "args": [
+                                            {
+                                                "comparison": {
+                                                    "left": {
+                                                        "reference": "form"
+                                                    },
+                                                    "comparator": "=",
+                                                    "right": {
+                                                        "string": "ça"
+                                                    }
+                                                }
+                                            },
+                                            {
+                                                "comparison": {
+                                                    "left": {
+                                                        "reference": "form"
+                                                    },
+                                                    "comparator": "=",
+                                                    "right": {
+                                                        "string": "cela"
+                                                    }
+                                                }
+                                            }
+                                        ]
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    {
+                        "sequence": {
+                            "repetition": {
+                                "min": "0",
+                                "max": "*"
+                            },
+                            "members": [
+                                {
+                                    "unit": {
+                                        "layer": "Token"
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    {
+                        "unit": {
+                            "layer": "Token",
+                            "label": "jouer",
+                            "constraints": [
+                                {
+                                    "comparison": {
+                                        "left": {
+                                            "reference": "lemma"
+                                        },
+                                        "comparator": "=",
+                                        "right": {
+                                            "string": "jouer"
+                                        }
+                                    }
+                                },
+                                {
+                                    "unit": {
+                                        "layer": "DepRel",
+                                        "constraints": [
+                                            {
+                                                "comparison": {
+                                                    "left": {
+                                                        "reference": "head"
+                                                    },
+                                                    "comparator": "=",
+                                                    "right": {
+                                                        "reference": "jouer"
+                                                    }
+                                                }
+                                            },
+                                            {
+                                                "comparison": {
+                                                    "left": {
+                                                        "reference": "dependent"
+                                                    },
+                                                    "comparator": "=",
+                                                    "right": {
+                                                        "reference": "ca"
+                                                    }
+                                                }
+                                            }
+                                        ]
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        }
+    ],
+    "results": [
+        {
+            "label": "res",
+            "resultsPlain": {
+                "context": [
+                    "s"
+                ],
+                "entities": [
+                    "seq"
+                ]
+            }
+        }
+    ]
+}
