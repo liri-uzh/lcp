@@ -150,12 +150,8 @@ class SQLCorpus:
             ref = sql_str(f"{entity_label}.{LR}", ref) if ref else ""
         elif isinstance(meta, dict) and attribute in meta:
             accessor = "->" if attr_type in ("dict", "jsonb") else "->>"
-            attr_ph = "{attribute}"
-            ref = sql_str(
-                f"{entity_label}.{LR}{accessor}{attr_ph}",
-                "meta",
-                attribute=sql.Literal(attribute),
-            )
+            attr_str = literal_sql(attribute)
+            ref = sql_str(f"{entity_label}.{LR}{accessor}{attr_str}", "meta")
         elif attr_type in ("categorical", "number", "labels", "image") and not is_glob:
             ref = sql_str(f"{entity_label}.{LR}", attribute)
         if ref:
@@ -641,15 +637,13 @@ def _flatten_coord(objs: list, operator: str = "OR") -> list:
     return ret
 
 
-def escape_single_quotes(obj: list | dict) -> list | dict:
-    is_dict = isinstance(obj, dict)
-    ret = {} if is_dict else [1 for _ in range(len(obj))]
-    for n, k in enumerate(obj):
-        v = obj[k] if is_dict else obj[n]
-        if isinstance(v, (dict, list)):
-            v = escape_single_quotes(v)
-        elif isinstance(v, str):
-            v = v.replace("'", "''")
-        i = k if is_dict else n
-        ret[i] = v  # type: ignore
-    return cast(list | dict, ret)
+def literal_sql(s: str) -> str:
+    ret: str = sql_str("{s}", s=sql.Literal(s))
+    if "{" in s or "}" in s:
+        replacer = {"{": "chr(123)", "}": "chr(125)"}
+        concat_args = re.split(r"([{}])", s)
+        concat_args_formed = ",".join(
+            replacer.get(x, sql_str("{s}", s=sql.Literal(x))) for x in concat_args
+        )
+        ret = f"concat({concat_args_formed})"
+    return ret

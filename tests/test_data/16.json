@@ -1,0 +1,103 @@
+{
+    "query": [
+        {
+            "unit": {
+                "layer": "Utterance",
+                "label": "u",
+                "constraints": [
+                    {
+                        "comparison": {
+                            "left": {
+                                "reference": "u.agent.annee_naissance"
+                            },
+                            "comparator": "=",
+                            "right": {
+                                "regex": {
+                                    "pattern": "[0-9]{4}-[0-9]{2}-[0-9]{2}"
+                                }
+                            }
+                        }
+                    },
+                    {
+                        "comparison": {
+                            "left": {
+                                "function": {
+                                    "functionName": "year",
+                                    "arguments": [
+                                        {
+                                            "attribute": "u.agent.annee_naissance"
+                                        }
+                                    ]
+                                }
+                            },
+                            "comparator": ">",
+                            "right": {
+                                "math": "1970"
+                            }
+                        }
+                    }
+                ]
+            }
+        },
+        {
+            "unit": {
+                "layer": "Token",
+                "partOf": [
+                    {
+                        "partOfStream": "u"
+                    }
+                ],
+                "label": "t",
+                "constraints": [
+                    {
+                        "comparison": {
+                            "left": {
+                                "reference": "form"
+                            },
+                            "comparator": "=",
+                            "right": {
+                                "string": "n'"
+                            }
+                        }
+                    }
+                ]
+            }
+        }
+    ],
+    "results": [
+        {
+            "label": "res",
+            "resultsPlain": {
+                "context": [
+                    "u"
+                ],
+                "entities": [
+                    "t"
+                ]
+            }
+        },
+        {
+            "label": "regions",
+            "resultsAnalysis": {
+                "attributes": [
+                    {
+                        "function": {
+                            "functionName": "year",
+                            "arguments": [
+                                {
+                                    "attribute": "u.agent.annee_naissance"
+                                }
+                            ]
+                        }
+                    },
+                    {
+                        "attribute": "u.agent.region"
+                    }
+                ],
+                "functions": [
+                    "frequency"
+                ]
+            }
+        }
+    ]
+}

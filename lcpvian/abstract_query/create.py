@@ -5,7 +5,7 @@ import sqlparse  # type: ignore
 from .query import QueryMaker
 from .results import ResultsMaker
 from .typed import QueryJSON
-from .utils import Config, escape_single_quotes
+from .utils import Config
 from ..validate import process_refs
 from ..utils import _get_all_labels
 
@@ -43,7 +43,6 @@ def json_to_sql(
         k: sorted(v)
         for k, v in process_refs(config, query_json, labels=all_labels).items()
     }
-    query_json = cast(QueryJSON, escape_single_quotes(query_json))
     language: str | None = lang.lower() if lang else None
     conf: Config = Config(schema, batch, config, language)
     query_json, result_data = ResultsMaker(query_json, conf, all_refs).results()

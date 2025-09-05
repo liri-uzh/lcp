@@ -1,0 +1,21 @@
+# test curly brackets and single quotes
+
+Utterance u
+    u.agent.annee_naissance = /[0-9]{4}-[0-9]{2}-[0-9]{2}/
+    year(u.agent.annee_naissance) > 1970
+
+Token@u t
+    form = "n'"
+
+res => plain
+    context
+        u
+    entities
+        t
+
+regions => analysis
+    attributes
+        year(u.agent.annee_naissance)
+        u.agent.region
+    functions
+        frequency
