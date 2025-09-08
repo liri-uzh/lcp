@@ -19,6 +19,7 @@ from .utils import (
     _is_anchored,
     _joinstring,
     _layer_contains,
+    _to_leftjoins,
     _bound_label,
     sql_str,
 )
@@ -335,7 +336,8 @@ class QueryMaker:
                         for tlab in token_labels
                     ]
                 )
-                seq_from = " JOIN ".join([seq_from] + fixed_joins)
+                left_fixed_joins = _to_leftjoins(fixed_joins)
+                seq_from = " JOIN ".join([seq_from] + left_fixed_joins)
                 seq_where_built = " AND ".join(seq_where)
                 select_matches = ", ".join(
                     [
@@ -416,7 +418,8 @@ class QueryMaker:
                         continue
                     seq_where_built = " AND ".join(seq_where)
                     conjunction_where.append(seq_where_built)
-                    disj_joins += [j for j in fixed_joins]
+                    left_fixed_joins = _to_leftjoins(fixed_joins)
+                    disj_joins += [j for j in left_fixed_joins]
                     bound_tokens = [
                         t.internal_label
                         for t, *_ in sqlseq.fixed_tokens
@@ -470,10 +473,17 @@ class QueryMaker:
             ref_lay, _ = self.r.label_layer.get(ref_lab, (None, None))
             if not ref_lay:
                 continue
+            relational_ref = (
+                cast(dict, self.config["layer"])[ref_lay].get("layerType", "")
+                == "relation"
+            )
             sqlc = cast(SQLCorpus, self.r.sql)
             ref_entity = sqlc.layer(ref_lab, ref_lay, pointer=True)
             ref_entity_select = sql_str(f"{ref_entity} AS {LR}", ref_entity.alias)
-            if not any(sl.lower() == ref_entity_select for sl in self.selects):
+            if (
+                not any(sl.lower() == ref_entity_select for sl in self.selects)
+                and not relational_ref
+            ):
                 self.selects.add(ref_entity_select)
             for anchname in ("stream", "time", "location"):
                 if not _is_anchored(self.config, ref_lay, anchname):
@@ -662,14 +672,15 @@ class QueryMaker:
                     self.r.entities.add(original_label)
                 for tab, conds in fixed_ref.joins.items():
                     self.joins[tab] = {c for c in conds}
-            swhere, sleft_joins = s.where_fixed_members(entities_set, tok)
+            swhere, sjoins = s.where_fixed_members(entities_set, tok)
 
             for w in swhere:
                 self.conditions.add(w)
-            for lj in sleft_joins:
-                join_table, join_conds = lj.split(" ON ")
-                self.joins[join_table] = True
-                self.conditions.add(join_conds)
+            for tab, conds in sjoins.items():  # type: ignore
+                self.joins[tab] = True
+                if not conds:
+                    continue
+                self.conditions.add(*conds)
 
             fixed_part_ases = [self._get_label_as(s) for s in sorted(selects_in_fixed)]
             simple_seq, new_labels, simple_where = s.simple_sequences_table(
@@ -814,16 +825,9 @@ class QueryMaker:
         disjunction_ctes: list[str] = []
         n_disj_cte = 0
         table_suffix: str = (
-            self._table[1] if self._table else next(s for s in seg_suffixes)
+            self._table[1] if self._table else next((s for s in seg_suffixes), "")
         )
         using: list[str] = [table_suffix]
-        # for anchor in ("char_range", "frame_range", "xy_box"):
-        #     if not any(
-        #         sel.lower().endswith(f"as {table_suffix}_{anchor}".lower())
-        #         for sel in selects_in_fixed
-        #     ):
-        #         continue
-        #     using.append(f"{table_suffix}_{anchor}")
         shift_unbound: dict[str, str] = {}
         for elab, elay in unbound_labels.items():
             e_ref = self.r.sql.layer(elab, elay, pointer=True)

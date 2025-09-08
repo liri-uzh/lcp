@@ -47,6 +47,51 @@ REVOKE EXECUTE ON PROCEDURE main.init_export FROM public;
 GRANT EXECUTE ON PROCEDURE main.init_export TO lcp_production_web_user;
 
 
+
+
+CREATE OR REPLACE PROCEDURE main.update_export(
+   query_hash        text
+ , format            text
+ , n_offset          int
+ , requested         int
+ , stat              text
+ , msg               text
+)
+AS $$
+   DECLARE
+      st             text;
+   BEGIN
+
+      SELECT
+         CASE
+            WHEN $5 = 'export' THEN 'exporting'
+            WHEN $5 = 'query' THEN 'querying'
+            ELSE 'failed'
+         END
+        INTO st
+           ;
+
+      UPDATE main.exports e
+         SET "status" = st::main.export_status
+           , "message" = $6
+           , "modified_at" = now()
+       WHERE e.query_hash = $1
+         AND e.format = $2
+         AND e.n_offset = $3
+         AND e.requested = $4
+         ;
+
+   END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+ALTER PROCEDURE main.update_export
+  SET search_path = pg_catalog,pg_temp;
+
+REVOKE EXECUTE ON PROCEDURE main.update_export FROM public;
+GRANT EXECUTE ON PROCEDURE main.update_export TO lcp_production_web_user;
+
+
+
 CREATE OR REPLACE PROCEDURE main.finish_export(
    query_hash        text
  , format            text

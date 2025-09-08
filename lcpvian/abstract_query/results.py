@@ -909,7 +909,7 @@ WHERE {ent_stream_ref} && {cont_tok_stream_ref}
         assert parsed_attributes, RuntimeError(
             f"Need at least one *attribute* referenced in the analysis"
         )
-        nodes = " , ".join(p for p, _ in parsed_attributes)
+        nodes = " , ".join(sql_str("{}", p) for p, _ in parsed_attributes)
         wheres, filter_meta = self._process_filters(filt)
         out = f"""
             SELECT

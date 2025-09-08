@@ -1,9 +1,16 @@
+"""
+cqp_to_json.py: parse and convert to JSON a CQPWeb Query Language query
+as defined in the CQPWeb manual at https://cwb.sourceforge.io/files/CQP_Manual/2.html
+"""
+
 from typing import Any
 from lark import Lark
 from lark.lexer import Token
 
 import os
 import re
+
+from .utils import _get_all_labels
 
 PARSER_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "parser"))
 PARSER_FILES = [os.path.join(PARSER_PATH, f) for f in sorted(os.listdir(PARSER_PATH))]
@@ -147,9 +154,21 @@ def process_node(node: Any, members: list, conf: dict[str, Any] = {}) -> None:
     label: Any = nget(node, "label")
     quantifier: Any = None
 
-    if node.data == "brackets":  # Parentheses
-
+    if node.data == "fake_brackets":
         tmp_members: list = []
+        disjuncts: list[Any] = [x for x in node.children if x.data != "or_"]
+        for d in disjuncts:
+            process_node(d, tmp_members, conf)
+
+        if len(tmp_members) == 0:
+            return
+        disj: dict = {"logicalExpression": {"naryOperator": "OR", "args": tmp_members}}
+        members.append(disj)
+        return
+
+    elif node.data == "brackets":  # Parentheses
+
+        tmp_members = []
         children_nodes: list[Any] = nget(node, "expr").children
         for cn in children_nodes:
             process_node(cn, tmp_members, conf)
@@ -188,8 +207,7 @@ def process_node(node: Any, members: list, conf: dict[str, Any] = {}) -> None:
 
         if string_node:
             comp: str = get_leaf_value(string_node)
-            # comp = f"/^{comp[1:-1]}$/"  # replace "s with /s
-            comp = comp[1:-1]
+            comp = f"^{comp[1:-1]}$"
             token["unit"]["constraints"] = [
                 {
                     "comparison": {
@@ -249,28 +267,51 @@ def cqp_to_json(cqp: str, conf: dict[str, Any] = {}) -> dict:
     return out
 
 
+def make_part_of(query_json: dict | list, label: str):
+    if isinstance(query_json, dict):
+        uors = next((x for x in ("unit", "sequence") if x in query_json), "")
+        if uors and not query_json[uors].get("partOf"):
+            query_json[uors]["partOf"] = [{"partOfStream": label}]
+
+    for x in list(query_json):  # prevent error re. edit during iteration
+        v = query_json[x] if isinstance(query_json, dict) else x
+        if not isinstance(v, (dict, list)):
+            continue
+        make_part_of(v, label)
+
+
 def full_cqp_to_json(cqp: str, conf: dict[str, Any] = {}):
     """
     Take a CQP string and generate the query+result JSON
     """
     query_json = cqp_to_json(cqp, conf)
+    all_labels = _get_all_labels(query_json)
 
     seg_layer: str = conf.get("firstClass", {}).get("segment", "Segment")
-    seg_label = "s"
+    seg_label, counter = "s", 0
+    while seg_label in all_labels:
+        counter += 1
+        seg_label = f"s{counter}"
 
-    label = "match"
-    obj_label: str = "sequence" if "sequence" in query_json else "unit"
+    make_part_of(query_json, seg_label)
+
+    obj_label: str = next(
+        l for l in ("sequence", "logicalExpression", "unit") if l in query_json
+    )
     obj: dict = query_json[obj_label]
     rep = obj.get("repetition", {})
     if str(rep.get("min", 1)) != "1" or str(rep.get("max", 1)) != "1":
         obj = {"members": [{"sequence": obj}]}
 
-    obj["label"] = label
-    obj["partOf"] = [{"partOfStream": seg_label}]
+    label = "*"
+    if obj_label in ("sequence", "unit"):
+        label = "match"
+        obj["label"] = label
+        obj["partOf"] = [{"partOfStream": seg_label}]
 
     res = {
         "label": "matches",
-        "resultsPlain": {"context": ["s"], "entities": ["match"]},
+        "resultsPlain": {"context": ["s"], "entities": [label]},
     }
 
     return {

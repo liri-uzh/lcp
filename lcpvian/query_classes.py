@@ -16,7 +16,7 @@ from .abstract_query.create import json_to_sql
 from .abstract_query.typed import QueryJSON
 from .callbacks import _general_failure
 from .convert import _aggregate_results
-from .jobfuncs import _db_query
+from .jobfuncs import _db_query, _export_db
 from .typed import JSONObject, ObservableDict, ObservableList
 from .utils import (
     _get_query_batches,
@@ -435,6 +435,17 @@ class Request:
         self, app: web.Application, qi: "QueryInfo", error: str = "unknown"
     ):
         print(f"[{self.id}] Error while running the query:", error)
+        if self.to_export:
+            qi.enqueue(
+                _export_db,
+                qi.hash,
+                self.to_export.get("format", "xml"),
+                "update",
+                self.offset,
+                self.requested,
+                failure=True,
+                message=error,
+            )
         if self.synchronous:
             try:
                 req_buffer = app["query_buffers"][self.id]

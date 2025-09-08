@@ -19,12 +19,12 @@ WITH RECURSIVE fixed_parts AS
      (SELECT Segment_id
       FROM bnc1.fts_vectorrest vec
       WHERE vec.vector @@ '7ART <1> (2true & 7ADJ) <1> 7SUBST') AS fts_vector_s
-   CROSS JOIN "bnc1"."tokenrest" "t3"
    CROSS JOIN "bnc1"."document" "d"
+   CROSS JOIN "bnc1"."segmentrest" "s"
+   CROSS JOIN "bnc1"."tokenrest" "t3"
+   CROSS JOIN "bnc1"."lemma" "t3_lemma"
    CROSS JOIN "bnc1"."tokenrest" "t1"
    CROSS JOIN "bnc1"."tokenrest" "t2"
-   CROSS JOIN "bnc1"."segmentrest" "s"
-   CROSS JOIN "bnc1"."lemma" "t3_lemma"
    CROSS JOIN "bnc1"."lemma" "t2_lemma"
    WHERE "d"."char_range" && "s"."char_range"
      AND "fts_vector_s"."segment_id" = "s"."segment_id"
@@ -82,12 +82,12 @@ WITH RECURSIVE fixed_parts AS
    FROM match_list) ,
                res2 AS
   (SELECT 2::int2 AS rstype,
-          jsonb_build_array(FALSE, t3_lemma, frequency)
+          jsonb_build_array(FALSE, "t3_lemma", frequency)
    FROM
-     (SELECT t3_lemma ,
+     (SELECT "t3_lemma" ,
              count(*) AS frequency
       FROM match_list
-      GROUP BY t3_lemma) x) ,
+      GROUP BY "t3_lemma") x) ,
                res0 AS
   (SELECT 0::int2 AS rstype,
           jsonb_build_array(count(match_list.*))

@@ -1,0 +1,23 @@
+Article a
+    year(pubdate) > 2020
+
+Segment@a s
+
+sequence@s seq
+    Token t1
+        upos = "ADJ"
+    Token t2
+        lemma = "Schweiz"
+
+kWIC => plain
+    context
+        s
+    entities
+        t1
+        t2
+
+adjDist => analysis
+    attributes
+        t1.lemma
+    functions
+        frequency

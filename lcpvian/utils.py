@@ -476,7 +476,11 @@ async def push_msg(
     A message can be sent to all users by passing an empty string as session_id
     """
     sent_to: set[tuple[str | None, str]] = set()
-    for room, users in sockets.items():
+    # for room, users in sockets.items():
+    for room in list(sockets):  # prevent size change during iteration
+        if room not in sockets:  # in case sockets changed during iteration
+            continue
+        users = sockets[room]
         if session_id and room != session_id:
             continue
         for conn, user_id in users:
@@ -519,6 +523,26 @@ async def _set_config(payload: JSONObject, app: web.Application) -> None:
     app["redis"].expire("app_config", MESSAGE_TTL)
 
     return None
+
+
+def _structure_descriptions(descs: dict) -> dict:
+    ret: dict = {}
+    for k, v in descs.items():
+        ret[k] = {}
+        if "attributes" in v and isinstance(v["attributes"], dict):
+            if attrs := _structure_descriptions(v["attributes"]):
+                ret[k]["attributes"] = attrs
+        if "keys" in v and isinstance(v["keys"], dict):
+            if ks := _structure_descriptions(v["keys"]):
+                ret[k]["keys"] = ks
+        if "description" in v and isinstance(v["description"], str):
+            if not ret[k]:
+                ret[k] = v["description"]
+            else:
+                ret[k]["description"] = v["description"]
+        if not ret[k]:
+            ret.pop(k)
+    return ret
 
 
 @ensure_authorised

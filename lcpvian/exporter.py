@@ -13,13 +13,14 @@ from lxml.builder import E
 from redis import Redis as RedisConnection
 from rq import Callback, Queue
 from rq.job import get_current_job, Job
+from types import TracebackType
 from typing import Any, cast
 from uuid import uuid4
 
 from xml.sax.saxutils import escape, quoteattr
 
 from .callbacks import _general_failure
-from .jobfuncs import _handle_export
+from .jobfuncs import _export_db
 from .query_classes import Request, QueryInfo
 from .typed import CorpusConfig
 from .utils import _get_iso639_3, _get_mapping, _publish_msg, sanitize_filename
@@ -27,6 +28,23 @@ from .utils import _get_iso639_3, _get_mapping, _publish_msg, sanitize_filename
 EXPORT_TTL = 5000
 RESULTS_DIR = os.getenv("RESULTS", "results")
 RESULTS_USERS = os.environ.get("RESULTS_USERS", os.path.join("results", "users"))
+
+
+def _btoa(val: str) -> str:
+    encs = ("utf-8", "iso-8859-1")
+    if not val:
+        return ""
+    ret: str = ""
+    for enc in encs:
+        try:
+            ret = btoa(val).decode(enc)  # type: ignore
+            if ret:
+                break
+        except:
+            pass
+    if not ret:
+        raise Exception(f"Could not decode {val}")
+    return ret
 
 
 def _token_value(val: str) -> str:
@@ -144,6 +162,7 @@ def _get_top_layer(config: CorpusConfig, restrict: set = set()) -> str:
 
 
 class Exporter:
+    xp_format = "xml"
 
     def __init__(self, request: Request, qi: QueryInfo) -> None:
         self._request: Request = request
@@ -182,17 +201,49 @@ class Exporter:
         return requested_folder
 
     @staticmethod
-    def finish_immediately(
+    def try_finish_immediately(
         job: Job,
         connection: RedisConnection,
         result: Any,
     ) -> None:
+        """
+        Callback to initiate_db.
+        Immediately mark as finished if no need to run export.
+        """
         should_run: bool = cast(dict, job.kwargs).get("should_run", True)
         if should_run:
             return
         qhash, _, _, offset, requested = job.args
         full: bool = cast(dict, job.kwargs).get("full", False)
-        Exporter.finish_export_db(connection, qhash, offset, requested, requested, full)
+        xp_format: str = cast(str, job.args[1])
+        Exporter.finish_export_db(
+            connection, qhash, offset, requested, requested, full, xp_format
+        )
+
+    @staticmethod
+    def error_export(
+        job: Job,
+        connection: RedisConnection,
+        typ: type,
+        value: BaseException,
+        trace: TracebackType,
+    ) -> None:
+        """
+        Callback calling _general_failure
+        """
+        qhash, xp_format, _, offset, requested = job.args
+        msg = str(value)
+        q = Queue("internal", connection=connection)
+        q.enqueue(
+            _export_db,  # finish export
+            on_failure=Callback(_general_failure),
+            args=(qhash, xp_format, "update", offset, requested),
+            kwargs={
+                "failure": True,
+                "message": msg,
+            },
+        )
+        _general_failure(job, connection, typ, value, trace)
 
     @classmethod
     def finish_export_db(
@@ -203,19 +254,17 @@ class Exporter:
         requested: int,
         delivered: int,
         full: bool,
+        xp_format: str = "xml",
     ):
         """
         Mark an export in the DB as finished
         """
         q = Queue("internal", connection=connection)
         q.enqueue(
-            _handle_export,  # finish export
-            on_failure=Callback(_general_failure),
-            args=(qhash, "xml"),
+            _export_db,  # finish export
+            on_failure=Callback(cls.error_export),
+            args=(qhash, xp_format, "finish", offset, requested),
             kwargs={
-                "create": False,
-                "offset": offset,
-                "requested": requested,
                 "delivered": delivered,
                 "path": cls.get_dl_path_from_hash(
                     qhash, offset, requested, full, filename=True
@@ -239,6 +288,7 @@ class Exporter:
         shash: str,
         config: dict,
         request: Request,
+        ext: str = ".xml",
     ) -> bool:
         """
         Mark an export in the DB as initiated and return whether a query should be run
@@ -249,7 +299,6 @@ class Exporter:
         epath = app["exporters"][xp_format].get_dl_path_from_hash(
             shash, request.offset, request.requested, request.full
         )
-        ext: str = ".xml"  # ".db" if xp_format == "swissdox" else ".xml"
         filename: str = cast(str, to_export.get("filename", ""))
         cshortname = config.get("shortname")
         if not filename:
@@ -268,12 +317,12 @@ class Exporter:
         )
         should_run = not os.path.exists(filepath)
         app["internal"].enqueue(
-            _handle_export,  # init_export
-            on_success=Callback(cls.finish_immediately),
-            on_failure=Callback(_general_failure),
+            _export_db,  # init_export
+            on_success=Callback(cls.try_finish_immediately),
+            on_failure=Callback(cls.error_export),
             result_ttl=EXPORT_TTL,
             job_timeout=EXPORT_TTL,
-            args=(shash, xp_format, True, request.offset, request.requested),
+            args=(shash, xp_format, "create", request.offset, request.requested),
             kwargs={
                 "user_id": request.user,
                 "userpath": userpath,
@@ -304,12 +353,22 @@ class Exporter:
         requested = request.requested
         full = request.full
         try:
+            upd_exp_args = (qhash, cls.xp_format, "update", offset, requested)
+            await _export_db(
+                *upd_exp_args,
+                export=True,
+                message=f"{payload.get('percentage_done', 'NA')}%",
+            )
             exporter = cls(request, qi)
             wpath = exporter.get_working_path()
             await exporter.process_lines(payload)
             if not request.is_done(qi):
                 return
-            # each payload needs corresponding *_query/*_segments subfolders
+            await _export_db(
+                *upd_exp_args,
+                export=True,
+                message=f"100% - finalizing...",
+            )  # each payload needs corresponding *_query/*_segments subfolders
             qb_hashes = [bh for bh, _ in qi.query_batches.values()]
             for h, nlines in request.sent_hashes.items():
                 if h not in qb_hashes or nlines <= 0:
@@ -338,11 +397,22 @@ class Exporter:
             )
         except Exception as e:
             shutil.rmtree(cls.get_dl_path_from_hash(qhash, offset, requested, full))
+            await _export_db(
+                qhash,
+                cls.xp_format,
+                "update",
+                offset,
+                requested,
+                failure=True,
+                message=str(e),
+            )
             raise e
 
     def get_working_path(self, subdir: str = "") -> str:
         """
         The working path will be deleted after finalizing the results file
+        If subdir is defined, it will append it at the end of the path
+        Will create the directory if necessary
         """
         epath = Exporter.get_dl_path_from_hash(
             self._request.hash,
@@ -388,10 +458,11 @@ class Exporter:
                                     for aname, aval in zip(
                                         (
                                             stats_attrs
-                                            if l[0] in (False, "False")
+                                            if stats_type == "collocation"
+                                            or l[0] in (False, "False")
                                             else total_stats
                                         ),
-                                        l[1:],
+                                        l if stats_type == "collocation" else l[1:],
                                     )
                                 ]
                             )
@@ -570,6 +641,16 @@ class Exporter:
             seg_path = self.get_working_path(prefix)
             fpath = os.path.join(seg_path, f"{sid}.xml")
             with open(fpath, "w") as seg_output:
+                for annotation in annotations:
+                    ann_layer, ann_occurs = next((k, v) for k, v in annotation.items())
+                    for ann_pos, n_anns, ann_props in ann_occurs:
+                        props = {
+                            "from": str(ann_pos),
+                            "to": str(ann_pos + n_anns),
+                            **{k: str(v) for k, v in ann_props.items()},
+                        }
+                        ann_node = getattr(E, ann_layer)(**props)
+                        seg_output.write(_node_to_string(ann_node))
                 for token in self.build_tokens(offset, tokens):
                     seg_output.write(_node_to_string(token))
         for top_id, attrs in all_layers[top_layer].items():
@@ -629,7 +710,14 @@ class Exporter:
                 if k not in ("sample_query", "swissubase")
             }
             try:
-                meta["userLicense"] = btoa(meta["userLicense"]).decode("utf-8")  # type: ignore
+                if isinstance(meta["userLicense"], str):
+                    meta["userLicense"] = _btoa(meta["userLicense"])  # type: ignore
+                else:
+                    new_user_license = {
+                        k: _btoa(v)  # type: ignore
+                        for k, v in meta["userLicense"].items()
+                    }
+                    meta["userLicense"] = new_user_license
             except:
                 pass
             partitions = config.get("partitions", {}).get("values", [])

@@ -1,0 +1,13 @@
+WITH preps AS (SELECT Utterance_id, id_offset, content FROM ofrom.prepared_Utterance WHERE Utterance_id = ANY(:sids)),
+    meta AS (SELECT
+    "Utterance"."utterance_id" AS "Utterance_id", "Utterance"."char_range" AS "Utterance_char_range", "Utterance"."frame_range" AS "Utterance_frame_range", "Utterance_agent"."agent" AS "Utterance_agent", "Utterance"."meta"::jsonb AS "Utterance_meta", "Interview"."interview_id" AS "Interview_id", "Interview"."char_range" AS "Interview_char_range", "Interview"."frame_range" AS "Interview_frame_range", "Interview"."media"::jsonb AS "Interview_media", "Interview"."name"::text AS "Interview_name", "Interview"."meta"::jsonb AS "Interview_meta"
+FROM
+    preps
+    LEFT JOIN "ofrom"."utterancerest" "Utterance" ON "Utterance"."utterance_id" = preps."utterance_id"
+    LEFT JOIN "ofrom"."global_attribute_agent" "Utterance_agent" ON "Utterance_agent"."agent_id" = "Utterance"."agent_id"
+    LEFT JOIN "ofrom"."interview" "Interview" ON "Interview"."char_range" @> "Utterance"."char_range"
+GROUP BY
+    "Utterance"."utterance_id", "Utterance_agent"."agent", "Utterance"."meta"::jsonb, "Interview"."interview_id", "Interview"."meta"::jsonb)
+SELECT -1::int2 AS rstype, jsonb_build_array(preps.utterance_id, preps.id_offset, preps.content) FROM preps
+UNION ALL
+SELECT -2::int2 AS rstype, jsonb_build_array(meta."Utterance_id", meta."Utterance_char_range", meta."Utterance_frame_range", meta."Utterance_agent", meta."Utterance_meta", meta."Interview_id", meta."Interview_char_range", meta."Interview_frame_range", meta."Interview_media", meta."Interview_name", meta."Interview_meta") FROM meta;

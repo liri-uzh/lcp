@@ -12,7 +12,7 @@ from .constraint import _get_constraints, _get_table
 from .prefilter import Prefilter
 from .sequence_members import Member, Disjunction, Sequence, Unit
 from .typed import JSONObject, LabelLayer, SQLRef
-from .utils import Config, SQLCorpus, _is_anchored, sql_str
+from .utils import Config, SQLCorpus, _is_anchored, _to_leftjoins, sql_str
 
 LR = "{}"
 
@@ -26,7 +26,7 @@ def _where_conditions_from_constraints(
     part_of: list[dict[str, str]] = [],
     label_layer: LabelLayer = {},
     sql_corpus: SQLCorpus | None = None,
-) -> tuple[list[str], list[str], dict[str, list[str]]]:
+) -> tuple[list[str], dict[str, Any], dict[str, list[str]]]:
     """
     Return a list of WHEREs to be conjoined and a list of LEFT JOINs to be conjoined
     plus a dict of required references
@@ -49,26 +49,30 @@ def _where_conditions_from_constraints(
         label_layer=label_layer,
     )
     if cons is None:
-        return (["1 = 1"], [], {})
+        return (["1 = 1"], {}, {})
     all_conditions: list[str] = []
     inner_conditions = cons.conditions()
     if inner_conditions:
         all_conditions.append(inner_conditions)
     join_conditions = []
-    for k, v in cons.joins().items():
-        if not isinstance(v, set):
+    for cond in cons.joins().values():
+        if not isinstance(cond, set):
             continue
-        join_conditions += [c for c in v if isinstance(c, str) and len(c) > 0]
+        join_conditions += [c for c in cond if isinstance(c, str) and len(c) > 0]
     all_conditions += join_conditions
 
-    left_joins: list[str] = []
-    for table, conds in cons.joins().items():
+    left_joins: dict[str, Any] = {}
+    for tab, conds in cons.joins().items():
+        if not conds:
+            if tab not in left_joins:
+                left_joins[tab] = None
+            continue
         if not isinstance(conds, set):
             continue
         real_conds: list = [c for c in conds if isinstance(c, str)]
         if not real_conds:
             continue
-        left_joins.append(f"{table} ON {' AND '.join(real_conds)}")
+        left_joins[tab] = real_conds
 
     return (all_conditions, left_joins, cons.references)
 
@@ -372,7 +376,7 @@ class Cte:
                             ll_label, ll_layer, pointer=True
                         )
                         override_references[ll_ref.ref] = sql_str("{}", ll_ref.alias)
-                where_conditions, ljs, _ = self.sequence.get_constraints(
+                where_conditions, js, _ = self.sequence.get_constraints(
                     label=self.tok_lab,
                     constraints=[c for c in state.constraints if isinstance(c, dict)],
                     entities={self.tok_lab},
@@ -386,7 +390,7 @@ class Cte:
                 constraints = f"{' AND '.join(where_conditions)} AND transition{self.n}.label = '{state.label}'"
                 # If the join string ends with " ON " it is ill-formed (because it introduces no condition)
                 state_left_joins = state_left_joins.union(
-                    {ls for ls in ljs if not ls.endswith(" ON ")}
+                    {x for x in _to_leftjoins(js)}
                 )
                 source: str = ""
                 if which != "start":
@@ -804,7 +808,7 @@ class SQLSequence:
         override: dict[str, str] = dict(),
         part_of: list[dict[str, str]] = [],
         in_subsequence: set | None = None,
-    ) -> tuple[list[str], list[str], dict[str, list[str]]]:
+    ) -> tuple[list[str], dict[str, Any], dict[str, list[str]]]:
         """
         SQL-friendly constraints on a token using the provided label and entity references
         Returns (wheres, joins, references)
@@ -846,15 +850,23 @@ class SQLSequence:
                         new_w = re.sub(rf"\b{lab}\.", f"{lab}_table.", new_w)
                     new_wheres.append(new_w)
                 wheres = new_wheres
-                new_joins: list[str] = []
-                for j in joins:
-                    new_j = j
-                    after_on = j.split(" ON ")[1]
+                new_joins: dict[str, Any] = {}
+                for tab, conds in joins.items():
+                    if not conds:
+                        new_joins[tab] = None
+                        continue
+                    new_joins[tab] = set()
                     for lab in override:
                         if not lab:
+                            new_joins[tab] = {x for x in conds}
                             continue
-                        if re.search(rf"\b{lab}.", after_on):
-                            new_j = re.sub(rf"\b{lab}\.", f"{lab}_table.", new_j)
+                        for c in conds:
+                            if not re.search(rf"\b{lab}.", c):
+                                new_joins[tab].add(c)
+                                continue
+                            new_joins[tab].add(
+                                re.sub(rf"\b{lab}\.", f"{lab}_table.", c)
+                            )
                             token_layer = self.config.config["firstClass"]["token"]
                             layer = self.label_layer.get(lab, (token_layer, None))[
                                 0
@@ -867,16 +879,20 @@ class SQLSequence:
                             )
                             ref_join = f"{self.config.schema}.{table} {lab}_table ON {lab}_table.{layer}_id = {lab}"
                             in_subsequence.add(ref_join)
-                    new_joins.append(new_j)
                 joins = new_joins
 
         refs_to_replace: str = "|".join(r.replace(".", "\\.") for r in override)
         replacer = lambda m: override.get(m[1], m[1]) or m[1]
-        ret: list[list[str]] = [
-            [re.sub(rf"({refs_to_replace})", replacer, x) for x in conds]
-            for conds in [wheres, joins]
-        ]
-        return (ret[0], ret[1], refs)
+        ret_wheres = [re.sub(rf"({refs_to_replace})", replacer, x) for x in wheres]
+        ret_joins = {
+            k: (
+                {re.sub(rf"({refs_to_replace})", replacer, x) for x in v}
+                if isinstance(v, set)
+                else v
+            )
+            for k, v in joins.items()
+        }
+        return (ret_wheres, ret_joins, refs)
 
     def prefilters(self) -> set[str]:
         prefilters: list[list[Unit | Disjunction]] = [[]]
@@ -1004,11 +1020,11 @@ class SQLSequence:
 
     def where_fixed_members(
         self, entities: set[str] = set(), tok: str = "token"
-    ) -> tuple[list[str], list[str]]:
-        """Go through the sequence's fixed tokens and return a list of conditions + left joins as needed"""
+    ) -> tuple[list[str], dict[str, Any]]:
+        """Go through the sequence's fixed tokens and return a list of conditions + joins as needed"""
 
         wheres: list[str] = []
-        left_joins: list[str] = []
+        left_joins: dict[str, Any] = {}
         for n, (token, min_sep, max_sep, modulo) in enumerate(self.fixed_tokens):
             l: str = token.internal_label
             part_of: list[dict[str, str]] = token.obj["unit"].get("partOf", [])
@@ -1028,22 +1044,25 @@ class SQLSequence:
                 entities=entities,
                 part_of=part_of,
             )
-            if token_left_joins:
-                left_joins += token_left_joins
+            for tab, conds in token_left_joins.items():
+                left_joins[tab] = left_joins.get(tab, None)
+                if not conds:
+                    continue
+                left_joins[tab] = (left_joins[tab] or set()).union(conds)
             tok_ref = self.sql.layer(l, tok, pointer=True)
-            conds: list[str] = [*token_conds]
+            conditions: list[str] = [*token_conds]
             if n > 0:
                 pl: str = self.fixed_tokens[n - 1][0].internal_label
                 pl_ref = self.sql.layer(pl, tok, pointer=True)
                 if min_sep == max_sep:
-                    conds.append(f"{tok_ref} - {pl_ref} = {str(min_sep)}")
+                    conditions.append(f"{tok_ref} - {pl_ref} = {str(min_sep)}")
                 else:
-                    conds.append(f"{tok_ref} - {pl_ref} > {str(min_sep-1)}")
+                    conditions.append(f"{tok_ref} - {pl_ref} > {str(min_sep-1)}")
                     if max_sep > min_sep:
-                        conds.append(f"{tok_ref} - {pl_ref} < {str(max_sep+1)}")
+                        conditions.append(f"{tok_ref} - {pl_ref} < {str(max_sep+1)}")
                     if modulo >= 0:
-                        conds.append(f"({tok_ref} - {pl_ref} - 1) % {modulo} = 0")
-            wheres += conds
+                        conditions.append(f"({tok_ref} - {pl_ref} - 1) % {modulo} = 0")
+            wheres += conditions
 
         return (wheres, left_joins)
 
@@ -1146,7 +1165,7 @@ class SQLSequence:
                     combined_joins: list[str] = [
                         x for x in joins_for_refs_from_prev_table
                     ]
-                    combined_joins += [x for x in ljs]
+                    combined_joins += [x for x in _to_leftjoins(ljs or {})]
                     from_cross += f"\n                LEFT JOIN ".join(combined_joins)
                 sselect += (",\n                    " if sselect else "") + (
                     " AND ".join(token_conds)

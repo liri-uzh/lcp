@@ -590,6 +590,7 @@ export default {
         corpusId: this.corpusModal.corpus_id,
         metadata: this.corpusModal.meta,
         descriptions: this.corpusModal.layer,
+        globals: this.corpusModal.globalAttributes
       };
       const isSuperAdmin = useUserStore().isSuperAdmin;
       if (isSuperAdmin)

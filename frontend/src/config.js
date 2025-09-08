@@ -170,6 +170,7 @@ if (process.env.NODE_ENV == "production") {
     "soundscript": "https://soundscript.linguistik.uzh.ch",
     "videoscope": "https://videoscope.linguistik.uzh.ch",
     "lama": "https://lama.linguistik.uzh.ch",
+    "swissdoxviz": "https://swissdoxviz.linguistik.uzh.ch/",
   }
 }
 else if (process.env.NODE_ENV == "staging") {
@@ -179,6 +180,7 @@ else if (process.env.NODE_ENV == "staging") {
     "soundscript": "https://soundscript.test.linguistik.uzh.ch",
     "videoscope": "https://videoscope.test.linguistik.uzh.ch",
     "lama": "https://lama.test.linguistik.uzh.ch",
+    "swissdoxviz": "https://swissdoxviz.test.linguistik.uzh.ch/",
   }
 }
 else {
@@ -188,6 +190,7 @@ else {
     "soundscript": "http://localhost:8082",
     "videoscope": "http://localhost:8083",
     "lama": "http://localhost:8081",
+    "swissdoxviz": "https://swissdoxviz.test.linguistik.uzh.ch/",
   }
 }
 

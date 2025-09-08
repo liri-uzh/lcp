@@ -2,8 +2,8 @@ import { defineStore } from "pinia";
 import { getUserLocale } from "@/fluent";
 import httpApi from "@/httpApi";
 import { t } from '@/i18n';
-
 import { useUserStore } from "@/stores/userStore";
+import config from "@/config";
 
 export const useCorpusStore = defineStore("corpusData", {
   state: () => ({
@@ -71,7 +71,7 @@ export const useCorpusStore = defineStore("corpusData", {
         descriptions[layer] = {attributes: {}};
         if ("description" in props)
           descriptions[layer].description = props.description;
-        for (let [attr, desc] of Object.entries(props.attributes)) {
+        for (let [attr, desc] of Object.entries(props.attributes||{})) {
           if ("meta" in corpusAttrs && attr in corpusAttrs.meta) {
             descriptions[layer].attributes.meta = descriptions[layer].attributes.meta || {};
             descriptions[layer].attributes.meta[attr] = desc;
@@ -80,7 +80,7 @@ export const useCorpusStore = defineStore("corpusData", {
             descriptions[layer].attributes[attr] = desc;
         }
       }
-      const toSend = {lg: lg, metadata: data.metadata, descriptions: descriptions}
+      const toSend = {lg: lg, metadata: data.metadata, descriptions: descriptions, globals: data.globals}
       if ("projects" in data)
         toSend.projects = data.projects;
       httpApi.put(`/corpora/${data.corpusId}/meta/update`, toSend).then((response) => {
@@ -153,6 +153,8 @@ export const useCorpusStore = defineStore("corpusData", {
     async fetchExport(info) {
       const ampsInfo = Object.entries(info).map(([k,v])=>encodeURIComponent(k)+"="+encodeURIComponent(v)).join("&")
       let url = `${httpApi.getUri()}/download_export?${ampsInfo}`;
+      if (info.format == "swissdox")
+        url = config.appLinks.swissdoxviz;
       const a = document.createElement("A");
       a.target = "_blank";
       a.href = url;

@@ -167,6 +167,7 @@ modal-meta-url = URL
 modal-meta-authors = Auteur·ice·s
 modal-meta-provider = Publieur/Institution
 modal-meta-revision = Révision
+modal-meta-date = Date
 modal-meta-data-type = Type de données
 modal-meta-description = Description
 modal-meta-language = Langue principale

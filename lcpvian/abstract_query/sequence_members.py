@@ -292,6 +292,10 @@ class Sequence(Member):
                 obj["sequence"].get("label", self.query_data.unique_label())
             )
 
+        self.internal_label = (
+            self.label
+        )  # TODO: required from results, but can we do away with internal labels altogether?
+
         self.members: list[Member] = []
         obj_members = obj["sequence"].get("members", [])
         for m in obj_members:

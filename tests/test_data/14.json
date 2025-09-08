@@ -1,0 +1,118 @@
+{
+    "query": [
+        {
+            "unit": {
+                "layer": "Article",
+                "label": "a",
+                "constraints": [
+                    {
+                        "comparison": {
+                            "left": {
+                                "function": {
+                                    "functionName": "year",
+                                    "arguments": [
+                                        {
+                                            "entity": "pubdate"
+                                        }
+                                    ]
+                                }
+                            },
+                            "comparator": ">",
+                            "right": {
+                                "math": "2020"
+                            }
+                        }
+                    }
+                ]
+            }
+        },
+        {
+            "unit": {
+                "layer": "Segment",
+                "partOf": [
+                    {
+                        "partOfStream": "a"
+                    }
+                ],
+                "label": "s"
+            }
+        },
+        {
+            "sequence": {
+                "partOf": [
+                    {
+                        "partOfStream": "s"
+                    }
+                ],
+                "label": "seq",
+                "members": [
+                    {
+                        "unit": {
+                            "layer": "Token",
+                            "label": "t1",
+                            "constraints": [
+                                {
+                                    "comparison": {
+                                        "left": {
+                                            "reference": "upos"
+                                        },
+                                        "comparator": "=",
+                                        "right": {
+                                            "string": "ADJ"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    {
+                        "unit": {
+                            "layer": "Token",
+                            "label": "t2",
+                            "constraints": [
+                                {
+                                    "comparison": {
+                                        "left": {
+                                            "reference": "lemma"
+                                        },
+                                        "comparator": "=",
+                                        "right": {
+                                            "string": "Schweiz"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        }
+    ],
+    "results": [
+        {
+            "label": "kWIC",
+            "resultsPlain": {
+                "context": [
+                    "s"
+                ],
+                "entities": [
+                    "t1",
+                    "t2"
+                ]
+            }
+        },
+        {
+            "label": "adjDist",
+            "resultsAnalysis": {
+                "attributes": [
+                    {
+                        "attribute": "t1.lemma"
+                    }
+                ],
+                "functions": [
+                    "frequency"
+                ]
+            }
+        }
+    ]
+}

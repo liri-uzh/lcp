@@ -18,6 +18,7 @@ from .utils import (
     _is_anchored,
     _layer_contains,
     _bound_label,
+    literal_sql,
 )
 from ..utils import _get_all_attributes
 
@@ -403,12 +404,12 @@ class Constraint:
         if "function" in reference:
             ref, ref_info = self.parse_function(reference["function"])
         elif "string" in reference:
-            ref = f"'{reference['string']}'"
+            ref = literal_sql(reference["string"])
             ref_info["type"] = "string"
             ref_info["meta"] = {"str": reference["string"]}
         elif "regex" in reference:
             rgx = reference["regex"]
-            ref = f"'{rgx.get('pattern', '')}'"
+            ref = literal_sql(rgx.get("pattern", ""))
             ref_info["type"] = "regex"
             ref_info["meta"] = rgx
             cast(dict, ref_info["meta"])["str"] = rgx.get("pattern", "")
@@ -690,9 +691,7 @@ class Constraint:
                 accessor = (
                     "->>" if ref_type in ("string", "text", "categorical") else "->"
                 )
-                ref = accessor.join(
-                    [sql_ref.ref, sql_str("{att}", att=sql.Literal(sub_ref))]
-                )
+                ref = accessor.join([sql_ref.ref, literal_sql(sub_ref)])
             elif glob_attr:  # pointer ref to global attribute
                 ref_info["type"] = "id"
                 sql_ref = self.sql_corpus.attribute(prefix, layer, ref, pointer=True)
@@ -832,10 +831,8 @@ class Constraint:
         ):
             attr_ref, attr_info = parsed_ars[0]
             sql_fn = fn.replace("dayofweek", "dow").replace("dayofyear", "doy")
-            fn_str = sql_str(
-                "extract({sql_fn} from (" + attr_ref + ")::date)",
-                sql_fn=sql.Literal(sql_fn),
-            )
+            sql_fr_s = literal_sql(sql_fn)
+            fn_str = f"extract({sql_fr_s} from ({attr_ref})::date)"
             ref_info = RefInfo(type="number", meta={"str": ref_info_str})
         ref_info["entities"] = [
             e for _, ri in parsed_ars for e in ri.get("entities", [])
@@ -1041,8 +1038,12 @@ def _get_constraints(
 
     references: dict[str, list[str]] = {}
 
+    is_relational = conf.config["layer"][layer].get("layerType") == "relation"
+
     part_ofs: list[str] = []
     for part in part_of or []:
+        if is_relational:
+            continue
         if not label and first_unit:
             label = first_unit.get("label", "")
         part_type, part_label = cast(
