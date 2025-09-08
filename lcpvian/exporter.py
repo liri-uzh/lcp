@@ -642,6 +642,8 @@ class Exporter:
             fpath = os.path.join(seg_path, f"{sid}.xml")
             with open(fpath, "w") as seg_output:
                 for annotation in annotations:
+                    if not annotation:
+                        continue
                     ann_layer, ann_occurs = next((k, v) for k, v in annotation.items())
                     for ann_pos, n_anns, ann_props in ann_occurs:
                         props = {
