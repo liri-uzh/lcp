@@ -34,6 +34,16 @@ export default {
       e.preventDefault();
       e.stopPropagation();
       this.zoom = Math.max(0.2, Math.min(2.0, this.zoom - e.deltaY/500));
+    },
+    async updateReplicator() {
+      await new Promise(r=>setTimeout(r, 20));
+      let selectedRow, selectedReplicator;
+      while (!(selectedRow=document.querySelector(".selected .results")) || !(selectedReplicator=document.querySelector("#selectedReplicator")))
+        await new Promise(r=>setTimeout(r, 1));
+      console.log("selectedRow", selectedRow);
+      console.log("selectedReplicator", selectedReplicator);
+      selectedReplicator.innerHTML = "";
+      selectedReplicator.appendChild(selectedRow.cloneNode(true));
     }
   },
   computed: {
@@ -50,17 +60,12 @@ export default {
           ];
           return [newLeft, newTop, newWidth, newHeight];
         });
+      this.updateReplicator();
       return highlights;
     },
   },
   mounted() {
-    const selectedRow = document.querySelector(".selected .results");
-    const selectedReplicator = document.querySelector("#selectedReplicator");
-    console.log("selectedRow", selectedRow);
-    console.log("selectedReplicator", selectedReplicator);
-    if (!selectedReplicator || !selectedRow) return;
-    selectedReplicator.innerHTML = "";
-    selectedReplicator.appendChild(selectedRow.cloneNode(true));
+    // pass
   },
   beforeUnmount() {
     // pass
