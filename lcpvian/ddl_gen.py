@@ -15,6 +15,7 @@ from textwrap import dedent
 from typing import Any, cast
 
 from .typed import JSONObject
+from .utils import is_prepared_annotation
 
 TYPES_MAP = {
     "number": "int",
@@ -1099,7 +1100,9 @@ class CTProcessor:
 
         self.globals.prep_seg_updates = []
         for layer, props in self.corpus_temp["layer"].items():
-            if layer == segname or props.get("contains") != tokname:
+            if not is_prepared_annotation(self.corpus_temp, layer):
+                continue
+            if not props.get("attributes", {}):
                 continue
             mapping_attrs = cast(
                 dict[str, Any], self.globals.mapping["layer"].get(layer, {})

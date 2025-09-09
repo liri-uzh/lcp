@@ -1076,6 +1076,17 @@ def _get_query_batches(
     return sorted(out, key=lambda x: x[-1])
 
 
+def is_prepared_annotation(config: dict, layer: str) -> bool:
+    tokname, segname = (config["firstClass"][x] for x in ("token", "segment"))
+    if layer == segname:
+        return False
+    if layer not in config["layer"]:
+        return False
+    if config["layer"][layer].get("contains") == tokname:
+        return True
+    return False
+
+
 def get_segment_meta_script(
     config: dict, languages: list[str], batch_name: str
 ) -> tuple[str, list[str]]:
@@ -1105,12 +1116,16 @@ def get_segment_meta_script(
 
     # META
     has_media = config.get("meta", config).get("mediaSlots", {})
-    parents_of_seg = [
-        k for k in layers if _parent_of(cast(CorpusConfig, config), seg, k)
+    parents_of_tok = [
+        k for k in layers if _parent_of(cast(CorpusConfig, config), tok, k)
     ]
     parents_with_attributes: dict[str, int] = {seg: 1}  # Query the segment layer itself
     parents_with_attributes.update(
-        {k: 1 for k in parents_of_seg if layers[k].get("attributes")}
+        {
+            k: 1
+            for k in parents_of_tok
+            if layers[k].get("attributes") and not is_prepared_annotation(config, k)
+        }
     )
     # Make sure to always include Document in there
     parents_with_attributes[doc] = 1
@@ -1136,6 +1151,11 @@ def get_segment_meta_script(
                 else:
                     layer_stream_ref = sqlc.anchor(entity_lab, layer, "stream")
                     conditions.insert(0, f"{layer_stream_ref} @> {seg_stream_ref}")
+                    # Containment vs overlap
+                    # conditions.insert(
+                    #     0,
+                    #     f"{layer_stream_ref} && {seg_stream_ref} AND {layer_stream_ref} <= {seg_stream_ref}",
+                    # )
             joins[tab] = {**joins.get(tab, {}), **{c: 1 for c in conditions}}
         layer_alias = entity_ref.alias
         if not layer_alias.endswith("_id"):

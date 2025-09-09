@@ -122,6 +122,11 @@
           >
             <FontAwesomeIcon :icon="['fas', 'image']" />
           </td>
+          <td class="action-button" style="opacity: 0.5;" title="No or more than one images"
+            v-else-if="Object.entries(this.meta[this.data[resultIndex][0]] || {}).find((lp=>lp[1].xy_box))"
+          >
+            <FontAwesomeIcon :icon="['fas', 'image']" />
+          </td>
           <td class="buttons">
             <button
               type="button"
@@ -296,6 +301,7 @@
                 :src="image.src"
                 :name="image.name"
                 :boxes="image.boxes"
+                :offset="image.offset"
                 v-if="image"
               />
             </div>
@@ -691,11 +697,14 @@ export default {
         let attrs = props.attributes || {};
         if ("meta" in attrs)
           attrs = {attrs, ...attrs.meta};
-        for (let [aname, aprops] of Object.entries(attrs||{}))
-          if (aprops.type == "image") return [
-            this.meta[this.data[resultIndex][0]][layerName][aname],
-            layerName
-          ];
+        for (let [aname, aprops] of Object.entries(attrs||{})) {
+          if (aprops.type != "image")
+            continue
+          const filename = this.meta[this.data[resultIndex][0]][layerName][aname];
+          if (!filename)
+            return null;
+          return [filename, layerName];
+        }
       }
       return null;
     },
@@ -714,7 +723,7 @@ export default {
         if (xy_box[0] > xy_box[2])
           xy_box = [xy_box[2], xy_box[3], xy_box[0], xy_box[1]];
         if (imageLayer && imageLayer == layer) {
-          image_offset = xy_box.slice(0,2);
+          image_offset = xy_box;
           continue;
         }
         if (!this.corpora.corpus.layer[layer].anchoring.location)
@@ -731,7 +740,8 @@ export default {
       this.image = {
         name: filename.replace(/\.[^.]+$/,""),
         src: this.baseMediaUrl + filename,
-        boxes: boxes
+        boxes: boxes,
+        offset: image_offset
       };
     },
     hoverResultLine(resultIndex) {

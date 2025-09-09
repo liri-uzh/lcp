@@ -1,16 +1,25 @@
 WITH preps AS (SELECT Segment_id, id_offset, content, annotations FROM cineminds_video_topic__0538f19753ba4303873463b0d6b3dace_3.prepared_Segment WHERE Segment_id = ANY(:sids)),
     meta AS (SELECT
-    "Segment"."segment_id" AS "Segment_id", "Segment"."char_range" AS "Segment_char_range", "Segment"."frame_range" AS "Segment_frame_range", "Segment"."meta"::jsonb AS "Segment_meta", "Topic"."topic_id" AS "Topic_id", "Topic"."char_range" AS "Topic_char_range", "Topic"."frame_range" AS "Topic_frame_range", "Topic_name"."name" AS "Topic_name", "Topic_urls"."urls" AS "Topic_urls", array_agg("Topic_keywords".label) AS "Topic_keywords", "Document"."document_id" AS "Document_id", "Document"."char_range" AS "Document_char_range", "Document"."frame_range" AS "Document_frame_range", "Document"."media"::jsonb AS "Document_media", "Document"."name"::text AS "Document_name", "Document"."meta"::jsonb AS "Document_meta"
-FROM
-    preps
-    LEFT JOIN "cineminds_video_topic__0538f19753ba4303873463b0d6b3dace_3"."segmentrest" "Segment" ON "Segment"."segment_id" = preps."segment_id"
-    LEFT JOIN "cineminds_video_topic__0538f19753ba4303873463b0d6b3dace_3"."topic" "Topic" ON "Topic"."char_range" @> "Segment"."char_range"
-    LEFT JOIN "cineminds_video_topic__0538f19753ba4303873463b0d6b3dace_3"."topic_name" "Topic_name" ON "Topic_name"."name_id" = "Topic"."name_id"
-    LEFT JOIN "cineminds_video_topic__0538f19753ba4303873463b0d6b3dace_3"."topic_urls" "Topic_urls" ON "Topic_urls"."urls_id" = "Topic"."urls_id"
-    LEFT JOIN "cineminds_video_topic__0538f19753ba4303873463b0d6b3dace_3"."topic_labels" "Topic_keywords" ON "Topic"."char_range" @> "Segment"."char_range" AND get_bit("Topic"."keywords", 327-"Topic_keywords".bit) > 0
-    LEFT JOIN "cineminds_video_topic__0538f19753ba4303873463b0d6b3dace_3"."document" "Document" ON "Document"."char_range" @> "Segment"."char_range"
-GROUP BY
-    "Segment"."segment_id", "Segment"."meta"::jsonb, "Topic"."topic_id", "Topic_name"."name", "Topic_urls"."urls", "Topic"."keywords", "Document"."document_id", "Document"."meta"::jsonb)
-SELECT -1::int2 AS rstype, jsonb_build_array(preps.segment_id, preps.id_offset, preps.content, preps.annotations) FROM preps
-UNION ALL
-SELECT -2::int2 AS rstype, jsonb_build_array(meta."Segment_id", meta."Segment_char_range", meta."Segment_frame_range", meta."Segment_meta", meta."Topic_id", meta."Topic_char_range", meta."Topic_frame_range", meta."Topic_name", meta."Topic_urls", meta."Topic_keywords", meta."Document_id", meta."Document_char_range", meta."Document_frame_range", meta."Document_media", meta."Document_name", meta."Document_meta") FROM meta;
+    "Segment"."segment_id" AS "Segment_id", "Segment"."char_range" AS "Segment_char_range", "Segment"."frame_range" AS "Segment_frame_range", "Segment"."meta"::jsonb AS "Segment_meta", "Topic"."topic_id" AS "Topic_id", "Topic"."char_range" AS "Topic_char_range", "Topic"."frame_range" AS "Topic_frame_range", "Topic_name"."name" AS "Topic_name", "Topic_urls"."urls" AS "Topic_urls", array_agg("Topic_keywords".label) AS "Topic_keywords", "Document"."document_id" AS "Document_id", "Document"."char_range" AS "Document_char_range", "Document"."frame_range" AS "Document_frame_range", "Document"."media"::jsonb AS "Document_media", "Document"."name"::text AS "Document_name", "Document"."meta"::JSONB AS "Document_meta"
+     FROM preps
+     LEFT JOIN "cineminds_video_topic__0538f19753ba4303873463b0d6b3dace_3"."segmentrest" "Segment" ON "Segment"."segment_id" = preps."segment_id"
+     LEFT JOIN "cineminds_video_topic__0538f19753ba4303873463b0d6b3dace_3"."topic" "Topic" ON "Topic"."char_range" @> "Segment"."char_range"
+     LEFT JOIN "cineminds_video_topic__0538f19753ba4303873463b0d6b3dace_3"."topic_name" "Topic_name" ON "Topic_name"."name_id" = "Topic"."name_id"
+     LEFT JOIN "cineminds_video_topic__0538f19753ba4303873463b0d6b3dace_3"."topic_urls" "Topic_urls" ON "Topic_urls"."urls_id" = "Topic"."urls_id"
+     LEFT JOIN "cineminds_video_topic__0538f19753ba4303873463b0d6b3dace_3"."topic_labels" "Topic_keywords" ON "Topic"."char_range" @> "Segment"."char_range"
+     AND get_bit("Topic"."keywords", 327-"Topic_keywords".bit) > 0
+     LEFT JOIN "cineminds_video_topic__0538f19753ba4303873463b0d6b3dace_3"."document" "Document" ON "Document"."char_range" @> "Segment"."char_range"
+     GROUP BY "Segment"."segment_id",
+              "Segment"."meta"::JSONB,
+              "Topic"."topic_id",
+              "Topic_name"."name",
+              "Topic_urls"."urls",
+              "Topic"."keywords",
+              "Document"."document_id",
+              "Document"."meta"::JSONB)
+  SELECT -1::int2 AS rstype,
+         jsonb_build_array(preps.segment_id, preps.id_offset, preps.content, preps.annotations)
+  FROM preps
+  UNION ALL
+  SELECT -2::int2 AS rstype,
+         jsonb_build_array(meta."Segment_id", meta."Segment_char_range", meta."Segment_frame_range", meta."Segment_meta", meta."Topic_id", meta."Topic_char_range", meta."Topic_frame_range", meta."Topic_name", meta."Topic_urls", meta."Topic_keywords", meta."Document_id", meta."Document_char_range", meta."Document_frame_range", meta."Document_media", meta."Document_name", meta."Document_meta") FROM meta;
