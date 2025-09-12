@@ -19,31 +19,31 @@
             "layerType": "span",
             "attributes": {
                 "meta": {
-                    "Surname": {
+                    "surname": {
                         "type": "text",
                         "nullable": true
                     },
-                    "Forename": {
+                    "forename": {
                         "type": "text",
                         "nullable": true
                     },
-                    "MemberId": {
+                    "memberId": {
                         "type": "integer",
                         "nullable": true
                     },
-                    "CountryCode": {
+                    "countryCode": {
                         "type": "text",
                         "nullable": true
                     },
-                    "IsPresident": {
+                    "isPresident": {
                         "type": "boolean",
                         "nullable": true
                     },
-                    "PoliticalGroup": {
+                    "politicalGroup": {
                         "type": "text",
                         "nullable": true
                     },
-                    "OriginalLanguage": {
+                    "originalLanguage": {
                         "type": "text",
                         "nullable": true
                     }

@@ -19,31 +19,31 @@
             "layerType": "span",
             "attributes": {
                 "meta": {
-                    "Surname": {
+                    "surname": {
                         "type": "text",
                         "nullable": true
                     },
-                    "Forename": {
+                    "forename": {
                         "type": "text",
                         "nullable": true
                     },
-                    "MemberId": {
+                    "memberId": {
                         "type": "integer",
                         "nullable": true
                     },
-                    "CountryCode": {
+                    "countryCode": {
                         "type": "text",
                         "nullable": true
                     },
-                    "IsPresident": {
+                    "isPresident": {
                         "type": "boolean",
                         "nullable": true
                     },
-                    "PoliticalGroup": {
+                    "politicalGroup": {
                         "type": "text",
                         "nullable": true
                     },
-                    "OriginalLanguage": {
+                    "originalLanguage": {
                         "type": "text",
                         "nullable": true
                     }
@@ -1037,7 +1037,7 @@
         "token_en3": 5393948,
         "token_en4": 2696974,
         "token_en5": 1348487,
-        "token_frrest": 1348487,
+        "token_enrest": 1348487,
         "token_fr1": 23635294,
         "token_fr2": 11817647,
         "token_fr3": 5908823,

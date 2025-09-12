@@ -1,12 +1,13 @@
- WITH preps AS (SELECT Segment_id, id_offset, content FROM bnc1.prepared_segment WHERE Segment_id = ANY(:sids)),
-    meta AS (SELECT
-    "Segment"."segment_id" AS "Segment_id", "Segment"."char_range" AS "Segment_char_range", "Document"."document_id" AS "Document_id", "Document"."char_range" AS "Document_char_range", "Document"."meta"::jsonb AS "Document_meta"
-FROM
-    preps
-    LEFT JOIN "bnc1"."segmentrest" "Segment" ON "Segment"."segment_id" = preps."segment_id"
-    LEFT JOIN "bnc1"."document" "Document" ON "Document"."char_range" @> "Segment"."char_range"
-GROUP BY
-    "Segment"."segment_id", "Document"."document_id", "Document"."meta"::jsonb)
-SELECT -1::int2 AS rstype, jsonb_build_array(preps.segment_id, preps.id_offset, preps.content) FROM preps
+WITH preps AS (SELECT Segment_id, id_offset, content FROM bnc1.prepared_segment WHERE Segment_id = ANY(:sids)),
+meta AS (WITH "x" AS (SELECT s.char_range, s."segment_id" FROM preps JOIN bnc1.segmentrest s ON s."segment_id" = preps."segment_id"),
+"Segment" AS (SELECT x."segment_id" AS "_id", "Segment"."segment_id" AS "Segment_id","Segment"."char_range" AS "char_range" FROM "x" LEFT JOIN "bnc1"."segmentrest" "Segment" ON "Segment"."char_range" && "x"."char_range"),
+"Division" AS (SELECT x."segment_id" AS "_id", "Division"."division_id" AS "Division_id","Division"."char_range" AS "char_range" FROM "x" LEFT JOIN "bnc1"."division" "Division" ON "Division"."char_range" && "x"."char_range"),
+"Paragraph" AS (SELECT x."segment_id" AS "_id", "Paragraph"."paragraph_id" AS "Paragraph_id","Paragraph"."char_range" AS "char_range" FROM "x" LEFT JOIN "bnc1"."paragraph" "Paragraph" ON "Paragraph"."char_range" && "x"."char_range"),
+"Document" AS (SELECT x."segment_id" AS "_id", "Document"."document_id" AS "Document_id","Document"."char_range" AS "char_range","Document"."meta"::jsonb->'date' AS "date","Document"."meta"::jsonb->'title' AS "title","Document"."meta"::jsonb->'keyWords' AS "keyWords","Document"."meta"::jsonb->'classCode' AS "classCode" FROM "x" LEFT JOIN "bnc1"."document" "Document" ON "Document"."char_range" && "x"."char_range")
+SELECT jsonb_build_array("_id",'Segment',"Segment_id",jsonb_build_object('char_range',"Segment"."char_range")) AS res FROM "Segment"
+UNION ALL SELECT jsonb_build_array("_id",'Division',"Division_id",jsonb_build_object('char_range',"Division"."char_range")) AS res FROM "Division"
+UNION ALL SELECT jsonb_build_array("_id",'Paragraph',"Paragraph_id",jsonb_build_object('char_range',"Paragraph"."char_range")) AS res FROM "Paragraph"
+UNION ALL SELECT jsonb_build_array("_id",'Document',"Document_id",jsonb_build_object('char_range',"Document"."char_range",'date',"Document"."date",'title',"Document"."title",'keyWords',"Document"."keyWords",'classCode',"Document"."classCode")) AS res FROM "Document")
+SELECT -1::int2 AS rstype, jsonb_build_array(preps."segment_id", preps.id_offset, preps.content) FROM preps
 UNION ALL
-SELECT -2::int2 AS rstype, jsonb_build_array(meta."Segment_id", meta."Segment_char_range", meta."Document_id", meta."Document_char_range", meta."Document_meta") FROM meta;
+SELECT -2::int2 AS rstype, res FROM meta;

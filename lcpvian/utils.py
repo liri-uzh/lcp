@@ -1264,7 +1264,7 @@ def get_segment_meta_script(
     preps_annotations = ", preps.annotations" if annotations else ""
 
     # META
-    exclude_meta = {
+    exclude_meta: dict[str, Any] = {
         ln: {} for ln in layers if is_prepared_annotation(config, ln) or ln == tok
     }
     seg_id = sql_str("{}", f"{seg.lower()}_id")
@@ -1276,7 +1276,7 @@ def get_segment_meta_script(
         add=(f"x.{seg_id}", "_id"),
         exclude=exclude_meta,
     )
-    meta_select_labels = {}
+    meta_select_labels: dict = {}
 
     script = f"""WITH preps AS ({prep_cte}),
 meta AS ({meta_script})
