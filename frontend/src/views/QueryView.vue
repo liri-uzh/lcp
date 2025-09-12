@@ -1527,8 +1527,13 @@ export default {
         } else if (data["action"] === "segments") {
           useWsStore().addMessageForPlayer(data);
           this.updateLoading(data.status);
-          const meta = data.result["-2"] || []; // change this?
+          const meta = data.result["-2"] || [];
+          const META_LIMIT = 5000;
+          if (meta.length > META_LIMIT) console.warn(`Too much metadata (over ${META_LIMIT} lines) to process everything`);
+          let n = 0;
           for (let [sid, layer, lid, info] of meta) {
+            n++;
+            if (n>META_LIMIT) break;
             if (!lid) continue;
             if (!(layer in this.WSDataMeta.layer))
               this.WSDataMeta.layer[layer] = {
@@ -1537,6 +1542,7 @@ export default {
               };
             const layer_dict = this.WSDataMeta.layer[layer];
             if (lid in layer_dict) continue;
+            info._id = lid;
             layer_dict.byId[lid] = info;
             this.WSDataMeta.bySegment[sid] = this.WSDataMeta.bySegment[sid] || {};
             this.WSDataMeta.bySegment[sid][layer] = info;
@@ -1545,8 +1551,9 @@ export default {
             for (let [anc_col, anc_name] of [["char_range", "Stream"], ["frame_range", "Time"], ["xy_box", "Location"]]) {
               if (!(anc_col in info)) continue;
               if (anc_col == "xy_box") continue; // TODO
+              info[anc_col] = info[anc_col].split(",").map(x=>parseInt(x.replace(/[[()]/,""))).map((v,i)=>v-(i==1));
+              const range = info[anc_col];
               const byAnchor = layer_dict[`by${anc_name}`];
-              const range = info[anc_col].split(",").map(x=>parseInt(x.replace(/[[()]/,""))).map((v,i)=>v-(i==1));
               if (this.rangeValueInInterval(byAnchor, range, info))
                 continue;
               try {

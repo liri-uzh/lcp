@@ -406,7 +406,11 @@ export default {
           player.addEventListener("pause", () => player.removeEventListener("timeupdate", handler), { once: true });
           player.addEventListener("timeupdate", handler);
         }
-        player.play();
+        try {
+          player.play();
+        } catch {
+          // pass
+        }
       }
       this.playerIsPlaying = true;
     },

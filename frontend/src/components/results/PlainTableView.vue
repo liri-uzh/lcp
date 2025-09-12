@@ -860,13 +860,18 @@ export default {
       return meta[layer].frame_range.map(fr=>fr-docLower);
     },
     playAudio(resultIndex) {
-      this.$refs.audioplayer.pause();
+      try {
+        this.$refs.audioplayer.pause();
+      } catch {
+        // pass
+      }
       resultIndex = resultIndex + (this.currentPage - 1) * this.resultsPerPage;
       const sentenceId = this.data[resultIndex][0];
       let meta = this.meta[sentenceId];
       if (meta) {
         // corpus tamplete,
-        let documentId = meta[this.corpora.corpus.firstClass.document].id;
+        const doc_layer = this.corpora.corpus.firstClass.document;
+        let documentId = meta[doc_layer]._id;
         let filename = this.getAudio(resultIndex); // meta[this.corpora.corpus.firstClass.document].audio
         let [startFrameSeg, endFrameSeg] = this.getFrameRange(resultIndex, this.corpora.corpus.firstClass.segment);
         let startTime = startFrameSeg / 25.0;
@@ -900,7 +905,7 @@ export default {
       const sentenceId = this.data[resultIndex][0];
       let meta = this.meta[sentenceId];
       if (meta) {
-        let documentId = meta[this.corpora.corpus.firstClass.document].id;
+        let documentId = meta[this.corpora.corpus.firstClass.document]._id;
         let filename = this.getAudio(resultIndex); // meta[this.corpora.corpus.firstClass.document].audio
         let [startFrameDoc, endFrameDoc] = this.getFrameRange(resultIndex, this.corpora.corpus.firstClass.document);
         let [startFrameSeg, endFrameSeg] = this.getFrameRange(resultIndex, this.corpora.corpus.firstClass.segment);
@@ -936,14 +941,14 @@ export default {
       }
       if (Array.isArray(meta_obj))
         ret = meta_obj.join(", ")
-      else if (typeof(meta_obj) == "string")
+      else if (typeof(meta_obj) in {string: 1, number: 1})
         ret = meta_obj
       else
         ret = Utils.dictToStr(meta_obj, {addTitles: true, reorder: x=>x[0]=="id"}); // small hack to put id first
       return ret;
     },
     isEmpty(value) {
-      return !value || (value instanceof Object && Object.keys(value).length == 0);
+      return (typeof(value) != "number" && !value) || (value instanceof Object && Object.keys(value).length == 0);
     },
     meta_fold(layer, flip) {
       this.currentMeta._unfolded = (this.currentMeta._unfolded || {});
