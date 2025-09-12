@@ -162,6 +162,6 @@ export const useCorpusStore = defineStore("corpusData", {
       document.body.append(a);
       a.click();
       a.remove();
-    }
+    },
   },
 });

@@ -215,7 +215,7 @@
               </span>
               <table class="popover-deatils-table mb-2">
                 <template v-for="(meta_value, meta_key) in meta" :key="`${layer}-${meta_key}`">
-                  <tr v-if="allowedMetaColums[layer].includes(meta_key) && (meta_value || meta_fold(layer))">
+                  <tr v-if="allowedMetaColums[layer].includes(meta_key) && (!isEmpty(meta_value) || meta_fold(layer))">
                     <td>{{ meta_key }}</td>
                     <td v-if="(corpora.corpus.layer[layer].attributes[meta_key]||{}).type == 'image'">
                       <span
@@ -941,6 +941,9 @@ export default {
       else
         ret = Utils.dictToStr(meta_obj, {addTitles: true, reorder: x=>x[0]=="id"}); // small hack to put id first
       return ret;
+    },
+    isEmpty(value) {
+      return !value || (value instanceof Object && Object.keys(value).length == 0);
     },
     meta_fold(layer, flip) {
       this.currentMeta._unfolded = (this.currentMeta._unfolded || {});

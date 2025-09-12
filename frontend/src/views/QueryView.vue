@@ -470,7 +470,7 @@
                               :data="WSDataResults.result[index + 1] || []"
                               :sentences="WSDataSentences.result[-1] || []"
                               :languages="selectedLanguages"
-                              :meta="WSDataMeta"
+                              :meta="WSDataMeta.bySegment"
                               :attributes="resultSet.attributes"
                               :corpora="selectedCorpora"
                               @updatePage="updatePage"
@@ -484,7 +484,7 @@
                               :data="WSDataResults.result[index + 1] || []"
                               :sentences="WSDataSentences.result[-1] || []"
                               :languages="selectedLanguages"
-                              :meta="WSDataMeta"
+                              :meta="WSDataMeta.bySegment"
                               :attributes="resultSet.attributes"
                               :corpora="selectedCorpora"
                               @updatePage="updatePage"
@@ -494,7 +494,7 @@
                           </span>
                           <ResultsTableView v-else-if="resultSet.type != 'plain'"
                             :data="WSDataResults.result[index + 1]" :languages="selectedLanguages"
-                            :attributes="resultSet.attributes" :meta="WSDataMeta" :resultsPerPage="resultsPerPage"
+                            :attributes="resultSet.attributes" :meta="WSDataMeta.bySegment" :resultsPerPage="resultsPerPage"
                             :total="resultSet.total || []"
                             :type="resultSet.type" :corpora="selectedCorpora" />
                         </div>
@@ -883,6 +883,8 @@ import { mapState } from "pinia";
 import { Modal } from "bootstrap";
 import { nextTick } from 'vue'
 
+import IntervalTree from '@flatten-js/interval-tree'
+
 import { useCorpusStore } from "@/stores/corpusStore";
 import { useNotificationStore } from "@/stores/notificationStore";
 import { useUserStore } from "@/stores/userStore";
@@ -916,7 +918,7 @@ export default {
       selectedCorpora: null,
       isQueryValidData: null,
       WSDataResults: "",
-      WSDataMeta: {},
+      WSDataMeta: {"layer": {}, "bySegment": {}},
       WSDataSentences: {},
       nResults: 200,
       activeResultIndex: 1,
@@ -1092,7 +1094,7 @@ export default {
         this.requestId = null;
         this.querySatisfied = "";
         this.WSDataResults = {};
-        this.WSDataMeta = {};
+        this.WSDataMeta = {"layer": {}, "bySegment": {}};
         this.WSDataSentences = {};
         this.nameExport = "";
       }
@@ -1211,6 +1213,10 @@ export default {
     },
     playMedia(data) {
       this.selectedMediaForPlay = data;
+    },
+    rangeValueInInterval(interval, range, value) {
+      return interval.search(range, (v,r)=>[JSON.stringify(v),JSON.stringify([r.low,r.high])])
+                     .find(([v,r])=>v==JSON.stringify(value) && r==JSON.stringify(range));
     },
     corpusDataType: Utils.corpusDataType,
     showExploreTab() {
@@ -1521,29 +1527,43 @@ export default {
         } else if (data["action"] === "segments") {
           useWsStore().addMessageForPlayer(data);
           this.updateLoading(data.status);
-          const segment = this.selectedCorpora.corpus.firstClass.segment;
           const meta = data.result["-2"] || []; // change this?
-          const meta_labels = ((data.result["0"] || {}).meta_labels || [])
-            .map( ml => [ml.split("_")[0],ml.split("_").slice(1,).join("_")] );
-          for (let hit_meta of meta) {
-            let segment_id = "";
-            const meta_object = {};
-            for (let n in hit_meta) {
-              let value = hit_meta[n];
-              const [layer, attr] = meta_labels[n];
-              if (layer == segment && attr == "id")
-                segment_id = value;
-              meta_object[layer] = meta_object[layer] || {};
-              if (attr.endsWith("_range") && value) {
-                const ranges = value.match(/\[(\d+),(\d+)\)/);
-                if (ranges)
-                  value = [parseInt(ranges[1]),parseInt(ranges[2])];
+          for (let [sid, layer, lid, info] of meta) {
+            if (!lid) continue;
+            if (!(layer in this.WSDataMeta.layer))
+              this.WSDataMeta.layer[layer] = {
+                "byId": {},
+                "byStream": new IntervalTree(), "byTime": new IntervalTree(), "byLocation": new IntervalTree()
+              };
+            const layer_dict = this.WSDataMeta.layer[layer];
+            if (lid in layer_dict) continue;
+            layer_dict.byId[lid] = info;
+            this.WSDataMeta.bySegment[sid] = this.WSDataMeta.bySegment[sid] || {};
+            this.WSDataMeta.bySegment[sid][layer] = info;
+            if (!info || !(info instanceof Object)) continue;
+            let insertAttemptOffset = 10;
+            for (let [anc_col, anc_name] of [["char_range", "Stream"], ["frame_range", "Time"], ["xy_box", "Location"]]) {
+              if (!(anc_col in info)) continue;
+              if (anc_col == "xy_box") continue; // TODO
+              const byAnchor = layer_dict[`by${anc_name}`];
+              const range = info[anc_col].split(",").map(x=>parseInt(x.replace(/[[()]/,""))).map((v,i)=>v-(i==1));
+              if (this.rangeValueInInterval(byAnchor, range, info))
+                continue;
+              try {
+                byAnchor.insert(range, info);
+              } catch {
+                // failure because of too much at once? try later
+                insertAttemptOffset += 5;
+                setTimeout(()=>{
+                  try {
+                    if (this.rangeValueInInterval(byAnchor, range, info)) return;
+                    byAnchor.insert(range, info);
+                  } catch(err) {
+                    // pass
+                  }
+                }, insertAttemptOffset);
               }
-              if (typeof(value) == "string")
-                value = value.trim();
-              meta_object[layer][attr] = value;
             }
-            this.WSDataMeta[segment_id] = meta_object;
           }
           if (
             this.WSDataSentences &&

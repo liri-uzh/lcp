@@ -125,19 +125,6 @@ CONFIG_JOIN = """CROSS JOIN
 ) a
 """
 
-META_QUERY = """SELECT
-    {selects_formed}
-FROM
-    preps
-    {joins_formed}
-GROUP BY
-    {group_by_formed}"""
-slb = r"[\s\n]+"
-META_QUERY_REGEXP = rf"""SELECT
-    -2::int2 AS rstype,{slb}((.+ AS .+)+?)
-FROM(.|{slb})+
-"""
-
 LR = "{}"
 
 
@@ -1094,10 +1081,13 @@ def get_aligned_annotations(
     main_from: str,
     anchor: str = "stream",
     contains: bool = True,
+    media: bool = True,
+    add: tuple[str, str] | None = None,
     include: dict = {},
     exclude: dict = {},
 ) -> str:
     schema = config["schema_path"]
+    has_media = config.get("meta", config).get("mediaSlots", {})
     sqlc = SQLCorpus(config, schema, batch_name, lang)
     anchor_map = {"stream": "char_range", "time": "frame_range", "location": "xy_box"}
     anchor_col = anchor_map[anchor]
@@ -1116,15 +1106,15 @@ def get_aligned_annotations(
             continue
         layers[cl] = ("contains", ln)
     layer_ctes: dict = {}
-    for layer_name, (how, container) in layers.items():
-        layer_props = config["layer"][layer_name]
-        layer_ref = sqlc.layer(layer_name, layer_name, pointer=True)
+    for layer, (how, container) in layers.items():
+        layer_props = config["layer"][layer]
+        layer_ref = sqlc.layer(layer, layer, pointer=True)
         layer_selects = {}
         layer_joins = {}
         for anc in ("stream", "time", "location"):
             if not _is_anchored(layer_props, config, anc):
                 continue
-            anc_ref = sqlc.anchor(layer_name, layer_name, anc)
+            anc_ref = sqlc.anchor(layer, layer, anc)
             layer_selects[anchor_map[anc]] = anc_ref.ref
         anc_to_use = anchor
         overlapper = sql_str("{}.{}", "x", anchor_col)
@@ -1139,7 +1129,7 @@ def get_aligned_annotations(
             )
             container_anchor_ref = sqlc.anchor(container, container, anc_to_use)
             overlapper = container_anchor_ref.ref
-        layer_anchor_ref = sqlc.anchor(layer_name, layer_name, anc_to_use)
+        layer_anchor_ref = sqlc.anchor(layer, layer, anc_to_use)
         lar_tab, lar_conds = next(
             (t, conds) for t, conds in layer_anchor_ref.joins.items()
         )
@@ -1148,32 +1138,30 @@ def get_aligned_annotations(
             **{f"{layer_anchor_ref} && {overlapper}": 1},
         }
         meta_attrs = layer_props.get("attributes", {}).get("meta", {})
-        for attr_name, attr_props in _get_all_attributes(
-            layer_name, config, lang
-        ).items():
-            if attr_name in exclude.get(layer_name, {}):
+        for attr_name, attr_props in _get_all_attributes(layer, config, lang).items():
+            if attr_name in exclude.get(layer, {}):
                 continue
             if include and (
-                layer_name not in include
-                or (include[layer_name] and attr_name not in include[layer_name])
+                layer not in include
+                or (include[layer] and attr_name not in include[layer])
             ):
                 continue
             if attr_props.get("type") == "vector":
                 continue
-            attr_ref = sqlc.attribute(layer_name, layer_name, attr_name)
+            attr_ref = sqlc.attribute(layer, layer, attr_name)
             attr_alias = attr_ref.alias
             to_select = ""
             is_meta = attr_name in meta_attrs
             if is_meta:
-                attr_ref = sqlc.attribute(layer_name, layer_name, "meta")
-                attr_alias = f"{layer_name}_meta"
+                attr_ref = sqlc.attribute(layer, layer, "meta")
+                attr_alias = f"{layer}_meta"
             for tab, conds in attr_ref.joins.items():
                 layer_joins[tab] = {**layer_joins.get(tab, {}), **{c: 1 for c in conds}}
             if attr_props.get("type") == "labels" and not is_meta:
                 nbit = attr_props.get("nlabels", 1)
-                labels_map = _get_mapping(layer_name, config, batch_name, lang)
+                labels_map = _get_mapping(layer, config, batch_name, lang)
                 attr_map = labels_map.get("attributes", {}).get(attr_name, {})
-                labels_rel = attr_map.get("name", f"{layer_name}_labels")
+                labels_rel = attr_map.get("name", f"{layer}_labels")
                 labels_tab = sql_str("{}.{} {}", schema, labels_rel, attr_ref.alias)
                 labels_cond = sql_str(
                     f"get_bit({attr_ref}, {nbit-1}-{LR}.bit) > 0", attr_ref.alias
@@ -1187,7 +1175,12 @@ def get_aligned_annotations(
                     f"::jsonb->{literal_sql(attr_name)}" if is_meta else ""
                 )
             layer_selects[attr_name] = to_select or sql_str("{}", attr_alias)
-        layer_ctes[layer_name] = {
+        if media and has_media and layer == config["firstClass"]["document"]:
+            doc_media_ref = sqlc.not_attribute(layer, layer, "media", cast="::jsonb")
+            doc_name_ref = sqlc.not_attribute(layer, layer, "name", cast="::text")
+            layer_selects["media"] = doc_media_ref.ref
+            layer_selects["name"] = doc_name_ref.ref
+        layer_ctes[layer] = {
             "selects": layer_selects,
             "joins": layer_joins,
             "id": layer_ref.ref,
@@ -1197,15 +1190,17 @@ def get_aligned_annotations(
     withes = []
     unions = []
     x_tab = sql_str("{}", "x")
-    for layer_name in sorted(layer_ctes, key=lambda x: layer_ctes[x]["how"]):
-        seljoi = layer_ctes[layer_name]
+    for layer in sorted(layer_ctes, key=lambda x: layer_ctes[x]["how"]):
+        seljoi = layer_ctes[layer]
         select_in_with = ",".join(
             aref + sql_str(" AS {}", aname) for aname, aref in seljoi["selects"].items()
         )
-        layer_id = sql_str("{}", f"{layer_name}_id")
+        layer_id = sql_str("{}", f"{layer}_id")
         select_in_with = f"{seljoi['id']} AS {layer_id}" + (
             f",{select_in_with}" if select_in_with else ""
         )
+        if add:
+            select_in_with = add[0] + sql_str(" AS {}", add[1]) + f", {select_in_with}"
         from_in_with = (
             x_tab if seljoi["how"] == "anchor" else sql_str("{}", seljoi["container"])
         )
@@ -1215,17 +1210,22 @@ def get_aligned_annotations(
         )
         formed_joins = f" LEFT JOIN {formed_joins}" if formed_joins else ""
         withes.append(
-            sql_str("{}", layer_name)
+            sql_str("{}", layer)
             + f" AS (SELECT {select_in_with} FROM {from_in_with}{formed_joins})"
         )
         formed_build_object = ",".join(
             [
-                literal_sql(aname) + "," + sql_str("{}.{}", layer_name, aname)
+                literal_sql(aname) + "," + sql_str("{}.{}", layer, aname)
                 for aname in seljoi["selects"]
             ]
         )
+        array_to_select = (
+            f"{literal_sql(layer)},{layer_id},jsonb_build_object({formed_build_object})"
+        )
+        if add:
+            array_to_select = f"{sql_str('{}',add[1])},{array_to_select}"
         unions.append(
-            f"SELECT -2::int2 AS rstype, jsonb_build_array({literal_sql(layer_name)},{layer_id},jsonb_build_object({formed_build_object})) FROM {sql_str('{}', layer_name)}"
+            f"SELECT jsonb_build_array({array_to_select}) AS res FROM {sql_str('{}', layer)}"
         )
     return """WITH {x_tab} AS ({main_from}),
 {withes}
@@ -1242,7 +1242,6 @@ def get_segment_meta_script(
 ) -> tuple[str, list[str]]:
     schema = config["schema_path"]
     layers: dict = config["layer"]
-    doc: str = config["document"]
     seg: str = config["segment"]
     tok: str = config["token"]
     lang = languages[0] if languages else ""
@@ -1250,16 +1249,6 @@ def get_segment_meta_script(
     if not seg_table:
         underlang = f"_{lang}" if lang else ""
         seg_table = f"{seg}{underlang}"
-
-    print(
-        get_aligned_annotations(
-            config,
-            batch_name,
-            lang,
-            "SELECT '[400,600)'::int4range AS frame_range",
-            anchor="time",
-        )
-    )
 
     # SEGMENT
     annotations: str = (
@@ -1272,135 +1261,28 @@ def get_segment_meta_script(
         "relation", f"prepared_{seg_table}"
     )
     prep_cte = f"SELECT {seg}_id, id_offset, content{annotations} FROM {schema}.{prep_table} WHERE {seg}_id = ANY(:sids)"
+    preps_annotations = ", preps.annotations" if annotations else ""
 
     # META
-    has_media = config.get("meta", config).get("mediaSlots", {})
-    parents_of_tok = [
-        k for k in layers if _parent_of(cast(CorpusConfig, config), tok, k)
-    ]
-    parents_with_attributes: dict[str, int] = {seg: 1}  # Query the segment layer itself
-    parents_with_attributes.update(
-        {
-            k: 1
-            for k in parents_of_tok
-            if layers[k].get("attributes") and not is_prepared_annotation(config, k)
-        }
+    exclude_meta = {
+        ln: {} for ln in layers if is_prepared_annotation(config, ln) or ln == tok
+    }
+    seg_id = sql_str("{}", f"{seg.lower()}_id")
+    meta_script = get_aligned_annotations(
+        config,
+        batch_name,
+        lang,
+        f"SELECT s.char_range, s.{seg_id} FROM preps JOIN {schema}.{seg_table} s ON s.{seg_id} = preps.{seg_id}",
+        add=(f"x.{seg_id}", "_id"),
+        exclude=exclude_meta,
     )
-    # Make sure to always include Document in there
-    parents_with_attributes[doc] = 1
+    meta_select_labels = {}
 
-    selects: dict[str, int] = {}
-    group_by: dict[str, int] = {}
-    joins: dict[str, dict[str, int]] = {}
-    meta_select_labels: dict[str, int] = {}
-    seg_stream_ref = ""
-    sqlc = SQLCorpus(config, schema, batch_name, lang)
-    for layer in parents_with_attributes:
-        entity_lab = layer  # .lower()
-        entity_ref = sqlc.layer(entity_lab, layer, pointer=True)
-        for tab, conds in entity_ref.joins.items():
-            conditions = [c for c in conds]
-            if tab.endswith(sql_str(" {}", entity_ref.alias)):
-                if layer == seg:
-                    seg_stream_ref = sqlc.anchor(entity_lab, layer, "stream").ref
-                    conditions.insert(
-                        0,
-                        sql_str(f"{entity_ref.ref} = preps.{LR}", f"{seg.lower()}_id"),
-                    )
-                else:
-                    layer_stream_ref = sqlc.anchor(entity_lab, layer, "stream")
-                    conditions.insert(0, f"{layer_stream_ref} @> {seg_stream_ref}")
-                    # Containment vs overlap
-                    # conditions.insert(
-                    #     0,
-                    #     f"{layer_stream_ref} && {seg_stream_ref} AND {layer_stream_ref} <= {seg_stream_ref}",
-                    # )
-            joins[tab] = {**joins.get(tab, {}), **{c: 1 for c in conditions}}
-        layer_alias = entity_ref.alias
-        if not layer_alias.endswith("_id"):
-            layer_alias += "_id"
-        selects[sql_str(f"{entity_ref.ref} AS {LR}", layer_alias)] = 1
-        meta_select_labels[layer_alias] = 1
-        for anchor in ("stream", "time", "location"):
-            if not _is_anchored(layers[layer], config, anchor):
-                continue
-            layer_anchor_ref = sqlc.anchor(entity_lab, layer, anchor)
-            selects[
-                sql_str(f"{layer_anchor_ref.ref} AS {LR}", layer_anchor_ref.alias)
-            ] = 1
-            meta_select_labels[layer_anchor_ref.alias] = 1
-        if layer == doc and has_media:
-            doc_media_ref = sqlc.not_attribute(
-                entity_lab, layer, "media", cast="::jsonb"
-            )
-            doc_name_ref = sqlc.not_attribute(entity_lab, layer, "name", cast="::text")
-            filt_aliases = (doc_media_ref.alias, doc_name_ref.alias)
-            selects = {
-                s: 1
-                for s in selects
-                if not any(s.endswith(sql_str(" AS {}", x)) for x in filt_aliases)
-            }
-            selects[sql_str(f"{doc_media_ref.ref} AS {LR}", doc_media_ref.alias)] = 1
-            selects[sql_str(f"{doc_name_ref.ref} AS {LR}", doc_name_ref.alias)] = 1
-            meta_select_labels[doc_media_ref.alias] = 1
-            meta_select_labels[doc_name_ref.alias] = 1
-        group_by[entity_ref.ref] = 1
-        meta_attrs = layers[layer].get("attributes", {}).get("meta", {})
-        for attr_name, attr_props in _get_all_attributes(layer, config, lang).items():
-            if attr_props.get("type") == "vector":
-                continue
-            if attr_name == "id":
-                # TODO: do not use LAY_id as the alias for the PK
-                continue
-            attr_ref = sqlc.attribute(entity_lab, layer, attr_name)
-            attr_alias = attr_ref.alias
-            is_meta = attr_name in meta_attrs
-            if is_meta:
-                attr_ref = sqlc.attribute(entity_lab, layer, "meta")
-                if not attr_ref.ref.endswith("::jsonb"):
-                    attr_ref.ref += "::jsonb"
-                attr_alias = f"{layer}_meta"
-            for tab, conds in attr_ref.joins.items():
-                joins[tab] = {**joins.get(tab, {}), **{c: 1 for c in conds}}
-            if attr_props.get("type") == "labels" and not is_meta:
-                nbit = attr_props.get("nlabels", 1)
-                labels_map = _get_mapping(layer, config, batch_name, lang)
-                attr_map = labels_map.get("attributes", {}).get(attr_name, {})
-                labels_rel = attr_map.get("name", f"{layer}_labels")
-                labels_tab = sql_str("{}.{} {}", schema, labels_rel, attr_ref.alias)
-                labels_cond = sql_str(
-                    f"get_bit({attr_ref}, {nbit-1}-{LR}.bit) > 0", attr_ref.alias
-                )
-                joins[labels_tab] = {**joins.get(tab, {}), labels_cond: 1}
-                selects[
-                    sql_str("array_agg({}.label) AS {}", attr_ref.alias, attr_ref.alias)
-                ] = 1
-            else:
-                selects[sql_str(f"{attr_ref.ref} AS {LR}", attr_alias)] = 1
-            meta_select_labels[attr_alias] = 1
-            group_by[attr_ref.ref] = 1
-
-    selects_formed = ", ".join(selects)
-    # left join = include non-empty entities even if other ones are empty
-    joins_formed = f"\n    LEFT JOIN ".join(
-        f"{t} ON {' AND '.join(c)}" for t, c in joins.items()
-    )
-    joins_formed = "" if not joins_formed else f"LEFT JOIN {joins_formed}"
-    group_by_formed = ", ".join(group_by)
-    meta_script = META_QUERY.format(
-        selects_formed=selects_formed,
-        joins_formed=joins_formed,
-        group_by_formed=group_by_formed,
-    )
-
-    # SEGMENTS + META
-    preps_annotations = ", preps.annotations" if annotations else ""
-    meta_array = ", ".join(sql_str("meta.{}", lb) for lb in meta_select_labels)
     script = f"""WITH preps AS ({prep_cte}),
-    meta AS ({meta_script})
-SELECT -1::int2 AS rstype, jsonb_build_array(preps.{seg.lower()}_id, preps.id_offset, preps.content{preps_annotations}) FROM preps
+meta AS ({meta_script})
+SELECT -1::int2 AS rstype, jsonb_build_array(preps.{seg_id}, preps.id_offset, preps.content{preps_annotations}) FROM preps
 UNION ALL
-SELECT -2::int2 AS rstype, jsonb_build_array({meta_array}) FROM meta;
+SELECT -2::int2 AS rstype, res FROM meta;
     """
     print("segment_meta_script", script)
     return script, [msl for msl in meta_select_labels]
