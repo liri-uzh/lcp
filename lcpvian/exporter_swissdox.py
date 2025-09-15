@@ -137,10 +137,11 @@ class Exporter(ExporterXML):
             f"[SWISSDOX Export {self._request.id}] Process segments for {batch_hash} (QI {self._request.hash})"
         )
         res = payload.get("result", [])
-        index_aid = self._qi.meta_labels.index("Article_id")
         filepath = os.path.join(self.get_working_path(batch_hash), "article_ids")
         with open(filepath, "w") as output:
-            output.write("\n".join(r[index_aid] for r in res["-2"]))
+            output.write(
+                "\n".join(lid for _, lname, lid, _ in res["-2"] if lname == "Article")
+            )
         print(
             f"[SWISSDOX Export {self._request.id}] Done processing segments for {batch_hash} (QI {self._request.hash})"
         )

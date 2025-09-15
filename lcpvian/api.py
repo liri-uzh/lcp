@@ -65,18 +65,18 @@ async def search(request: web.Request) -> web.Response:
 
     json_query = val["json"]
 
-    (req, qi, job) = process_query(
-        cast(LCPApplication, request.app),
-        {
-            "appType": "lcp",
-            "corpus": cid,
-            "query": json.dumps(json_query),
-            "languages": [lg],
-            "offset": offset,
-            "requested": requested,
-            "synchronous": True,
-        },
-    )
+    data_to_process = {
+        "appType": "lcp",
+        "corpus": cid,
+        "query": json.dumps(json_query),
+        "languages": [lg],
+        "offset": offset,
+        "requested": requested,
+        "synchronous": True,
+    }
+    if "to_export" in request_data:
+        data_to_process["to_export"] = request_data["to_export"]
+    (req, qi, job) = process_query(cast(LCPApplication, request.app), data_to_process)
 
     while 1:
         await asyncio.sleep(0.5)

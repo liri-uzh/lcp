@@ -1204,14 +1204,30 @@ def get_aligned_annotations(
         from_in_with = (
             x_tab if seljoi["how"] == "anchor" else sql_str("{}", seljoi["container"])
         )
-        formed_joins = " LEFT JOIN ".join(
-            f"{tab} ON {' AND '.join(c for c in conds)}"
-            for tab, conds in seljoi["joins"].items()
-        )
-        formed_joins = f" LEFT JOIN {formed_joins}" if formed_joins else ""
+
+        group_by = {layer_id: 1}
+        joins = []
+        pattern_tab = sql_str(" {}$", ".+?")
+        pattern_att = sql_str("{}", ".+?")
+        for tab, conds in seljoi["joins"].items():
+            joins.append(f"{tab} ON {' AND '.join(c for c in conds)}")
+            if tab.endswith(sql_str(" {}", layer)):
+                continue
+            tab_name = (re.search(pattern_tab, tab) or (None,))[0]
+            if not tab_name:
+                continue
+            for c in conds:
+                m = re.findall(rf"{tab_name[1:]}\.{pattern_att}", c)
+                if not m:
+                    continue
+                group_by.update({x: 1 for x in m})
+
+        formed_joins = "LEFT JOIN " + " LEFT JOIN ".join(joins) if joins else ""
+        formed_group_by = ",".join(g for g in group_by)
+
         withes.append(
             sql_str("{}", layer)
-            + f" AS (SELECT {select_in_with} FROM {from_in_with}{formed_joins})"
+            + f" AS (SELECT {select_in_with} FROM {from_in_with}{formed_joins} GROUP BY {formed_group_by})"
         )
         formed_build_object = ",".join(
             [
@@ -1273,7 +1289,7 @@ def get_segment_meta_script(
         batch_name,
         lang,
         f"SELECT s.char_range, s.{seg_id} FROM preps JOIN {schema}.{seg_table} s ON s.{seg_id} = preps.{seg_id}",
-        add=(f"x.{seg_id}", "_id"),
+        add=(sql_str("array_agg({}.", "x") + f"{seg_id})", "_sids"),
         exclude=exclude_meta,
     )
     meta_select_labels: dict = {}

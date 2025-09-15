@@ -133,8 +133,9 @@ async def do_segment_and_meta(
     for sqid in segments_this_batch:
         reqs_nlines: dict[str, dict[int, int]] = {req_id: {} for req_id in reqs_sids}
         for nline, (_, (sid, *_)) in enumerate(qi.get_from_cache(sqid)):
-            for req_id, sids in reqs_sids.items():
-                if sid not in sids:
+            sids_of_line = sid if isinstance(sid, list) else [sid]
+            for req_id, sids_in_req in reqs_sids.items():
+                if not any(s in sids_in_req for s in sids_of_line):
                     continue
                 reqs_nlines[req_id][nline] = 1
         for r in qi.requests:

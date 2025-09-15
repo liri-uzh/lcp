@@ -7,8 +7,8 @@ WITH RECURSIVE fixed_parts AS
    FROM "sparcling1".segment_enrest AS s
    CROSS JOIN "sparcling1"."session_en" "e"
    CROSS JOIN "sparcling1"."session_alignment" "e_aligned"
-   WHERE "e"."char_range" && "s"."char_range"
-     AND "e".alignment_id = "e_aligned".alignment_id
+   WHERE "e"."alignment_id" = "e_aligned"."alignment_id"
+     AND "e"."char_range" && "s"."char_range"
      AND (extract('year'
                   FROM ("e_aligned"."meta"->>'date')::date))::numeric > (1999)::numeric ),
                match_list AS

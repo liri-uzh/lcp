@@ -1531,7 +1531,7 @@ export default {
           const META_LIMIT = 5000;
           if (meta.length > META_LIMIT) console.warn(`Too much metadata (over ${META_LIMIT} lines) to process everything`);
           let n = 0;
-          for (let [sid, layer, lid, info] of meta) {
+          for (let [sids, layer, lid, info] of meta) {
             n++;
             if (n>META_LIMIT) break;
             if (!lid) continue;
@@ -1544,9 +1544,10 @@ export default {
             if (lid in layer_dict) continue;
             info._id = lid;
             layer_dict.byId[lid] = info;
-            this.WSDataMeta.bySegment[sid] = this.WSDataMeta.bySegment[sid] || {};
-            this.WSDataMeta.bySegment[sid][layer] = info;
-            if (!info || !(info instanceof Object)) continue;
+            for (let sid of sids) {
+              this.WSDataMeta.bySegment[sid] = this.WSDataMeta.bySegment[sid] || {};
+              this.WSDataMeta.bySegment[sid][layer] = info;
+            }
             let insertAttemptOffset = 10;
             for (let [anc_col, anc_name] of [["char_range", "Stream"], ["frame_range", "Time"], ["xy_box", "Location"]]) {
               if (!(anc_col in info)) continue;
