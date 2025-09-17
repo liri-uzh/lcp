@@ -302,6 +302,7 @@ class QueryMaker:
                 )
             elif "sequence" in m:
                 qd: QueryData = QueryData()
+                qd.label_layer = self.r.label_layer
                 qd._sql_corpus = self.r.sql
                 seq: Sequence = Sequence(qd, self.conf, m)
                 sqlseq: SQLSequence = SQLSequence(seq)
@@ -391,6 +392,7 @@ class QueryMaker:
                     )
                 elif "sequence" in conj:
                     qd = QueryData()
+                    qd.label_layer = self.r.label_layer
                     qd._sql_corpus = self.r.sql
                     seq = Sequence(qd, self.conf, conj)
                     sqlseq = SQLSequence(seq)
@@ -1057,7 +1059,9 @@ class QueryMaker:
                     continue
                 ret = unit_pref if not ret else ret + f" {op} ({unit_pref})"
             elif "sequence" in m:
-                seq: Sequence = Sequence(QueryData(), self.conf, m)
+                qd = QueryData()
+                qd.label_layer = self.r.label_layer
+                seq: Sequence = Sequence(qd, self.conf, m)
                 sqlseq: SQLSequence = SQLSequence(seq)
                 if sqlseq.get_first_stream_part_of() != seg_lab:
                     continue
