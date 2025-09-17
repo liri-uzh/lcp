@@ -674,6 +674,13 @@ export default {
         this.$emit("updateTime", originalValue);
         // this.verticalSlider.value = originalValue
         this.updateVerticalLine(newXScale(originalValue));
+        if (hoveringAnnotation) {
+          hoveringAnnotation._stick = !hoveringAnnotation._stick;
+          const rect = hoveringAnnotation.querySelector("rect:nth-child(2)");
+          rect.style.strokeWidth = hoveringAnnotation._stick ? "3" : "0";
+          rect.style.stroke = "red";
+          this.$emit("annotationClick", hoveringAnnotation._stick);
+        }
       })
       .on('mouseout', function () {
         // on mouse out hide line, circles and text
@@ -693,6 +700,18 @@ export default {
           .attr("x1", mouseOverX)
           .attr("x2", mouseOverX)
           .style('opacity', '1');
+
+        const transform = d3.zoomTransform(svg.node());
+        const clickX = transform.invertX(d3.pointer(event)[0]);
+        const originalValue = linearScale.invert(clickX);
+
+        d3
+          .select(".mouse-text")
+          .attr("x", mouseOverX + 5)
+          .style('opacity', '1')
+          .text(Utils.secondsToTime(originalValue, true));
+
+        if (hoveringAnnotation && hoveringAnnotation._stick) return;
 
         const hovering = barAndTextGroups
           .filter(function () {
@@ -717,16 +736,6 @@ export default {
           hoveringAnnotation = null;
           this.$emit("annotationLeave");
         }
-
-        const transform = d3.zoomTransform(svg.node());
-        const clickX = transform.invertX(d3.pointer(event)[0]);
-        const originalValue = linearScale.invert(clickX);
-
-        d3
-          .select(".mouse-text")
-          .attr("x", mouseOverX + 5)
-          .style('opacity', '1')
-          .text(Utils.secondsToTime(originalValue, true));
       });
 
     this.zoomValue = DEFAULT_ZOOM_LEVEL;

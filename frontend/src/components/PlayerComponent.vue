@@ -248,6 +248,7 @@
         @updateTime="_playerSetTime"
         @annotationEnter="_annotationEnter"
         @annotationLeave="_annotationLeave"
+        @annotationClick="_annotationClick"
         @mouseleave="_annotationLeave"
         :key="documentIndexKey"
       />
@@ -634,7 +635,12 @@ export default {
         .filter(kv => kv && kv[0] && kv[1])
         .map(([name, value]) => [name, value.replace(urlRegex, "<a href='$1' target='_blank'>$1</a>")]);
     },
+    _annotationClick(stick) {
+      if (!this.timelineEntry) return;
+      this.timelineEntry._stick = stick;
+    },
     _annotationLeave() {
+      if (this.timelineEntry && this.timelineEntry._stick) return;
       this.timelineEntry = null;
     },
     _getTimelinePopinXY() {
