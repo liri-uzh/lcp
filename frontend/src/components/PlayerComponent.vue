@@ -239,8 +239,8 @@
         </div>
       </div>
       <TimelineView
-        v-if="Object.keys(currentDocumentData).length > 0 && loadingDocument == false"
-        :data="currentDocumentData"
+        v-if="Object.keys(dataToShow).length > 0 && loadingDocument == false"
+        :data="dataToShow"
         :mediaDuration="currentMediaDuration"
         :playerIsPlaying="playerIsPlaying"
         :playerCurrentTime="playerCurrentTime"
@@ -273,6 +273,32 @@ import TimelineView from "@/components/videoscope/TimelineView.vue";
 import VueDatePicker from '@vuepic/vue-datepicker';
 import '@vuepic/vue-datepicker/dist/main.css';
 
+class Track {
+  constructor(name, splits, groups) {
+    this._name = name;
+    this._values = [];
+    this._splits = splits || {};
+    this._groups = groups || {};
+  }
+  push(v, info, layer_attrs) {
+    const [startFrame, endFrame] = JSON.parse(info.frame_range.replace(")","]"));
+    const shift = v.currentDocument[3][0];
+    let startTime = (parseFloat(startFrame - shift) / v.frameRate);
+    let endTime = (parseFloat(endFrame - shift) / v.frameRate);
+    const content = Object.entries(info)
+      .filter(kv=>!(kv[0] in this._splits) && kv[0] in layer_attrs && layer_attrs[kv[0]].type in {text:1,categorical:1,number:1})
+      .map(kv=>kv[1])
+      .join(" ");
+    this._values.push({ x1: startTime, x2: endTime, l: 0, entry: info, n: content });
+  }
+  toObj(level) {
+    let name = this._name;
+    if (this._splits.length)
+      name += Object.values(this._splits).join(" ");
+    return {name: name, heightLines: 1, values: this._values, level: level || 0};
+  }
+}
+
 const urlRegex = /(https?:\/\/(www\.)?[-a-zA-Z0-9@:%._+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_+.~#?&//=]*))/g;
 
 export default {
@@ -282,6 +308,7 @@ export default {
       currentDocumentSelected: null,
       currentDocument: null,
       currentDocumentData: null,
+      dataToShow: [],
       currentMediaDuration: 0,
       documentIndexKey: 0,
       loadingDocument: false,
@@ -627,142 +654,88 @@ export default {
         y = bottom - height;
       return { 'left': x + 'px', 'top': y - 250 + 'px' };
     },
+    toTimeline(conf) {
+      let mediaDuration = 0;
+      const data = this.currentDocumentData;
+      const group_conf = conf.group_by || [];
+      const all_groups = {};
+      const seg = this.selectedCorpora.corpus.segment;
+      const column_names = this.selectedCorpora.corpus.mapping.layer[seg].prepared.columnHeaders;
+      const form_n = column_names.indexOf("form");
+      const segs_to_fill = {};
+      const tracks = [];
+      const getTrack = (name, splits, groups) => {
+        let track = tracks.find(
+          t=>t._name == name && 
+          Object.entries(t._splits).every(([k,v])=>splits[k] == v) &&
+          Object.entries(t._groups).every(([k,v])=>groups[k] == v)
+        );
+        if (!track) {
+          track = new Track(name, splits, groups);
+          tracks.push(track);
+        }
+        return track;
+      }
+      for (let [[layer, lid, info]] of data) {
+        if (layer == "_prepared" && lid in segs_to_fill) {
+          // the _prepared rows come last, after the segments have been processed
+          const content = info.map(t=>t[form_n]).join(" ");
+          segs_to_fill[lid].n = content;
+        }
+        if (!(layer in conf.layers)) continue;
+        let track_name = layer;
+        const groups = {};
+        for (let aname of group_conf) {
+          if (!(aname in info)) continue;
+          groups[aname] = info[aname];
+          all_groups[aname] = all_groups[aname] || {};
+          all_groups[aname][info[aname]] = 1;
+        }
+        const split_conf = conf.layers[layer].split || [];
+        const splits = {};
+        for (let aname of split_conf) {
+          if (aname in groups || !(aname in info)) continue;
+          splits[aname] = info[aname];
+          track_name += " " + info[aname];
+        }
+        const track = getTrack(track_name, splits, groups);
+        const layer_attrs = this.selectedCorpora.corpus.layer[layer].attributes;
+        track.push(this, info, layer_attrs);
+        if (layer == this.selectedCorpora.corpus.segment)
+          segs_to_fill[lid] = track._values.at(-1);
+      }
+
+      const no_groups = {x: 1};
+      const tracks_to_show = [];
+      for (let [group_name,group_values] of Object.entries(all_groups || {x: no_groups})) {
+        let n_group = 1;
+        for (let group_value in group_values) {
+          if (group_values != no_groups)
+            tracks_to_show.push(new Track(`${group_name} ${n_group}`, {}, {}).toObj(0));
+          for (let t of tracks) {
+            if (group_values != no_groups && group_name in t._groups && t._groups[group_name] != group_value)
+              continue;
+            const track_obj = t.toObj(group_values == no_groups ? 0 : 1);
+            track_obj.values.forEach(v=>{
+              v.l = tracks_to_show.length;
+              if (v.x2 > mediaDuration)
+                mediaDuration = v.x2;
+            });
+            tracks_to_show.push(track_obj);
+          }
+          n_group++;
+        }
+      }
+      this.dataToShow = tracks_to_show;
+      return mediaDuration;
+    },
     onSocketMessage(data) {
       // console.log("SOC2", data)
       if (Object.prototype.hasOwnProperty.call(data, "action")) {
         if (data["action"] === "document") {
-          this.documentData = data.document;
-          let dataToShow = {};
-          // TODO: replace what's hard-coded in this with reading 'tracks' from corpus_template
-          let document_id = parseInt(this.currentDocument[0])
-          if (!(this.selectedCorpora.value in { 115: 1 })) { // old tangram exception
-            const segment_name = this.selectedCorpora.corpus.firstClass.segment;
-            let tracks = this.selectedCorpora.corpus.tracks || {"layers": {}};
-            if (Object.keys(tracks.layers).length == 0)
-              tracks.layers[segment_name] = {split: []};
-            // console.log("CRP", this.selectedCorpora, data.document.layers)
-            dataToShow = {
-              layers: Object.fromEntries(Object.entries(tracks.layers).map((e, n) => [n + 1, Object({ name: e[0] })])),
-              tracks: {},
-              document_id: document_id,
-              groupBy: tracks.group_by
-            };
-            for (let gb of (tracks.group_by || [])) {
-              if (!(gb in (data.document.global_attributes || {})))
-                throw ReferenceError(`'${gb}' could not be found in global_attributes`);
-              dataToShow[gb] = Object.fromEntries(data.document.global_attributes[gb].map(v => [v[gb + '_id'], v[gb]]))
-            }
-            for (let layer in data.document.layers) {
-              tracks.layers[layer].split = tracks.layers[layer].split || [];
-              const cols = data.document.structure[layer];
-              const rows = data.document.layers[layer];
-              for (let row of rows) {
-                let trackName = layer;
-                let content = {};
-                for (let ncol in row) {
-                  let name = cols[ncol];
-                  let value = row[ncol];
-                  if (tracks.layers[layer].split.find(s => name.toLowerCase().match(new RegExp(`^${s}(_id)?$`, 'i'))))
-                    trackName = (isNaN(parseInt(value)) ? value : `${name.replace(/_id$/, '')} ${value}`) + ' ' + trackName;
-                  else
-                    content[name] = value;
-                }
-                let [ntrack, track] = Object.entries(dataToShow.tracks).find(nt => nt[1].name == trackName) || [null, null];
-                if (ntrack === null) {
-                  ntrack = Object.keys(dataToShow.tracks).length;
-                  track = { name: trackName, layer: Object.keys(tracks.layers).indexOf(layer) + 1 };
-                  track[layer] = [];
-                }
-                track[layer].push(content);
-                dataToShow.tracks[ntrack] = track;
-              }
-            }
-          }
-
-          const segment_name = this.selectedCorpora.corpus.firstClass.segment;
-          const column_names = this.selectedCorpora.corpus.mapping.layer[segment_name].prepared.columnHeaders;
-          const form_n = column_names.indexOf("form");
-          let timelineData = []
-
-          // Sort by name
-          let tracksNamesSorted = Object.values(dataToShow.tracks).sort((a, b) => {
-            // TODO: hardcoded - use list from BR to order groups. Segements are hardcoded to be first
-            let a_name = a.name.toLowerCase().replace(" segment", " aa_segment")
-            let b_name = b.name.toLowerCase().replace(" segment", " aa_segment")
-            if (a_name < b_name) {
-              return -1;
-            }
-            if (a_name > b_name) {
-              return 1;
-            }
-            return 0;
-          });
-
-          // Add group_by speaker
-          if (this.selectedCorpora.corpus &&
-            this.selectedCorpora.corpus.tracks &&
-            this.selectedCorpora.corpus.tracks.group_by &&
-            this.selectedCorpora.corpus.tracks.group_by[0] == "speaker"
-          ) {
-            let trackGroupCounter = {};
-            let newTracksNamesSorted = [];
-            tracksNamesSorted.forEach(track => {
-              let groupName = track.name.split(" ").slice(0, 2).join(" ");
-              if (!(groupName in trackGroupCounter)) {
-                trackGroupCounter[groupName] = 0
-                let speakerIndex = Object.keys(trackGroupCounter).length
-                newTracksNamesSorted.push(new Proxy({
-                  name: `Speaker ${speakerIndex}`,
-                  layer: -1,
-                  level: 0
-                }, {}))
-              }
-              trackGroupCounter[groupName]++
-              track.level = 1
-              track.name = track.name.replace(groupName, "").trim()
-              newTracksNamesSorted.push(track)
-            })
-            tracksNamesSorted = newTracksNamesSorted
-          }
-
-          // Generate timeline data
-          tracksNamesSorted.forEach((track, key) => {
-            let values = []
-            if (track.layer != -1) {
-              const keyName = dataToShow.layers[track.layer].name;
-              const isSegment = keyName.toLowerCase() == segment_name.toLowerCase();
-
-              for (const entry of track[keyName]) {
-                const [startFrame, endFrame] = entry.frame_range
-                let shift = this.currentDocument[3][0];
-                let startTime = (parseFloat(startFrame - shift) / this.frameRate);
-                let endTime = (parseFloat(endFrame - shift) / this.frameRate);
-                const unitData = { x1: startTime, x2: endTime, l: key, entry: entry };
-                if (isSegment)
-                  unitData.n = entry.prepared.map(row => row[form_n]).join(" ");
-                else {
-                  let firstStringAttribute = Object.entries(
-                    this.selectedCorpora.corpus.layer[keyName].attributes || {}
-                  ).find(e => e[1].type in { text: 1, categorical: 1 });
-                  if (firstStringAttribute)
-                    unitData.n = entry[firstStringAttribute[0]];
-                }
-                values.push(unitData);
-              }
-            }
-
-            timelineData.push({
-              name: track.name,
-              level: track.level || 0,
-              heightLines: 1,
-              values: values
-            })
-          })
-
-          this.currentMediaDuration = this.$refs.videoPlayer1.duration;
-          if (!this.currentMediaDuration && "doc" in this.documentData && "frame_range" in this.documentData.doc)
-            this.currentMediaDuration = this.documentData.doc.frame_range.reduce((x, y) => y - x) / this.frameRate;
-          this.currentDocumentData = timelineData;
+          this.currentDocumentData = data.document;
+          const tracks_conf = this.selectedCorpora.corpus.tracks || {"layers": {}};
+          this.currentMediaDuration = this.toTimeline(tracks_conf);
           this.loadingDocument = false;
           this.documentIndexKey++;
           this._setVolume();

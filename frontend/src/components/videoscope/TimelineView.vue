@@ -164,8 +164,8 @@ export default {
   watch: {
     hoveredResult() {
       // console.log("hoveredResult", this.hoveredResult);
-      if (this.hoveredResult && this.hoveredResult instanceof Array && this.hoveredResult.length > 2)
-        console.log("frame range of hovered line", [...this.hoveredResult[2]]);
+      // if (this.hoveredResult && this.hoveredResult instanceof Array && this.hoveredResult.length > 2)
+      //   console.log("frame range of hovered line", [...this.hoveredResult[2]]);
     },
     playerIsPlaying() {
       playerState = this.playerIsPlaying;

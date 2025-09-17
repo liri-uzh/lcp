@@ -62,31 +62,31 @@ def _document(
     room = cast(str | None, kwargs.get("room", job_kwargs["room"]))
     if not room:
         return
-    if isinstance(result, list) and len(result) == 1:
-        result = result[0]
+    # if isinstance(result, list) and len(result) == 1:
+    #     result = result[0]
 
-    tmp_result: dict[str, dict] = {
-        "structure": {},
-        "layers": {},
-        "global_attributes": {},
-    }
-    for row in result:
-        typ, key, props = cast(list, row)
-        if typ == "layer":
-            if key not in tmp_result["structure"]:
-                tmp_result["structure"][key] = [*props.keys()]
-            if key not in tmp_result["layers"]:
-                tmp_result["layers"][key] = []
-            keys = tmp_result["structure"][key]
-            line = [props[k] for k in keys]
-            tmp_result["layers"][key].append(line)
-        elif typ == "glob":
-            if key not in tmp_result["global_attributes"]:
-                tmp_result["global_attributes"][key] = []
-            tmp_result["global_attributes"][key].append(props)
-        elif typ == "doc":
-            tmp_result["doc"] = props
-    result = cast(JSONObject, tmp_result)
+    # tmp_result: dict[str, dict] = {
+    #     "structure": {},
+    #     "layers": {},
+    #     "global_attributes": {},
+    # }
+    # for row in result:
+    #     typ, key, props = cast(list, row)
+    #     if typ == "layer":
+    #         if key not in tmp_result["structure"]:
+    #             tmp_result["structure"][key] = [*props.keys()]
+    #         if key not in tmp_result["layers"]:
+    #             tmp_result["layers"][key] = []
+    #         keys = tmp_result["structure"][key]
+    #         line = [props[k] for k in keys]
+    #         tmp_result["layers"][key].append(line)
+    #     elif typ == "glob":
+    #         if key not in tmp_result["global_attributes"]:
+    #             tmp_result["global_attributes"][key] = []
+    #         tmp_result["global_attributes"][key].append(props)
+    #     elif typ == "doc":
+    #         tmp_result["doc"] = props
+    # result = cast(JSONObject, tmp_result)
 
     msg_id = str(uuid4())
     jso = {

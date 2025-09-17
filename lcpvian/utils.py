@@ -1085,6 +1085,7 @@ def get_aligned_annotations(
     add: tuple[str, str] | None = None,
     include: dict = {},
     exclude: dict = {},
+    pointer_global_attributes: bool = False,
 ) -> str:
     schema = config["schema_path"]
     has_media = config.get("meta", config).get("mediaSlots", {})
@@ -1092,7 +1093,14 @@ def get_aligned_annotations(
     anchor_map = {"stream": "char_range", "time": "frame_range", "location": "xy_box"}
     anchor_col = anchor_map[anchor]
     legal_layers = {
-        l: 1 for l in config["layer"] if l in include or l not in exclude or exclude[l]
+        l: 1
+        for l in config["layer"]
+        if not include
+        and not exclude
+        or include
+        and l in include
+        or exclude
+        and exclude.get(l, 1)
     }
     layers: dict[str, tuple[str, str]] = {}
     for ln, lp in config["layer"].items():
@@ -1152,6 +1160,11 @@ def get_aligned_annotations(
             attr_alias = attr_ref.alias
             to_select = ""
             is_meta = attr_name in meta_attrs
+            if pointer_global_attributes and attr_props.get("ref"):
+                layer_selects[attr_name] = sql_str(
+                    "{}.{}", layer, attr_name.lower() + "_id"
+                )
+                continue
             if is_meta:
                 attr_ref = sqlc.attribute(layer, layer, "meta")
                 attr_alias = f"{layer}_meta"
@@ -1221,6 +1234,13 @@ def get_aligned_annotations(
                 if not m:
                     continue
                 group_by.update({x: 1 for x in m})
+
+        if layer == config["firstClass"]["token"]:
+            # Special case: tokens don't have token_id as their PK but (token_id, segment_id)
+            seg_ref = sql_str(
+                "{}.{}", layer, config["firstClass"]["segment"].lower() + "_id"
+            )
+            group_by[seg_ref] = 1
 
         formed_joins = "LEFT JOIN " + " LEFT JOIN ".join(joins) if joins else ""
         formed_group_by = ",".join(g for g in group_by)

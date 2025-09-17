@@ -903,7 +903,6 @@ import { setTooltips, removeTooltips } from "@/tooltips";
 import Utils from "@/utils";
 import config from "@/config";
 
-
 export default {
   name: "QueryView",
   data() {
