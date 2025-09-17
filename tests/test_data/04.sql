@@ -40,10 +40,10 @@ WITH RECURSIVE fixed_parts AS
    CROSS JOIN "bnc1"."tokenrest" "anonymous4"
    JOIN "bnc1"."form" "anonymous3_form" ON "anonymous3_form"."form_id" = "anonymous3"."form_id"
    JOIN "bnc1"."form" "anonymous4_form" ON "anonymous4_form"."form_id" = "anonymous4"."form_id"
-   WHERE "s_char_range" && "anonymous3"."char_range"
+   WHERE "s" = "anonymous3"."segment_id"
      AND ("anonymous3_form"."form")::text = ('a')::text
      AND "anonymous3_form"."form_id" = "anonymous3"."form_id"
-     AND "s_char_range" && "anonymous4"."char_range"
+     AND "s" = "anonymous4"."segment_id"
      AND ("anonymous4_form"."form")::text = ('cat')::text
      AND "anonymous4_form"."form_id" = "anonymous4"."form_id"
      AND "anonymous4"."token_id" - "anonymous3"."token_id" = 1),
