@@ -140,7 +140,6 @@ let zoom;
 let linearScale = null;
 // eslint-disable-next-line
 let playerState = false;
-let hoveringAnnotation = null;
 const padding = 180;
 let width = document.body.clientWidth - 20;
 const paddingBeforeTimeline = 40;
@@ -159,9 +158,18 @@ export default {
       isMobile: false,
       isLandscape: false,
       resizeHandler: null,
+      hoveringAnnotation: null
     }
   },
   watch: {
+    data() {
+      this.initializeTimeline();
+    },
+    hoveringAnnotation(newAnn, oldAnn) {
+      const rect = (newAnn || oldAnn).querySelector("rect:nth-child(2)");
+      if (!rect) return;
+      rect.setAttribute("opacity", newAnn ? 1 : 0.75);
+    },
     hoveredResult() {
       // console.log("hoveredResult", this.hoveredResult);
       // if (this.hoveredResult && this.hoveredResult instanceof Array && this.hoveredResult.length > 2)
@@ -370,377 +378,299 @@ export default {
     },
     initializeTimeline() {
       this.setResizeOrientationListeners();
-    // Example
-    // const data = [
-    //   {
-    //     name: "Row 1",
-    //     heightLines: 1,
-    //     values: [
-    //       { x1: 9.85, x2: 15, n: "Text 1", l: 0 },
-    //       { x1: 25, x2: 28, n: "Text 2", l: 0 },
-    //       { x1: 40, x2: 47, n: "Text 3", l: 0 },
-    //     ],
-    //   },
-    //   {
-    //     name: "Row 2",
-    //     heightLines: 1,
-    //     values: [
-    //       { x1: 20, x2: 22, n: "Text 4", l: 1 },
-    //       { x1: 35, x2: 40, n: "Text 5", l: 1 },
-    //       { x1: 41, x2: 45, n: "Text 6", l: 1 },
-    //       { x1: 55, x2: 156, n: "Text 7", l: 1 },
-    //     ],
-    //   },
-    //   {
-    //     name: "Row 3",
-    //     heightLines: 1,
-    //     values: [
-    //       { x1: 20, x2: 22, n: "Text 4", l: 2 },
-    //       { x1: 35, x2: 40, n: "Text 5", l: 2 },
-    //       { x1: 41, x2: 45, n: "Text 6", l: 2 },
-    //       { x1: 55, x2: 156, n: "Text 7", l: 2 },
-    //     ],
-    //   },
-    //   {
-    //     name: "Row 4",
-    //     heightLines: 1,
-    //     values: [
-    //       { x1: 20, x2: 22, n: "Text 4", l: 3 },
-    //       { x1: 35, x2: 40, n: "Text 5", l: 3 },
-    //       { x1: 41, x2: 45, n: "Text 6", l: 3 },
-    //       { x1: 55, x2: 156, n: "Text 7", l: 3 },
-    //     ],
-    //   },
-    // ];
+      // Example
+      // const data = [
+      //   {
+      //     name: "Row 1",
+      //     heightLines: 1,
+      //     values: [
+      //       { x1: 9.85, x2: 15, n: "Text 1", l: 0 },
+      //       { x1: 25, x2: 28, n: "Text 2", l: 0 },
+      //       { x1: 40, x2: 47, n: "Text 3", l: 0 },
+      //     ],
+      //   },
+      //   {
+      //     name: "Row 2",
+      //     heightLines: 1,
+      //     values: [
+      //       { x1: 20, x2: 22, n: "Text 4", l: 1 },
+      //       { x1: 35, x2: 40, n: "Text 5", l: 1 },
+      //       { x1: 41, x2: 45, n: "Text 6", l: 1 },
+      //       { x1: 55, x2: 156, n: "Text 7", l: 1 },
+      //     ],
+      //   },
+      // ];
 
-    // Utils.frameNumberToSeconds
+      // https://waldyrious.net/viridis-palette-generator/
+      const barColors = [
+        // "#fde725", "#a0da39", "#4ac16d", "#1fa187", "#277f8e", "#365c8d", "#46327e", "#440154"
+        "#1fa187ff", "#46327eff", "#4ac16dff", "#277f8eff", "#440154ff", "#fdaa25ff", "#365c8dff", "#a0da39ff"
+      ];
 
-    // const searchResults = [
-    //   { x: 20, n: "Text 4", l: 2 },
-    //   { x: 45, n: "Text 4", l: 1 },
-    // ]
+      // Set up the SVG container
+      svg = d3.select("#timeline-svg");
+      svg.selectAll("*").remove();
 
-    // https://waldyrious.net/viridis-palette-generator/
-    const barColors = [
-      // "#fde725", "#a0da39", "#4ac16d", "#1fa187", "#277f8e", "#365c8d", "#46327e", "#440154"
-      "#1fa187ff", "#46327eff", "#4ac16dff", "#277f8eff", "#440154ff", "#fdaa25ff", "#365c8dff", "#a0da39ff"
-    ];
+      // Create the scaleLinear
+      linearScale = d3.scaleLinear().domain([0, this.mediaDuration]).range([padding, width - 1]);
 
-    // Set up the SVG container
-    // const root = selection.selectAll('#timeline').data(selection.data());
-    // root.exit().remove();
-    svg = d3.select("#timeline-svg");
-    svg.selectAll("*").remove();
+      let data = [...this.data];
 
-    // Create the scaleLinear
-    linearScale = d3.scaleLinear().domain([0, this.mediaDuration]).range([padding, width - 1]);
+      // Add names to the chart
+      let heightStart = {}
+      let totalHeight = 50; // Height before the first row
+      svg
+        .selectAll(".name")
+        .data(data)
+        .enter()
+        .append("text")
+        .attr("class", "name")
+        .attr("x", d => 10 + 20 * (d.level ? d.level : 0))
+        .attr("y", (d, i) => {
+          let height = totalHeight + 10
+          totalHeight += d.heightLines * 15 + 10
+          heightStart[i] = height
+          return height + 13
+        })
+        .text((d) => d.name);
 
-    let data = [...this.data];
+      let height = totalHeight + 20
+      // svg.attr("height", height).attr("width", "calc(100% - 40px)");
+      svg.attr("height", height).attr("width", "100%");
 
-    // Add names to the chart
-    let heightStart = {}
-    let totalHeight = 50; // Height before the first row
-    svg
-      .selectAll(".name")
-      .data(data)
-      .enter()
-      .append("text")
-      .attr("class", "name")
-      .attr("x", d => 10 + 20 * (d.level ? d.level : 0))
-      .attr("y", (d, i) => {
-        let height = totalHeight + 10
-        totalHeight += d.heightLines * 15 + 10
-        heightStart[i] = height
-        return height + 13
-      })
-      .text((d) => d.name);
+      svg
+        .append("clipPath")
+        .attr("id", "myClip")
+        .append("rect")
+        .attr("x", "180")
+        .attr("y", "40")
+        .attr("width", width - padding)
+        .attr("height", totalHeight + 40);
 
-    let height = totalHeight + 20
-    // svg.attr("height", height).attr("width", "calc(100% - 40px)");
-    svg.attr("height", height).attr("width", "100%");
+      // Create a single group for all bars
+      const barsGroup = svg.append("g").attr("clip-path", "url(#myClip)");
 
-    svg
-      .append("clipPath")
-      .attr("id", "myClip")
-      .append("rect")
-      .attr("x", "180")
-      .attr("y", "40")
-      .attr("width", width - padding)
-      .attr("height", totalHeight + 40);
+      // Create individual groups for each bar and its text label
+      const barAndTextGroups = barsGroup.selectAll("g")
+        .data(data.flatMap(d => d.values))
+        .enter()
+        .append("g")
+        .attr("clip-path", (d, i) => `url(#barClip${i})`); // Unique clip-path for each group
 
-    // Create a single group for all bars
-    const barsGroup = svg.append("g").attr("clip-path", "url(#myClip)");
+      // Define a clip path for each group
+      barAndTextGroups.append("clipPath")
+        .attr("id", (d, i) => `barClip${i}`)
+        .append("rect")
+        .attr("x", (d) => linearScale(d.x1))
+        .attr("y", (d) => heightStart[d.l])
+        .attr("width", (d) => linearScale(d.x2) - linearScale(d.x1))
+        .attr("height", 20);
 
-    // Create individual groups for each bar and its text label
-    const barAndTextGroups = barsGroup.selectAll("g")
-      .data(data.flatMap(d => d.values))
-      .enter()
-      .append("g")
-      .attr("clip-path", (d, i) => `url(#barClip${i})`); // Unique clip-path for each group
+      // Create bars within each bar and text group
+      barAndTextGroups
+        .append("rect")
+        .attr("rx", "2")
+        .attr("x", (d) => linearScale(d.x1))
+        .attr("y", (d) => heightStart[d.l])
+        .attr("width", (d) => linearScale(d.x2) - linearScale(d.x1))
+        .attr("height", 20) // Height of the bars
+        // .attr("fill", (d) => (d.l % 2 === 0 ? "#622A7F" : "#005aa3"));
+        .attr("fill", (d) => (barColors[d.l % barColors.length]))
+        .attr("opacity", 0.75);
 
-    // Define a clip path for each group
-    barAndTextGroups.append("clipPath")
-      .attr("id", (d, i) => `barClip${i}`)
-      .append("rect")
-      .attr("x", (d) => linearScale(d.x1))
-      .attr("y", (d) => heightStart[d.l])
-      .attr("width", (d) => linearScale(d.x2) - linearScale(d.x1))
-      .attr("height", 20);
+      // Add text labels to the bar and text groups
+      barAndTextGroups
+        .append("text")
+        .attr("x", (d) => linearScale(d.x1) + 3)
+        .attr("y", (d) => heightStart[d.l] + 14)
+        .text((d) => d.n)
+        .attr("fill", "white");
 
-    // Create bars within each bar and text group
-    barAndTextGroups
-      .append("rect")
-      .attr("rx", "2")
-      .attr("x", (d) => linearScale(d.x1))
-      .attr("y", (d) => heightStart[d.l])
-      .attr("width", (d) => linearScale(d.x2) - linearScale(d.x1))
-      .attr("height", 20) // Height of the bars
-      // .attr("fill", (d) => (d.l % 2 === 0 ? "#622A7F" : "#005aa3"));
-      .attr("fill", (d) => (barColors[d.l % barColors.length]));
+      // END OF THE BARS
 
-    // Add text labels to the bar and text groups
-    barAndTextGroups
-      .append("text")
-      .attr("x", (d) => linearScale(d.x1) + 3)
-      .attr("y", (d) => heightStart[d.l] + 14)
-      .text((d) => d.n)
-      .attr("fill", "white");
+      // Add x-axis group
+      const xAxisGroup = svg
+        .append("g")
+        .attr("class", "x-axis")
+        .attr("transform", `translate(0, ${paddingBeforeTimeline})`);
 
-    // END OF THE BARS
-
-    // Add x-axis group
-    const xAxisGroup = svg
-      .append("g")
-      .attr("class", "x-axis")
-      .attr("transform", `translate(0, ${paddingBeforeTimeline})`);
-
-    // Add initial x-axis
-    let tickPadding = 6;
-    const xAxis = d3
-      .axisTop(linearScale)
-      .tickFormat(d => {
-        return Utils.secondsToTime(d)
-      })
-      .tickPadding(tickPadding);
-    xAxisGroup.call(xAxis);
-
-
-    // Zoom event handler
-    const zoomed = (event) => {
-      // if (event.sourceEvent && event.sourceEvent.type === "wheel") {
-      //   return true;
-      // }
-      const { transform } = event;
-      const newXScale = transform.rescaleX(linearScale);
-      xAxis.scale(newXScale);
+      // Add initial x-axis
+      let tickPadding = 6;
+      const xAxis = d3
+        .axisTop(linearScale)
+        .tickFormat(d => {
+          return Utils.secondsToTime(d)
+        })
+        .tickPadding(tickPadding);
       xAxisGroup.call(xAxis);
 
-      // Update the bars
-      barsGroup
-        .selectAll("rect")
-        .attr("x", (d) => newXScale(d.x1))
-        .attr("width", (d) => newXScale(d.x2) - newXScale(d.x1));
+      // Zoom event handler
+      const zoomed = (event) => {
+        // if (event.sourceEvent && event.sourceEvent.type === "wheel") {
+        //   return true;
+        // }
+        const { transform } = event;
+        const newXScale = transform.rescaleX(linearScale);
+        xAxis.scale(newXScale);
+        xAxisGroup.call(xAxis);
 
-      // Update the text
-      barsGroup.selectAll("text").attr("x", (d) => newXScale(d.x1) + 5);
+        // Update the bars
+        barsGroup
+          .selectAll("rect")
+          .attr("x", (d) => newXScale(d.x1))
+          .attr("width", (d) => newXScale(d.x2) - newXScale(d.x1));
 
-      // Update the vertical line
-      // const sliderValue = parseFloat(d3.select("#vertical-slider").node().value);
-      const verticalLineX = newXScale(this.currentTime);
+        // Update the text
+        barsGroup.selectAll("text").attr("x", (d) => newXScale(d.x1) + 5);
 
-      // console.log("zoomed -> currentTime:", this.currentTime, " new domain:", newXScale.domain());
+        // Update the vertical line
+        const verticalLineX = newXScale(this.currentTime);
 
-      this.updateVerticalLine(verticalLineX);
-    }
+        // console.log("zoomed -> currentTime:", this.currentTime, " new domain:", newXScale.domain());
 
-    // Create zoom behavior
-    zoom = d3
-      .zoom()
-      .scaleExtent([1, 200])
-      .translateExtent([
-        [padding, -Infinity],
-        [width, Infinity],
-      ])
-      .extent([
-        [padding, 0],
-        [width, height],
-      ])
-      .on("zoom", zoomed);
+        this.updateVerticalLine(verticalLineX);
+      }
 
-    // Apply zoom behavior to SVG
-    svg.call(zoom).on("wheel.zoom", null)
-    // .on("wheel.zoom", event => {
-    //   if (event.ctrlKey == true) {
-    //     zoomed(d3.event)
-    //     event.preventDefault();
-    //   }
-    //   return null
-    // });
+      // Create zoom behavior
+      zoom = d3
+        .zoom()
+        .scaleExtent([1, 200])
+        .translateExtent([
+          [padding, -Infinity],
+          [width, Infinity],
+        ])
+        .extent([
+          [padding, 0],
+          [width, height],
+        ])
+        .on("zoom", zoomed);
 
-    // Zoom control event handlers
-    // const zoomInButton = document.getElementById("zoom-in");
-    // const zoomOutButton = document.getElementById("zoom-out");
+      // Apply zoom behavior to SVG
+      svg.call(zoom).on("wheel.zoom", null)
 
-    // zoomInButton.addEventListener("click", () => {
-    //   // const scale = d3.zoomTransform(svg.node()).k;
-    //   svg.transition().call(zoom.scaleBy, 1.2);
-    // });
+      // Initial position of the vertical line
+      const initialXPosition = linearScale(0);
 
-    // zoomOutButton.addEventListener("click", () => {
-    //   // const scale = d3.zoomTransform(svg.node()).k;
-    //   svg.transition().call(zoom.scaleBy, 0.8);
-    // });
+      // const verticalLine =
+      svg
+        .append("line")
+        .attr("class", "vertical-line")
+        .attr("x1", initialXPosition)
+        .attr("y1", 32) // Padding of the current time line
+        .attr("x2", initialXPosition)
+        .attr("y2", height)
+        .attr("stroke", "red")
+        .attr("stroke-width", 1);
 
-    // Zoom slider event handler
-    // const zoomSlider = document.getElementById("zoom-slider");
-    // zoomSlider.addEventListener("input", () => {
-    //   svg.transition().call(zoom.scaleTo, parseFloat(zoomSlider.value));
-    // });
+      // const mouseLine =
+      svg
+        .append("line")
+        .attr("class", "mouse-line")
+        .attr("x1", initialXPosition)
+        .attr("y1", 0)
+        .attr("x2", initialXPosition)
+        .attr("y2", height)
+        .attr("stroke", "#0050bf")
+        .attr("stroke-width", 1)
+        .attr("opacity", 0);
 
-    // // Get the horizontal slider element
-    // const horizontalSlider = document.getElementById("horizontal-slider");
+      // const mouseText =
+      svg
+        .append("text")
+        .attr("class", "mouse-text")
+        .attr("x", initialXPosition)
+        .attr("y", 10)
+        .attr("fill", "#0050bf")
+        .attr("font-size", "11px")
+        .attr("opacity", 0);
 
-    // let lastHorizonatlValue = 0
-    // // Add event listener for slider input
-    // horizontalSlider.addEventListener("input", () => {
-    //   const xOffset = horizontalSlider.value - lastHorizonatlValue;
-    //   const currentTransform = d3.zoomTransform(svg.node());
-    //   const newTx = currentTransform.x - xOffset;
-    //   // const newXScale = currentTransform.rescaleX(linearScale);
-    //   svg.call(zoom.transform, d3.zoomIdentity.translate(newTx, 0).scale(currentTransform.k));
-    //   lastHorizonatlValue = horizontalSlider.value
-    // });
+      const mouseG = svg
+        .append('g')
+        .attr('class', 'mouse-over-effects')
 
-    // Initial position of the vertical line
-    const initialXPosition = linearScale(0);
-
-    // const verticalLine =
-    svg
-      .append("line")
-      .attr("class", "vertical-line")
-      .attr("x1", initialXPosition)
-      .attr("y1", 32) // Padding of the current time line
-      .attr("x2", initialXPosition)
-      .attr("y2", height)
-      .attr("stroke", "red")
-      .attr("stroke-width", 1);
-
-    // const mouseLine =
-    svg
-      .append("line")
-      .attr("class", "mouse-line")
-      .attr("x1", initialXPosition)
-      .attr("y1", 0)
-      .attr("x2", initialXPosition)
-      .attr("y2", height)
-      .attr("stroke", "#0050bf")
-      .attr("stroke-width", 1)
-      .attr("opacity", 0);
-
-    // const mouseText =
-    svg
-      .append("text")
-      .attr("class", "mouse-text")
-      .attr("x", initialXPosition)
-      .attr("y", 10)
-      .attr("fill", "#0050bf")
-      .attr("font-size", "11px")
-      .attr("opacity", 0);
-
-    const mouseG = svg
-      .append('g')
-      .attr('class', 'mouse-over-effects')
-
-    // mouseG
-    //   .append('path') // this is the black vertical line to follow mouse
-    //   .attr('class', 'mouse-line')
-    //   .style('stroke', '#4d4d4d')
-    //   .style('stroke-width', '1px')
-    //   .style('opacity', '1')
-
-    mouseG
-      .append('svg:rect') // append a rect to catch mouse movements on canvas
-      .attr('width', width - padding) // can't catch mouse events on a g element
-      .attr('height', height)
-      .attr('x', padding + 1)
-      .attr('fill', 'none')
-      .attr('pointer-events', 'all')
-      .on('click', () => {
-        const transform = d3.zoomTransform(svg.node());
-        const clickX = transform.invertX(d3.pointer(event)[0]);
-        let originalValue = linearScale.invert(clickX);
-        originalValue = Math.max(0, Math.min(originalValue, this.mediaDuration)); // Don't accept values outside the media duration
-        const newXScale = d3.zoomTransform(svg.node()).rescaleX(linearScale);
-        this.$emit("updateTime", originalValue);
-        // this.verticalSlider.value = originalValue
-        this.updateVerticalLine(newXScale(originalValue));
-        if (hoveringAnnotation) {
-          hoveringAnnotation._stick = !hoveringAnnotation._stick;
-          const rect = hoveringAnnotation.querySelector("rect:nth-child(2)");
-          rect.style.strokeWidth = hoveringAnnotation._stick ? "3" : "0";
-          rect.style.stroke = "red";
-          this.$emit("annotationClick", hoveringAnnotation._stick);
-        }
-      })
-      .on('mouseout', function () {
-        // on mouse out hide line, circles and text
-        d3.select('.mouse-line').style('opacity', '0');
-        d3.select('.mouse-text').style('opacity', '0');
-      })
-      .on('mouseover', function () {
-        // on mouse in show line, circles and text
-        d3.select('.mouse-line').style('opacity', '0.5');
-        d3.select('.mouse-text').style('opacity', '0.5');
-      })
-      .on('mousemove', () => {
-        const [mouseOverX, mouseOverY] = d3.pointer(event).slice(0, 2);
-        // const mouseOverX = d3.pointer(event)[0]
-        d3
-          .select(".mouse-line")
-          .attr("x1", mouseOverX)
-          .attr("x2", mouseOverX)
-          .style('opacity', '1');
-
-        const transform = d3.zoomTransform(svg.node());
-        const clickX = transform.invertX(d3.pointer(event)[0]);
-        const originalValue = linearScale.invert(clickX);
-
-        d3
-          .select(".mouse-text")
-          .attr("x", mouseOverX + 5)
-          .style('opacity', '1')
-          .text(Utils.secondsToTime(originalValue, true));
-
-        if (hoveringAnnotation && hoveringAnnotation._stick) return;
-
-        const hovering = barAndTextGroups
-          .filter(function () {
-            const rect = this.querySelector("rect");
-            const { x, y, width, height } = Object.fromEntries([...rect.attributes].map(v => [v.name, v.value]));
-            return x <= mouseOverX && Number(x) + Number(width) >= mouseOverX && y <= mouseOverY && Number(y) + Number(height) >= mouseOverY;
-          });
-        if ([...hovering].length && [...hovering][0] != hoveringAnnotation) {
-          hoveringAnnotation = [...hovering][0];
-          const rect = hoveringAnnotation.querySelector("rect");
-          const { x, y, height } = Object.fromEntries([...rect.attributes].map(v => [v.name, v.value]));
-          const event = {
-            x: Number(x),
-            y: Number(y) + Number(height),
-            mouseX: mouseOverX,
-            mouseY: mouseOverY,
-            entry: hovering.data()[0].entry
+      mouseG
+        .append('svg:rect') // append a rect to catch mouse movements on canvas
+        .attr('width', width - padding) // can't catch mouse events on a g element
+        .attr('height', height)
+        .attr('x', padding + 1)
+        .attr('fill', 'none')
+        .attr('pointer-events', 'all')
+        .on('click', () => {
+          const transform = d3.zoomTransform(svg.node());
+          const clickX = transform.invertX(d3.pointer(event)[0]);
+          let originalValue = linearScale.invert(clickX);
+          originalValue = Math.max(0, Math.min(originalValue, this.mediaDuration)); // Don't accept values outside the media duration
+          const newXScale = d3.zoomTransform(svg.node()).rescaleX(linearScale);
+          this.$emit("updateTime", originalValue);
+          // this.verticalSlider.value = originalValue
+          this.updateVerticalLine(newXScale(originalValue));
+          if (this.hoveringAnnotation) {
+            this.hoveringAnnotation._stick = !this.hoveringAnnotation._stick;
+            const rect = this.hoveringAnnotation.querySelector("rect:nth-child(2)");
+            rect.style.strokeWidth = this.hoveringAnnotation._stick ? "3" : "0";
+            rect.style.stroke = "red";
+            this.$emit("annotationClick", this.hoveringAnnotation._stick);
           }
-          this.$emit("annotationEnter", event);
-        }
-        else if ([...hovering].length == 0 && hoveringAnnotation) {
-          hoveringAnnotation = null;
-          this.$emit("annotationLeave");
-        }
-      });
+        })
+        .on('mouseout', function () {
+          // on mouse out hide line, circles and text
+          d3.select('.mouse-line').style('opacity', '0');
+          d3.select('.mouse-text').style('opacity', '0');
+        })
+        .on('mouseover', function () {
+          // on mouse in show line, circles and text
+          d3.select('.mouse-line').style('opacity', '0.5');
+          d3.select('.mouse-text').style('opacity', '0.5');
+        })
+        .on('mousemove', () => {
+          const [mouseOverX, mouseOverY] = d3.pointer(event).slice(0, 2);
+          // const mouseOverX = d3.pointer(event)[0]
+          d3
+            .select(".mouse-line")
+            .attr("x1", mouseOverX)
+            .attr("x2", mouseOverX)
+            .style('opacity', '1');
 
-    this.zoomValue = DEFAULT_ZOOM_LEVEL;
+          const transform = d3.zoomTransform(svg.node());
+          const clickX = transform.invertX(d3.pointer(event)[0]);
+          const originalValue = linearScale.invert(clickX);
 
-    this.updateCurrentPosition(this.currentTime > 0 ? this.currentTime : this.defaultCurrentTime);
+          d3
+            .select(".mouse-text")
+            .attr("x", mouseOverX + 5)
+            .style('opacity', '1')
+            .text(Utils.secondsToTime(originalValue, true));
+
+          if (this.hoveringAnnotation && this.hoveringAnnotation._stick) return;
+
+          const hovering = barAndTextGroups
+            .filter(function () {
+              const rect = this.querySelector("rect");
+              const { x, y, width, height } = Object.fromEntries([...rect.attributes].map(v => [v.name, v.value]));
+              return x <= mouseOverX && Number(x) + Number(width) >= mouseOverX && y <= mouseOverY && Number(y) + Number(height) >= mouseOverY;
+            });
+          if ([...hovering].length && [...hovering][0] != this.hoveringAnnotation) {
+            this.hoveringAnnotation = [...hovering][0];
+            const rect = this.hoveringAnnotation.querySelector("rect");
+            const { x, y, height } = Object.fromEntries([...rect.attributes].map(v => [v.name, v.value]));
+            const event = {
+              x: Number(x),
+              y: Number(y) + Number(height),
+              mouseX: mouseOverX,
+              mouseY: mouseOverY,
+              entry: hovering.data()[0].entry
+            }
+            this.$emit("annotationEnter", event);
+          }
+          else if ([...hovering].length == 0 && this.hoveringAnnotation) {
+            this.hoveringAnnotation = null;
+            this.$emit("annotationLeave");
+          }
+        });
+
+      this.zoomValue = DEFAULT_ZOOM_LEVEL;
+
+      this.updateCurrentPosition(this.currentTime > 0 ? this.currentTime : this.defaultCurrentTime);
     }
   },
   mounted() {

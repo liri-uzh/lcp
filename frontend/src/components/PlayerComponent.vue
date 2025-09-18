@@ -238,6 +238,15 @@
           <div v-html=entry[1]></div>
         </div>
       </div>
+      <button
+        v-if="Object.keys(dataToShow).length > 0 && loadingDocument == false"
+        type="button"
+        class="btn btn-sm btn-light"
+        data-bs-toggle="modal"
+        data-bs-target="#timelineSettings"
+      >
+        <FontAwesomeIcon :icon="['fas', 'gear']" />
+      </button>
       <TimelineView
         v-if="Object.keys(dataToShow).length > 0 && loadingDocument == false"
         :data="dataToShow"
@@ -257,6 +266,45 @@
       </div>
     </div>
   </div>
+
+  <div class="modal fade" id="timelineSettings" tabindex="-1" aria-labelledby="timelineSettingsLabel"
+    aria-hidden="true" ref="vuemodaldetails">
+    <div class="modal-dialog modal-xl">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="timelineSettingsLabel">
+            Timeline
+          </h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div v-if="selectedCorpora.corpus.globalAttributes">
+          <strong>Group by:</strong>
+          <div class="timeline-split">
+            <span v-for="(ga_name, index) in Object.keys(selectedCorpora.corpus.globalAttributes)" :key=index>
+              <input type="checkbox" :id="`timeline_global_attribute_${ga_name}`" :value="ga_name" v-model="this.tracks_conf.group_by" @input="updateConf"/>
+              <label :for="`timeline_global_attribute_${ga_name}`"><em>{{ ga_name }}</em></label>
+            </span>
+          </div>
+        </div>
+        <div v-for="(lprops, lname) in timedLayers" :key=lname>
+          <input type="checkbox" :id="`timeline_${lname}`" :checked="lname in tracks_conf.layers" @input="switchConfLayer"/>
+          <label :for="`timeline_${lname}`">Show <strong>{{ lname }}</strong></label>
+          <div v-if="lname in tracks_conf.layers" class="timeline-split">
+            <span v-for="(aname, index) in getEnumAttributes(lname, lprops.attributes)" :key=index>
+              <input type="checkbox" :id="`timeline_${lname}_${aname}`" :value="aname" v-model="this.tracks_conf.layers[lname].split" @input="updateConf" />
+              <label :for="`timeline_${lname}_${aname}`">Split by <em>{{ aname }}</em></label>
+            </span>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+            {{ $t('common-close') }}
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
 </template>
 
 <script>
@@ -304,6 +352,7 @@ const urlRegex = /(https?:\/\/(www\.)?[-a-zA-Z0-9@:%._+~#=]{1,256}\.[a-zA-Z0-9()
 
 export default {
   props: ["selectedCorpora", "documentIds", "selectedMediaForPlay", "hoveredResult", "dataType"],
+  emits: ["switchToQueryTab"],
   data() {
     return {
       currentDocumentSelected: null,
@@ -339,6 +388,7 @@ export default {
       frameRate: 25.0,
 
       timelineEntry: null,
+      tracks_conf: {layers: {}, group_by: []},
 
       selectedTime: { hours: 0, minutes: 0, seconds: 0 }, // initialize to 00:00:00
       minTime: { hours: 0, minutes: 0, seconds: 0 },
@@ -363,6 +413,16 @@ export default {
     ...mapState(useCorpusStore, ["queryData", "corpora"]),
     ...mapState(useUserStore, ["userData", "roomId"]),
     ...mapState(useWsStore, ["messagesPlayer"]),
+    timedLayers() {
+      if (!this.selectedCorpora || !this.selectedCorpora.corpus) return {};
+      const layers = this.selectedCorpora.corpus.layer || {};
+      const ret = {};
+      for (let [lname, lprops] of Object.entries(layers)) {
+        if (lname == this.selectedCorpora.corpus.token || !Utils.isAnchored(lname, layers, "time")) continue;
+        ret[lname] = lprops;
+      }
+      return ret;
+    },
     documentOptions() {
       return this.selectedCorpora ?
         this.corpusData.filter(
@@ -385,6 +445,27 @@ export default {
     },
   },
   methods: {
+    updateConf() {
+      if (this._updateConfTimeout) clearTimeout(this._updateConfTimeout);
+      this._updateConfTimeout = setTimeout(()=>this.toTimeline(), 500);
+    },
+    switchConfLayer(e) {
+      const layer = e.target.id.replace(/^timeline_/,"");
+      if (e.target.checked)
+        this.tracks_conf.layers[layer] = this.tracks_conf.layers[layer] || {};
+      else if (layer in this.tracks_conf.layers)
+        delete this.tracks_conf.layers[layer];
+      this.updateConf();
+    },
+    getEnumAttributes(layer, attributes) {
+      this.tracks_conf.layers[layer].split = this.tracks_conf.layers[layer].split || [];
+      const ret = [];
+      for (let [aname, aprops] of Object.entries(attributes||{})) {
+        if (!(aprops.type in {text:1, number:1, categorical: 1} || aprops.ref)) continue;
+        ret.push(aname);
+      }
+      return ret;
+    },
     frameNumberToTime(frameNumber) {
       let seconds = Utils.frameNumberToSeconds(frameNumber);
       return Utils.msToTime(seconds);
@@ -660,11 +741,11 @@ export default {
         y = bottom - height;
       return { 'left': x + 'px', 'top': y - 250 + 'px' };
     },
-    toTimeline(conf) {
+    toTimeline() {
+      const conf = this.tracks_conf;
       let mediaDuration = 0;
       const data = this.currentDocumentData;
       const group_conf = conf.group_by || [];
-      const all_groups = {};
       const seg = this.selectedCorpora.corpus.segment;
       const column_names = this.selectedCorpora.corpus.mapping.layer[seg].prepared.columnHeaders;
       const form_n = column_names.indexOf("form");
@@ -682,6 +763,7 @@ export default {
         }
         return track;
       }
+      let all_groups = {};
       for (let [[layer, lid, info]] of data) {
         if (layer == "_prepared" && lid in segs_to_fill) {
           // the _prepared rows come last, after the segments have been processed
@@ -712,8 +794,10 @@ export default {
       }
 
       const no_groups = {x: 1};
+      if (Object.keys(all_groups).length == 0)
+        all_groups = {x: no_groups}
       const tracks_to_show = [];
-      for (let [group_name,group_values] of Object.entries(all_groups || {x: no_groups})) {
+      for (let [group_name,group_values] of Object.entries(all_groups)) {
         let n_group = 1;
         for (let group_value in group_values) {
           if (group_values != no_groups)
@@ -740,8 +824,10 @@ export default {
       if (Object.prototype.hasOwnProperty.call(data, "action")) {
         if (data["action"] === "document") {
           this.currentDocumentData = data.document;
-          const tracks_conf = this.selectedCorpora.corpus.tracks || {"layers": {}};
-          this.currentMediaDuration = this.toTimeline(tracks_conf);
+          const default_tracks = {"layers": Object.fromEntries([[this.selectedCorpora.corpus.segment,{}]]), group_by: []};
+          if (Object.keys(this.tracks_conf.layers).length == 0)
+            this.tracks_conf = this.selectedCorpora.corpus.tracks || default_tracks;
+          this.currentMediaDuration = this.toTimeline();
           this.loadingDocument = false;
           this.documentIndexKey++;
           this._setVolume();
@@ -925,7 +1011,7 @@ export default {
     },
     volume() {
       this._setVolume();
-    },
+    }
   }
 };
 </script>
@@ -1056,6 +1142,17 @@ video {
 
 div.active>video {
   height: 450px;
+}
+
+.timeline-split {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  margin-left: 2em;
+}
+.timeline-split span {
+  margin-right: 2em;
 }
 
 /* Mobile Responsive Styles */
