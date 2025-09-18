@@ -244,6 +244,8 @@
         class="btn btn-sm btn-light"
         data-bs-toggle="modal"
         data-bs-target="#timelineSettings"
+        title="Timeline visualization settings"
+        style="position: absolute;"
       >
         <FontAwesomeIcon :icon="['fas', 'gear']" />
       </button>
@@ -336,6 +338,7 @@ class Track {
     let endTime = (parseFloat(endFrame - shift) / v.frameRate);
     const content = Object.entries(info)
       .filter(kv=>!(kv[0] in this._splits) && kv[0] in layer_attrs && layer_attrs[kv[0]].type in {text:1,categorical:1,number:1})
+      .sort(kv=>kv[0] == "form" ? -1 : 1) // priority to the form
       .map(kv=>kv[1])
       .join(" ");
     this._values.push({ x1: startTime, x2: endTime, l: 0, entry: info, n: content });
@@ -714,7 +717,7 @@ export default {
         ...Object.entries(entry.meta || {})
       ]
         .filter(kv => kv && kv[0] && kv[1])
-        .map(([name, value]) => [name, value.replace(urlRegex, "<a href='$1' target='_blank'>$1</a>")]);
+        .map(([name, value]) => [name, typeof(value)=="string" ? value.replace(urlRegex, "<a href='$1' target='_blank'>$1</a>") : value]);
     },
     _annotationClick(stick) {
       if (!this.timelineEntry) return;
@@ -743,7 +746,6 @@ export default {
     },
     toTimeline() {
       const conf = this.tracks_conf;
-      let mediaDuration = 0;
       const data = this.currentDocumentData;
       const group_conf = conf.group_by || [];
       const seg = this.selectedCorpora.corpus.segment;
@@ -798,22 +800,32 @@ export default {
         all_groups = {x: no_groups}
       const tracks_to_show = [];
       for (let [group_name,group_values] of Object.entries(all_groups)) {
-        let n_group = 1;
-        for (let group_value in group_values) {
+        const groups = Object.keys(group_values);
+        for (let gn=0; gn < groups.length; gn++) {
           if (group_values != no_groups)
-            tracks_to_show.push(new Track(`${group_name} ${n_group}`, {}, {}).toObj(0));
+            tracks_to_show.push(new Track(`${group_name} ${gn+1}`, {}, {}).toObj(0));
+          const group_value = groups[gn];
           for (let t of tracks) {
-            if (group_values != no_groups && group_name in t._groups && t._groups[group_name] != group_value)
+            const track_is_grouped = Object.keys(t._groups).length > 0;
+            if (!track_is_grouped && gn>0)
               continue;
-            const track_obj = t.toObj(group_values == no_groups ? 0 : 1);
-            track_obj.values.forEach(v=>{
-              v.l = tracks_to_show.length;
-              if (v.x2 > mediaDuration)
-                mediaDuration = v.x2;
-            });
-            tracks_to_show.push(track_obj);
+            if (track_is_grouped && group_name in t._groups && t._groups[group_name] != group_value)
+              continue;
+            const track_obj = t.toObj(track_is_grouped ? 1 : 0);
+            if (track_is_grouped)
+              tracks_to_show.push(track_obj);
+            else
+              tracks_to_show.unshift(track_obj);
           }
-          n_group++;
+        }
+      }
+      let mediaDuration = 0;
+      for (let n=0; n < tracks_to_show.length; n++) {
+        const track = tracks_to_show[n];
+        for (let v of track.values) {
+          v.l = n;
+          if (v.x2 > mediaDuration)
+            mediaDuration = v.x2;
         }
       }
       this.dataToShow = tracks_to_show;
