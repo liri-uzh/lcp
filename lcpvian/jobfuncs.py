@@ -156,7 +156,6 @@ async def _db_query(
     is_main: bool = False,  # is the query related to the schame 'main'?
     is_import: bool = False,  # is the query related to the import pipeline?
     has_return: bool = True,
-    document: bool = False,
     **kwargs: str | None | int | float | bool | list[str],
 ) -> (
     list[tuple[Any, ...]]

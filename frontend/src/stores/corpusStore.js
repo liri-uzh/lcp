@@ -150,6 +150,12 @@ export const useCorpusStore = defineStore("corpusData", {
         return response.data;
       });
     },
+    fetchImageAnnotations(data) {
+      if (!(data.ids instanceof Array) || data.ids.length==0) return;
+      httpApi.post("/image_annotations", data).then((response) => {
+        return response.data;
+      });
+    },
     async fetchExport(info) {
       const ampsInfo = Object.entries(info).map(([k,v])=>encodeURIComponent(k)+"="+encodeURIComponent(v)).join("&")
       let url = `${httpApi.getUri()}/download_export?${ampsInfo}`;

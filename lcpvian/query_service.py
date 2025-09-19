@@ -41,6 +41,7 @@ from .callbacks import (
     _document,
     _document_ids,
     _general_failure,
+    _image_annotations,
     _upload_failure,
     _queries,
     _schema,
@@ -204,6 +205,84 @@ class QueryService:
             job_timeout=self.timeout,
             args=(query, {}),
             # args=(query, params),
+            kwargs=kwargs,
+        )
+        return job
+
+    def image_annotations(
+        self,
+        config: CorpusConfig,
+        layer: str,
+        ids: list[int],
+        user: str,
+        room: str | None,
+        queue: str = "internal",
+    ) -> Job:
+        """
+        Fetch annotation related to an image layer from DB/cache
+        """
+        schema = config["schema_path"]
+        from_cte = (
+            sql_str(
+                "SELECT d.xy_box FROM {}.{} d WHERE d.{}",
+                schema,
+                layer.lower(),
+                f"{layer.lower()}_id",
+            )
+            + f" IN ({','.join(str(id) for id in ids)})"
+        )
+
+        exclude = {}
+        tok = config["token"]
+        if not config["layer"][tok].get("anchoring", {}).get("location", False):
+            exclude["exclude"] = {tok: {}}
+        print("exclude", exclude)
+
+        aligned = get_aligned_annotations(
+            cast(dict, config),
+            "",
+            "",
+            from_cte,
+            anchor="location",
+            contains=True,
+            **exclude,
+        )
+
+        seg = config["segment"]
+        seg_id = seg + "_id"
+        query = aligned + sql_str(
+            "\nUNION ALL SELECT jsonb_build_array('_prepared', {}.{}, prep.content) AS res FROM {} JOIN {}.{} prep ON prep.{} = {}.{};",
+            seg,
+            seg_id,
+            seg,
+            schema,
+            f"prepared_{seg.lower()}",
+            f"{seg.lower()}_id",  # prep.segment_id
+            seg,
+            seg_id,
+        )
+        # print("document query", query)
+
+        hashed = str(hasher(query))
+        job: Job
+        if self.use_cache:
+            try:
+                job = Job.fetch(hashed, connection=self.app["redis"])
+                if job and job.get_status(refresh=True) == "finished":
+                    kwa: BaseArgs = {"user": user, "room": room}
+                    _image_annotations(job, self.app["redis"], job.result, **kwa)
+                    return job
+            except NoSuchJobError:
+                pass
+
+        kwargs = {"user": user, "room": room, "layer": layer}
+        job = self.app[queue].enqueue(
+            _db_query,
+            on_success=Callback(_image_annotations, self.timeout),
+            on_failure=Callback(_general_failure, self.callback_timeout),
+            result_ttl=self.query_ttl,
+            job_timeout=self.timeout,
+            args=(query, {}),
             kwargs=kwargs,
         )
         return job

@@ -1,6 +1,31 @@
 import moment from 'moment';
 import config from "@/config";
 
+class TokenToDisplay {
+  constructor(tokenArray, index, groups, columnHeaders, annotations) {
+    if (!(tokenArray instanceof Array) || tokenArray.length < 1)
+      throw Error(`Invalid format for token ${JSON.stringify(tokenArray)}`);
+    if (isNaN(Number(index)) || index<=0)
+      throw Error(`Invalid index (${index}) for token ${JSON.stringify(tokenArray)}`);
+    if (!(groups instanceof Array) || groups.find(g=>!(g instanceof Array)))
+      throw Error(`Invalid groups (${JSON.stringify(groups)}) for token ${JSON.stringify(tokenArray)}`);
+    columnHeaders.forEach( (header,i) => this[header] = tokenArray[i] );
+    this.token = tokenArray;
+    this.index = index;
+    this.group = groups.findIndex( g => g.find(id=>id==index) );
+    this.columnHeaders = columnHeaders.filter(ch=>ch!= 'spaceAfter');
+    for (let [annotation_name, annotation_occurences] of Object.entries(annotations||{})) {
+      for (let [ann_start_idx, ann_num_toks, annotation] of annotation_occurences) {
+        if (index < ann_start_idx || index > (ann_start_idx+(ann_num_toks-1)))
+          continue;
+        this.columnHeaders.push(annotation_name);
+        tokenArray.push(annotation);
+      }
+    }
+  }
+}
+
+
 const Utils = {
     uuidv4(){
       return ([1e7]+-1e3+-4e3+-8e3+-1e11).replace(/[018]/g, c =>
@@ -207,7 +232,8 @@ const Utils = {
         }
         document.body.removeChild(textArea);
       }
-    }
+    },
+    TokenToDisplay: TokenToDisplay
   }
 
   export default Utils

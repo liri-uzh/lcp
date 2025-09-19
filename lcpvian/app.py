@@ -52,7 +52,7 @@ from .corpora import (
     discard_invites,
     request_invite,
 )
-from .document import document, document_ids
+from .document import document, document_ids, image_annotations
 from .export import download_export
 from .fcs import get_fcs
 
@@ -260,6 +260,7 @@ async def create_app(test: bool = False) -> web.Application:
         ("/fcs-endpoint", "GET", get_fcs),
         ("/fetch", "POST", fetch_queries),
         ("/get_message/{fn}", "GET", get_message),
+        ("/image_annotations", "POST", image_annotations),
         ("/project", "POST", project_create),
         ("/project/check-title", "POST", project_check_title),
         ("/project/{project}", "POST", project_update),

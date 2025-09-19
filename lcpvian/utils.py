@@ -1109,10 +1109,12 @@ def get_aligned_annotations(
         layers[ln] = ("anchor", anchor)
         if not contains or not lp.get("contains"):
             continue
-        cl = lp["contains"]
-        if cl in layers or cl not in legal_layers:
-            continue
-        layers[cl] = ("contains", ln)
+        child, parent = lp["contains"], ln
+        while child:
+            if child in legal_layers and child not in layers:
+                layers[child] = ("contains", parent)
+            parent = child
+            child = config["layer"][child].get("contains")
     layer_ctes: dict = {}
     for layer, (how, container) in layers.items():
         layer_props = config["layer"][layer]

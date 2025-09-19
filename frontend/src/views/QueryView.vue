@@ -476,6 +476,7 @@
                               @updatePage="updatePage"
                               @playMedia="playMedia"
                               @hoverResultLine="hoverResultLine"
+                              @showImage="showImage"
                               :resultsPerPage="resultsPerPage"
                               :loading="loading"
                             />
@@ -719,6 +720,45 @@
       </div>
     </div>
 
+    <div class="modal fade" id="imageModal" tabindex="-1" aria-labelledby="imageModalLabel"
+      aria-hidden="true" ref="vuemodaldetails">
+      <div class="modal-dialog modal-full">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="imageModalLabel">{{ $t('results-image-viewer') }}</h5>
+            <button
+              type="button"
+              class="btn-close"
+              data-bs-dismiss="modal"
+              :aria-label="$t('common-close')"
+            ></button>
+          </div>
+          <div class="modal-body text-start" v-if="image">
+            <div id="prev-image" @click="updateImage(image.layerId - 1)"> &lt; </div>
+            <ImageViewer
+              :src="image.src"
+              :name="image.name"
+              :boxes="image.boxes"
+              :offset="image.offset"
+              :item="image.item"
+              :resultIndex="image.resultIndex"
+              :layer="image.layer"
+              :layerId="image.layerId"
+              :columnHeaders="image.columnHeaders"
+              :corpus="this.selectedCorpora.corpus"
+              :allPrepared="imagePrepared"
+            />
+          </div>
+          <div id="next-image" @click="updateImage(image.layerId + 1)"> &gt; </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+              {{ $t('common-close') }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
 
     <div class="modal fade" id="DQDModal" tabindex="-1" aria-labelledby="DQDModalLabel"
       aria-hidden="true" ref="DQDModal">
@@ -786,11 +826,34 @@
       </div>
     </div>
 
-
   </div>
 </template>
 
 <style scoped>
+#prev-image, #next-image {
+  position: absolute;
+  height: 100%;
+  z-index: 100;
+  width: 2em;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  text-align: center;
+}
+#prev-image {
+  margin-left: -1em;
+}
+#next-image {
+  right: 0;
+}
+#prev-image:hover, #next-image:hover {
+  background: lightgray;
+  cursor: pointer;
+}
+.modal-full .modal-body {
+  max-height: calc(100vh - 200px);
+  overflow-y: scroll;
+}
 .queryExample {
   background-color: lightcoral;
 }
@@ -881,15 +944,15 @@ textarea {
 <script>
 import { mapState } from "pinia";
 import { Modal } from "bootstrap";
-import { nextTick } from 'vue'
-
-import IntervalTree from '@flatten-js/interval-tree'
+import { nextTick } from 'vue';
+import IntervalTree from '@flatten-js/interval-tree';
 
 import { useCorpusStore } from "@/stores/corpusStore";
 import { useNotificationStore } from "@/stores/notificationStore";
 import { useUserStore } from "@/stores/userStore";
 import { useWsStore } from "@/stores/wsStore";
 
+import ImageViewer from "@/components/ImageViewer.vue";
 import CorpusDetailsModal from "@/components/corpus/DetailsModal.vue";
 import Title from "@/components/TitleComponent.vue";
 import ResultsTableView from "@/components/results/TableView.vue";
@@ -902,6 +965,8 @@ import PlayerComponent from "@/components/PlayerComponent.vue";
 import { setTooltips, removeTooltips } from "@/tooltips";
 import Utils from "@/utils";
 import config from "@/config";
+
+const TokenToDisplay = Utils.TokenToDisplay;
 
 export default {
   name: "QueryView",
@@ -942,7 +1007,6 @@ export default {
       sqlQuery: null,
       isDebug: false,
       queryStatus: null,
-      // corpusGraph: null,
       corpusModal: null,
       showGraph: '',
       showResultsNotification: false,
@@ -954,23 +1018,15 @@ export default {
       selectedQuery: null,
       userQueries: [],
 
-      // selectedDocument: null,
-      // documentDict: {},
-      // userId: null,
-      // corpusData: [],
-
       activeMainTab: ['soundscript', 'videoscope'].includes(config.appType) ? "data" : "query",
       graphIndex: 0,
       appType: config.appType,
       querySubmitted: false,
-      // playerIndex: 0,
 
-      // loadingDocument: false,
-      // currentDocumentData: null,
-      // currentDocument: null,
-      // currentMediaDuration: 0,
-      // loadingMedia: false,
-      // timelineEntry: null,
+      image: null,
+      imagePrepared: [], 
+      imageAnnotations: {},
+      attemptImageUpdate: -1,
 
       modalIndexKey: 0,
       noCorpus: null,
@@ -987,6 +1043,7 @@ export default {
     // CorpusGraphView,
     CorpusGraphViewNew,
     PlayerComponent,
+    ImageViewer,
   },
   watch: {
     corpora: {
@@ -1164,6 +1221,53 @@ export default {
     // },
   },
   methods: {
+    updateImage(id) {
+      if (id < 0) return;
+      if (!this.image) return;
+      this.attemptImageUpdate = id;
+      this.getImageAnnotations(this.image.layer, id);
+      const img = this.WSDataMeta.layer[this.image.layer].byId[id];
+      if (!img) return;
+      const attrs = this.selectedCorpora.corpus.layer[this.image.layer].attributes;
+      const image_col = Object.entries(attrs).find(kv=>kv[1].type == "image")[0];
+      const filename = img[image_col];
+      this.image = {
+        name: filename.replace(/\.[^.]+$/,""),
+        src: this.baseMediaUrl + filename,
+        boxes: [],
+        item: [],
+        resultIndex: 0,
+        offset: img.xy_box,
+        layer: this.image.layer,
+        layerId: id,
+        columnHeaders: this.image.columnHeaders
+      };
+      this.imageAnnotations = {};
+    },
+    getImageAnnotations(layer, id, window=1) {
+      const ids = [];
+      for (let i = id-window; i <= id+window; i++) {
+        if (i < 0 || i in this.imageAnnotations) continue;
+        ids.push(i);
+      }
+      const data = {
+        user: this.userData.user.id,
+        room: this.roomId,
+        corpus: this.selectedCorpora.corpus.meta.id,
+        layer: layer,
+        ids: ids
+      };
+      if (ids.length)
+        useCorpusStore().fetchImageAnnotations(data);
+    },
+    showImage(image) {
+      console.log("showImage", image);
+      this.image = image;
+      const modal = new Modal(document.getElementById('imageModal'));
+      this.modalIndexKey++;
+      modal.show();
+      this.getImageAnnotations(image.layer, image.layerId);
+    },
     toggleModal(language) {
     	let modalEl;
 
@@ -1213,9 +1317,33 @@ export default {
     playMedia(data) {
       this.selectedMediaForPlay = data;
     },
+    insertRange(interval, range, value) {
+      if (this.rangeValueInInterval(interval, range, value)) return;
+      if (range.length == 4) {
+        const [x1, y1, x2, y2] = range;
+        let x = interval.search([x1,x2].sort());
+        if (!(x instanceof IntervalTree)) {
+          x = new IntervalTree();
+          interval.insert([x1,x2].sort(), x);
+        }
+        x.insert([y1,y2].sort(), value);
+      }
+      else
+        interval.insert(range, value);
+    },
     rangeValueInInterval(interval, range, value) {
-      return interval.search(range, (v,r)=>[JSON.stringify(v),JSON.stringify([r.low,r.high])])
-                     .find(([v,r])=>v==JSON.stringify(value) && r==JSON.stringify(range));
+      let found = null;
+      if (range.length == 4) {
+        const [x1,y1,x2,y2] = range;
+        const xitv = interval.search([x1,x2].sort());
+        if (!(xitv instanceof IntervalTree)) return found;
+        found = xitv.search([y1,y2].sort(), (v,r)=>[JSON.stringify(v),JSON.stringify([r.low,r.high])])
+                    .find(([v,r])=>v==JSON.stringify(value) && r==JSON.stringify(range));
+      }
+      else
+        found = interval.search(range, (v,r)=>[JSON.stringify(v),JSON.stringify([r.low,r.high])])
+                        .find(([v,r])=>v==JSON.stringify(value) && r==JSON.stringify(range));
+      return found;
     },
     corpusDataType: Utils.corpusDataType,
     showExploreTab() {
@@ -1309,43 +1437,49 @@ export default {
       this.modalIndexKey++
       modal.show()
     },
-    // sendLeft() {
-    //   this.$socket.sendObj({
-    //     room: this.roomId,
-    //     // room: null,
-    //     action: "left",
-    //     user: this.userData.user.id,
-    //   });
-    //   this.wsConnected = false;
-    //   console.log("Left WS");
-    // },
-    // connectToRoom() {
-    //   console.log("Connect to WS room", this.wsConnected, this.$socket.readyState)
-    //   if (this.$socket.readyState != 1 || this.wsConnected == false){
-    //     console.log("Connect to WS")
-    //     this.waitForConnection(() => {
-    //       this.$socket.sendObj({
-    //         room: this.roomId,
-    //         // room: null,
-    //         action: "joined",
-    //         user: this.userId,
-    //       });
-    //       this.wsConnected = true;
-    //       this.$socket.onmessage = this.onSocketMessage;
-    //       console.log("Connected to WS")
-    //       this.validate();
-    //     }, 500);
-    //   }
-    // },
-    // waitForConnection(callback, interval) {
-    //   if (this.$socket.readyState === 1) {
-    //     callback();
-    //   } else {
-    //     setTimeout(() => {
-    //       this.waitForConnection(callback, interval);
-    //     }, interval);
-    //   }
-    // },
+    processMeta(meta) {
+      const META_LIMIT = 5000;
+      if (meta.length > META_LIMIT) console.warn(`Too much metadata (over ${META_LIMIT} lines) to process everything`);
+      let n = 0;
+      let insertAttemptOffset = 10;
+      for (let [sids, layer, lid, info] of meta) {
+        n++;
+        if (n>META_LIMIT) break;
+        if (!lid) continue;
+        if (!(layer in this.WSDataMeta.layer))
+          this.WSDataMeta.layer[layer] = {
+            "byId": {},
+            "byStream": new IntervalTree(), "byTime": new IntervalTree(), "byLocation": new IntervalTree()
+          };
+        const layer_dict = this.WSDataMeta.layer[layer];
+        if (lid in layer_dict) continue;
+        info._id = lid;
+        layer_dict.byId[lid] = info;
+        for (let sid of sids) {
+          this.WSDataMeta.bySegment[sid] = this.WSDataMeta.bySegment[sid] || {};
+          this.WSDataMeta.bySegment[sid][layer] = info;
+        }
+        for (let [anc_col, anc_name] of [["char_range", "Stream"], ["frame_range", "Time"], ["xy_box", "Location"]]) {
+          if (!(anc_col in info)) continue;
+          info[anc_col] = info[anc_col]
+            .split(",")
+            .map(x=>parseInt(x.replace(/[[()]/,"")))
+            .map((v,i)=>v-(i%2));
+          const range = info[anc_col];
+          const byAnchor = layer_dict[`by${anc_name}`];
+          try {
+            this.insertRange(byAnchor, range, info);
+          } catch {
+            // failure because of too much at once? try later
+            insertAttemptOffset += 5;
+            setTimeout(()=>{
+              try { this.insertRange(byAnchor, range, info) } catch { null }
+            }, insertAttemptOffset);
+          }
+        }
+      }
+      return new Promise(r=>setTimeout(r, insertAttemptOffset));
+    },
     onSocketMessage(data) {
       // the below is just temporary code
       // let data = JSON.parse(event.data);
@@ -1398,6 +1532,28 @@ export default {
           useWsStore().addMessageForPlayer(data);
           return;
         }
+
+        if (data["action"] == "image_annotations") {
+          const meta = [], ids = [];
+          this.imageAnnotations._prepared = this.imageAnnotations._prepared || {};
+          for (let [row] of data.annotations) {
+            if (row[0] == "_prepared") this.imageAnnotations._prepared[row[1]] = row[2];
+            else meta.push([[], ...row]);
+            if (row[0] == data.layer) ids.push(row[1]);
+          }
+          for (let id of ids) {
+            this.imageAnnotations[id] = 1;
+          }
+          if (meta.length)
+            this.processMeta(meta).then(()=>{
+              if (!this.image || !(this.image.layerId in this.WSDataMeta.layer[data.layer].byId)) return;
+              const range = this.WSDataMeta.layer[data.layer].byId[this.image.layerId].char_range;
+              const segments = this.WSDataMeta.layer[this.selectedCorpora.corpus.segment].byStream.search(range);
+              this.imagePrepared = segments.map(
+                s=> this.imageAnnotations._prepared[s._id].map((t,i)=>new TokenToDisplay(t, i+1, [], this.image.columnHeaders, {}))
+              );
+            });
+          }
 
         if (data["action"] === "update_config") {
           // todo: when a new corpus is added, all connected websockets
@@ -1527,51 +1683,7 @@ export default {
           useWsStore().addMessageForPlayer(data);
           this.updateLoading(data.status);
           const meta = data.result["-2"] || [];
-          const META_LIMIT = 5000;
-          if (meta.length > META_LIMIT) console.warn(`Too much metadata (over ${META_LIMIT} lines) to process everything`);
-          let n = 0;
-          for (let [sids, layer, lid, info] of meta) {
-            n++;
-            if (n>META_LIMIT) break;
-            if (!lid) continue;
-            if (!(layer in this.WSDataMeta.layer))
-              this.WSDataMeta.layer[layer] = {
-                "byId": {},
-                "byStream": new IntervalTree(), "byTime": new IntervalTree(), "byLocation": new IntervalTree()
-              };
-            const layer_dict = this.WSDataMeta.layer[layer];
-            if (lid in layer_dict) continue;
-            info._id = lid;
-            layer_dict.byId[lid] = info;
-            for (let sid of sids) {
-              this.WSDataMeta.bySegment[sid] = this.WSDataMeta.bySegment[sid] || {};
-              this.WSDataMeta.bySegment[sid][layer] = info;
-            }
-            let insertAttemptOffset = 10;
-            for (let [anc_col, anc_name] of [["char_range", "Stream"], ["frame_range", "Time"], ["xy_box", "Location"]]) {
-              if (!(anc_col in info)) continue;
-              if (anc_col == "xy_box") continue; // TODO
-              info[anc_col] = info[anc_col].split(",").map(x=>parseInt(x.replace(/[[()]/,""))).map((v,i)=>v-(i==1));
-              const range = info[anc_col];
-              const byAnchor = layer_dict[`by${anc_name}`];
-              if (this.rangeValueInInterval(byAnchor, range, info))
-                continue;
-              try {
-                byAnchor.insert(range, info);
-              } catch {
-                // failure because of too much at once? try later
-                insertAttemptOffset += 5;
-                setTimeout(()=>{
-                  try {
-                    if (this.rangeValueInInterval(byAnchor, range, info)) return;
-                    byAnchor.insert(range, info);
-                  } catch(err) {
-                    // pass
-                  }
-                }, insertAttemptOffset);
-              }
-            }
-          }
+          this.processMeta(meta);
           if (
             this.WSDataSentences &&
             this.WSDataSentences.hash == data.hash &&
@@ -1867,6 +1979,13 @@ export default {
     ...mapState(useCorpusStore, {corpusLanguages: "languages"}),
     ...mapState(useUserStore, ["userData", "roomId", "debug"]),
     ...mapState(useWsStore, ["messages"]),
+    baseMediaUrl() {
+      let retval = ""
+      if (this.selectedCorpora && this.selectedCorpora.corpus) {
+        retval = `${config.baseMediaUrl}/${this.selectedCorpora.corpus.schema_path}/`
+      }
+      return retval
+    },
     availableLanguages() {
       let retval = [];
       if (this.selectedCorpora) {

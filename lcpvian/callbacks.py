@@ -62,32 +62,6 @@ def _document(
     room = cast(str | None, kwargs.get("room", job_kwargs["room"]))
     if not room:
         return
-    # if isinstance(result, list) and len(result) == 1:
-    #     result = result[0]
-
-    # tmp_result: dict[str, dict] = {
-    #     "structure": {},
-    #     "layers": {},
-    #     "global_attributes": {},
-    # }
-    # for row in result:
-    #     typ, key, props = cast(list, row)
-    #     if typ == "layer":
-    #         if key not in tmp_result["structure"]:
-    #             tmp_result["structure"][key] = [*props.keys()]
-    #         if key not in tmp_result["layers"]:
-    #             tmp_result["layers"][key] = []
-    #         keys = tmp_result["structure"][key]
-    #         line = [props[k] for k in keys]
-    #         tmp_result["layers"][key].append(line)
-    #     elif typ == "glob":
-    #         if key not in tmp_result["global_attributes"]:
-    #             tmp_result["global_attributes"][key] = []
-    #         tmp_result["global_attributes"][key].append(props)
-    #     elif typ == "doc":
-    #         tmp_result["doc"] = props
-    # result = cast(JSONObject, tmp_result)
-
     msg_id = str(uuid4())
     jso = {
         "document": result,
@@ -137,6 +111,34 @@ def _document_ids(
         "room": room,
         "job": job.id,
         "corpus_id": job_kwargs["corpus_id"],
+    }
+    return _publish_msg(connection, jso, msg_id)
+
+
+def _image_annotations(
+    job: Job,
+    connection: RedisConnection,
+    result: list[JSONObject] | JSONObject,
+    **kwargs: Unpack[BaseArgs],
+) -> None:
+    """
+    When a user requests image annotations, we give it to them via websocket
+    """
+    job_kwargs: dict = cast(dict, job.kwargs)
+    action = "image_annotations"
+    user = cast(str, kwargs.get("user", job_kwargs["user"]))
+    room = cast(str | None, kwargs.get("room", job_kwargs["room"]))
+    if not room:
+        return
+    layer = cast(str, kwargs.get("layer", job_kwargs["layer"]))
+    msg_id = str(uuid4())
+    jso = {
+        "annotations": result,
+        "layer": layer,
+        "action": action,
+        "user": user,
+        "room": room,
+        "msg_id": msg_id,
     }
     return _publish_msg(connection, jso, msg_id)
 
