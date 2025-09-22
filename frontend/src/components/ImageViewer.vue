@@ -1,51 +1,56 @@
-<template>
-  <div id="prev-image" @click="updateImageId(layerId - 1)"> &lt; </div>
-  <div id="next-image" @click="updateImageId(layerId + 1)"> &gt; </div>
-  <span>{{ image.layer }} #{{ layerId }}</span>
+<template
+>
   <div
-    ref="image"
-    class="image-container"
+    id="viewer-container"
     @pointermove="onPointerMove"
     @pointerup="onPointerStop"
     @pointercancel="onPointerStop"
-    :style="`transform: scale(${zoom}) translate(${offsetX}px, ${offsetY}px);`"
   >
-    <img
-      id="displayedImage"
-      :src="src"
-      draggable="false"
-      @wheel="onWheel"
-      @pointerdown="onPointerDown"
-    />
+    <div id="prev-image" @click="updateImageId(layerId - 1)"> &lt; </div>
+    <div id="next-image" @click="updateImageId(layerId + 1)"> &gt; </div>
+    <span>{{ image.layer }} #{{ layerId }}</span>
     <div
-      v-for="(xyc, n) in highlights"
-      class="highlight-box"
-      :key="`div-highlight-${n}`"
-      :style="[
-        ['left',xyc[0]-1],
-        ['top',xyc[1]-1],
-        ['width',(xyc[2]-xyc[0])+2],
-        ['height',(xyc[3]-xyc[1])+2],
-        ['border-color',xyc[4]]
-      ].map(([p,v],n)=>p+': '+v+(n<4?'px':'')).join('; ')"
+      ref="image"
+      class="image-container"
+      :style="`transform: scale(${zoom}) translate(${offsetX}px, ${offsetY}px);`"
     >
-    </div>
-  </div>
-  <div id="imageAllPrepared" v-if="allPrepared instanceof Array && allPrepared.length > 0">
-    <div
-      class="segment"
-      v-for="(prep, n) in allPrepared"
-      :key="`image-prepared-${n}`"
-      :class="prep._highlight > 0 ? 'highlight' : ''"
-    >
-      <PlainTokens
-        :item="prep"
-        :columnHeaders="columnHeaders"
-        :currentToken="currentToken"
-        :resultIndex="0"
-        @showPopover="()=>null"
-        @closePopover="()=>null"
+      <img
+        id="displayedImage"
+        :src="src"
+        draggable="false"
+        @wheel="onWheel"
+        @pointerdown="onPointerDown"
       />
+      <div
+        v-for="(xyc, n) in highlights"
+        class="highlight-box"
+        :key="`div-highlight-${n}`"
+        :style="[
+          ['left',xyc[0]-1],
+          ['top',xyc[1]-1],
+          ['width',(xyc[2]-xyc[0])+2],
+          ['height',(xyc[3]-xyc[1])+2],
+          ['border-color',xyc[4]]
+        ].map(([p,v],n)=>p+': '+v+(n<4?'px':'')).join('; ')"
+      >
+      </div>
+    </div>
+    <div id="imageAllPrepared" v-if="allPrepared instanceof Array && allPrepared.length > 0">
+      <div
+        class="segment"
+        v-for="(prep, n) in allPrepared"
+        :key="`image-prepared-${n}`"
+        :class="prep._highlight > 0 ? 'highlight' : ''"
+      >
+        <PlainTokens
+          :item="prep"
+          :columnHeaders="columnHeaders"
+          :currentToken="currentToken"
+          :resultIndex="0"
+          @showPopover="()=>null"
+          @closePopover="()=>null"
+        />
+      </div>
     </div>
   </div>
 </template>
@@ -133,8 +138,9 @@ export default {
       if (!img) return [];
 
       const prepared = [];
-      const segments = this.meta.layer[this.corpus.segment].byStream.searchValue([...img.char_range].sort());
-      for (let segment of segments) {
+      const char_range = [...img.char_range].sort(n=>parseInt(n));
+      const segments = this.meta.layer[this.corpus.segment].byStream.searchValue(char_range);
+      for (let segment of segments.sort((a,b)=>a.char_range[0] - b.char_range[0])) {
         if (!(segment._id in this.sentences)) continue;
         const [segOffset, preTokens] = this.sentences[segment._id];
         if (!preTokens) continue
@@ -159,7 +165,7 @@ export default {
       if (!img) return highlights;
 
       let [x1,y1,x2,y2] = img.xy_box;
-      let sortedXs = [x1,x2].sort(), sortedYs = [y1,y2].sort();
+      let sortedXs = [x1,x2].sort(n=>parseInt(n)), sortedYs = [y1,y2].sort(n=>parseInt(n));
       const image_offset = [sortedXs[0], sortedYs[0], sortedXs[1], sortedYs[1]];
 
       for (let [layer, bys] of Object.entries(this.meta.layer)) { // eslint-disable-line no-unused-vars
@@ -167,7 +173,10 @@ export default {
         for (let overlaps of overlapXs) {
           for (let o of overlaps.searchValue(sortedYs)) {
             if (!o || !o.xy_box) continue;
-            [x1,x2,y1,y2] = [...[o.xy_box[0], o.xy_box[2]].sort(), ...[o.xy_box[1], o.xy_box[3]].sort()];
+            [x1,x2,y1,y2] = [
+              ...[o.xy_box[0], o.xy_box[2]].sort(n=>parseInt(n)),
+              ...[o.xy_box[1], o.xy_box[3]].sort(n=>parseInt(n))
+            ];
             highlights.push([
               x1-image_offset[0],
               y1-image_offset[1],
@@ -207,6 +216,10 @@ export default {
 </script>
 
 <style>
+#viewer-container {
+  width: 100%;
+  height: 100%;
+}
 .segment.highlight {
   border: solid 2px green;
 }

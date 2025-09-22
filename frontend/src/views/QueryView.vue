@@ -995,7 +995,7 @@ export default {
       querySubmitted: false,
 
       image: null,
-      imageAnnotations: {}, // keep track of which images were fetched 
+      imageAnnotations: {}, // keep track of which images were fetched
       attemptImageUpdate: -1,
 
       modalIndexKey: 0,
@@ -1268,7 +1268,7 @@ export default {
       if (this.rangeValueInInterval(interval, range, value)) return;
       if (range.length == 4) {
         const [x1, y1, x2, y2] = range;
-        const xs = [x1,x2].sort(), ys = [y1,y2].sort();
+        const xs = [x1,x2].sort(n=>parseInt(n)), ys = [y1,y2].sort(n=>parseInt(n));
         let x = interval.search(xs, n=>n.low==xs[0] && n.high==xs[1]);
         if (x.length)
           x = x[0].value;
@@ -1285,7 +1285,7 @@ export default {
       let found = null;
       if (range.length == 4) {
         const [x1,y1,x2,y2] = range;
-        const xs = [x1,x2].sort(), ys = [y1,y2].sort();
+        const xs = [x1,x2].sort(n=>parseInt(n)), ys = [y1,y2].sort(n=>parseInt(n));
         const xitv = interval.search(xs, n=>n.low==xs[0] && n.high==xs[1]);
         if (xitv.length == 0 || !(xitv[0].value instanceof IntervalTree)) return found;
         found = xitv[0].value.search(ys, n=>n.low==ys[0] && n.high==ys[1] && JSON.stringify(n.value)==JSON.stringify(value)).length > 0;

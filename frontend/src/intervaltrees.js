@@ -43,13 +43,17 @@ class IntervalTree {
 
     // Search for all intervals overlapping with given interval
     search(interval, filter) {
+        let orderedInterval = [...interval];
+        if (interval[1] < interval[0]) orderedInterval = [interval[1], interval[0]];
         const result = [];
-        this._search(this.root, interval, filter instanceof Function ? filter : ()=>1, result);
+        this._search(this.root, orderedInterval, filter instanceof Function ? filter : ()=>1, result);
         return result;
     }
 
     searchValue(interval, filter) {
-        const result = this.search(interval, filter);
+        let orderedInterval = [...interval];
+        if (interval[1] < interval[0]) orderedInterval = [interval[1], interval[0]];
+        const result = this.search(orderedInterval, filter);
         return result.map(r=>r.value);
     }
 
