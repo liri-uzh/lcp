@@ -132,7 +132,7 @@ def _image_annotations(
         return
     layer = cast(str, kwargs.get("layer", job_kwargs["layer"]))
     msg_id = str(uuid4())
-    jso = {
+    jso: dict[str, Any] = {
         "annotations": result,
         "layer": layer,
         "action": action,

@@ -232,7 +232,7 @@ class QueryService:
             + f" IN ({','.join(str(id) for id in ids)})"
         )
 
-        exclude = {}
+        exclude: dict[str, Any] = {}
         tok = config["token"]
         if not config["layer"][tok].get("anchoring", {}).get("location", False):
             exclude["exclude"] = {tok: {}}
