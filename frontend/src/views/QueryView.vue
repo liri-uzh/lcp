@@ -734,22 +734,17 @@
             ></button>
           </div>
           <div class="modal-body text-start" v-if="image">
-            <div id="prev-image" @click="updateImage(image.layerId - 1)"> &lt; </div>
             <ImageViewer
-              :src="image.src"
-              :name="image.name"
-              :boxes="image.boxes"
-              :offset="image.offset"
-              :item="image.item"
+              :image="image"
               :resultIndex="image.resultIndex"
-              :layer="image.layer"
-              :layerId="image.layerId"
               :columnHeaders="image.columnHeaders"
               :corpus="this.selectedCorpora.corpus"
               :allPrepared="imagePrepared"
+              :meta="WSDataMeta"
+              :sentences="WSDataSentences"
+              @getImageAnnotations="getImageAnnotations"
             />
           </div>
-          <div id="next-image" @click="updateImage(image.layerId + 1)"> &gt; </div>
           <div class="modal-footer">
             <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
               {{ $t('common-close') }}
@@ -830,26 +825,6 @@
 </template>
 
 <style scoped>
-#prev-image, #next-image {
-  position: absolute;
-  height: 100%;
-  z-index: 100;
-  width: 2em;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  text-align: center;
-}
-#prev-image {
-  margin-left: -1em;
-}
-#next-image {
-  right: 0;
-}
-#prev-image:hover, #next-image:hover {
-  background: lightgray;
-  cursor: pointer;
-}
 .modal-full .modal-body {
   max-height: calc(100vh - 200px);
   overflow-y: scroll;
@@ -945,7 +920,6 @@ textarea {
 import { mapState } from "pinia";
 import { Modal } from "bootstrap";
 import { nextTick } from 'vue';
-import IntervalTree from '@flatten-js/interval-tree';
 
 import { useCorpusStore } from "@/stores/corpusStore";
 import { useNotificationStore } from "@/stores/notificationStore";
@@ -964,6 +938,7 @@ import CorpusGraphViewNew from "@/components/CorpusGraphViewNew.vue";
 import PlayerComponent from "@/components/PlayerComponent.vue";
 import { setTooltips, removeTooltips } from "@/tooltips";
 import Utils from "@/utils";
+import { IntervalTree } from "@/intervaltrees";
 import config from "@/config";
 
 const TokenToDisplay = Utils.TokenToDisplay;
@@ -1216,34 +1191,24 @@ export default {
         }, 1500);
       }
     },
+    image() {
+      const id = this.image.layerId;
+      const layer = this.image.layer;
+      if (!id || !layer || !(layer in this.WSDataMeta.layer) || !this.imageAnnotations._prepared)
+        return;
+      const img = this.WSDataMeta.layer[layer].byId[id];
+      if (!img) return;
+      const range = img.char_range;
+      const segments = this.WSDataMeta.layer[this.selectedCorpora.corpus.segment].byStream.searchValue(range);
+      this.imagePrepared = segments.map(
+        s=> this.imageAnnotations._prepared[s._id].map((t,i)=>new TokenToDisplay(t, i+1, [], this.image.columnHeaders, {}))
+      );
+    }
     // currentDocument() {
     //   this.loadDocument();
     // },
   },
   methods: {
-    updateImage(id) {
-      if (id < 0) return;
-      if (!this.image) return;
-      this.attemptImageUpdate = id;
-      this.getImageAnnotations(this.image.layer, id);
-      const img = this.WSDataMeta.layer[this.image.layer].byId[id];
-      if (!img) return;
-      const attrs = this.selectedCorpora.corpus.layer[this.image.layer].attributes;
-      const image_col = Object.entries(attrs).find(kv=>kv[1].type == "image")[0];
-      const filename = img[image_col];
-      this.image = {
-        name: filename.replace(/\.[^.]+$/,""),
-        src: this.baseMediaUrl + filename,
-        boxes: [],
-        item: [],
-        resultIndex: 0,
-        offset: img.xy_box,
-        layer: this.image.layer,
-        layerId: id,
-        columnHeaders: this.image.columnHeaders
-      };
-      this.imageAnnotations = {};
-    },
     getImageAnnotations(layer, id, window=1) {
       const ids = [];
       for (let i = id-window; i <= id+window; i++) {
@@ -1321,12 +1286,15 @@ export default {
       if (this.rangeValueInInterval(interval, range, value)) return;
       if (range.length == 4) {
         const [x1, y1, x2, y2] = range;
-        let x = interval.search([x1,x2].sort());
-        if (!(x instanceof IntervalTree)) {
+        const xs = [x1,x2].sort(), ys = [y1,y2].sort();
+        let x = interval.search(xs, n=>n.low==xs[0] && n.high==xs[1]);
+        if (x.length)
+          x = x[0].value;
+        else {
           x = new IntervalTree();
-          interval.insert([x1,x2].sort(), x);
+          interval.insert(xs, x);
         }
-        x.insert([y1,y2].sort(), value);
+        x.insert(ys, value);
       }
       else
         interval.insert(range, value);
@@ -1335,14 +1303,13 @@ export default {
       let found = null;
       if (range.length == 4) {
         const [x1,y1,x2,y2] = range;
-        const xitv = interval.search([x1,x2].sort());
-        if (!(xitv instanceof IntervalTree)) return found;
-        found = xitv.search([y1,y2].sort(), (v,r)=>[JSON.stringify(v),JSON.stringify([r.low,r.high])])
-                    .find(([v,r])=>v==JSON.stringify(value) && r==JSON.stringify(range));
+        const xs = [x1,x2].sort(), ys = [y1,y2].sort();
+        const xitv = interval.search(xs, n=>n.low==xs[0] && n.high==xs[1]);
+        if (xitv.length == 0 || !(xitv[0].value instanceof IntervalTree)) return found;
+        found = xitv[0].value.search(ys, n=>n.low==ys[0] && n.high==ys[1] && JSON.stringify(n.value)==JSON.stringify(value)).length > 0;
       }
       else
-        found = interval.search(range, (v,r)=>[JSON.stringify(v),JSON.stringify([r.low,r.high])])
-                        .find(([v,r])=>v==JSON.stringify(value) && r==JSON.stringify(range));
+        found = interval.search(range, n=>n.low==range[0] && n.high==range[1] && JSON.stringify(n.value)==JSON.stringify(value));
       return found;
     },
     corpusDataType: Utils.corpusDataType,
@@ -1441,7 +1408,6 @@ export default {
       const META_LIMIT = 5000;
       if (meta.length > META_LIMIT) console.warn(`Too much metadata (over ${META_LIMIT} lines) to process everything`);
       let n = 0;
-      let insertAttemptOffset = 10;
       for (let [sids, layer, lid, info] of meta) {
         n++;
         if (n>META_LIMIT) break;
@@ -1464,21 +1430,12 @@ export default {
           info[anc_col] = info[anc_col]
             .split(",")
             .map(x=>parseInt(x.replace(/[[()]/,"")))
-            .map((v,i)=>v-(i%2));
+            .map((v,i)=>v-(anc_col != "xy_box" && i==1));
           const range = info[anc_col];
           const byAnchor = layer_dict[`by${anc_name}`];
-          try {
-            this.insertRange(byAnchor, range, info);
-          } catch {
-            // failure because of too much at once? try later
-            insertAttemptOffset += 5;
-            setTimeout(()=>{
-              try { this.insertRange(byAnchor, range, info) } catch { null }
-            }, insertAttemptOffset);
-          }
+          this.insertRange(byAnchor, range, info);
         }
       }
-      return new Promise(r=>setTimeout(r, insertAttemptOffset));
     },
     onSocketMessage(data) {
       // the below is just temporary code
@@ -1541,18 +1498,10 @@ export default {
             else meta.push([[], ...row]);
             if (row[0] == data.layer) ids.push(row[1]);
           }
-          for (let id of ids) {
+          for (let id of ids)
             this.imageAnnotations[id] = 1;
-          }
           if (meta.length)
-            this.processMeta(meta).then(()=>{
-              if (!this.image || !(this.image.layerId in this.WSDataMeta.layer[data.layer].byId)) return;
-              const range = this.WSDataMeta.layer[data.layer].byId[this.image.layerId].char_range;
-              const segments = this.WSDataMeta.layer[this.selectedCorpora.corpus.segment].byStream.search(range);
-              this.imagePrepared = segments.map(
-                s=> this.imageAnnotations._prepared[s._id].map((t,i)=>new TokenToDisplay(t, i+1, [], this.image.columnHeaders, {}))
-              );
-            });
+            this.processMeta(meta);
           }
 
         if (data["action"] === "update_config") {

@@ -1,4 +1,7 @@
 <template>
+  <div id="prev-image" @click="updateImageId(image.layerId - 1)"> &lt; </div>
+  <div id="next-image" @click="updateImageId(image.layerId + 1)"> &gt; </div>
+  <span>{{ image.layer }} #{{ layerId }}</span>
   <div v-if="onItemPage">
     <strong>Hit:</strong>&nbsp;
     <PlainTokens
@@ -64,17 +67,29 @@ export default {
     PlainTokens
   },
   data() {
-    console.log("layer", this.layer, "layerId", this.layerId, "corpus", this.corpus);
+    console.log("layer", this.image.layer, "layerId", this.image.layerId, "corpus", this.corpus);
     return {
       zoom: 1,
       offsetX: 0,
       offsetY: 0,
+      layerId: this.image.layerId,
+      name: this.image.name,
+      src: this.image.src,
       dragStart: null,
       currentToken: null,
       onItemPage: this.item ? true : false,
     }
   },
-  props: ["src", "name", "boxes", "offset", "item", "resultIndex", "columnHeaders", "corpus", "layer", "layerId", "allPrepared"],
+  props: [
+    "image",
+    "resultIndex",
+    "columnHeaders",
+    "corpus",
+    "meta",
+    "sentences",
+    "allPrepared"
+  ],
+  emits: ["getImageAnnotations"],
   methods: {
     onPointerDown(e) {
       const {clientX, clientY} = e;
@@ -99,21 +114,68 @@ export default {
       e.stopPropagation();
       this.zoom = Math.max(0.2, Math.min(2.0, this.zoom - e.deltaY/500));
     },
+    updageImageContent() {
+      const id = this.layerId;
+      const img = this.meta.layer[this.image.layer].byId[id];
+      if (!img) return;
+      const attrs = this.corpus.layer[this.image.layer].attributes;
+      const image_col = Object.entries(attrs).find(kv=>kv[1].type == "image")[0];
+      const filename = img[image_col];
+      this.name = filename.replace(/\.[^.]+$/,"");
+      this.src = this.baseMediaUrl + filename;
+    },
+    updateImageId(id) {
+      if (id < 0) return;
+      if (!this.image) return;
+      this.layerId = id;
+      this.$emit("getImageAnnotations", this.image.layer, id);
+      this.updageImageContent();
+    }
   },
   computed: {
     highlights() {
+
+      console.log("highlights");
+
+      const colors = ["green","blue","orange","pink","brown"];
+
       let highlights = [];
-      if (this.boxes && this.boxes instanceof Array)
-        highlights = [...this.boxes];
-      if (this.offset instanceof Array && this.offset.length > 0)
-        highlights = highlights.map(([left,top,width,height])=>{
-          const [newLeft, newTop] = [Math.max(-1 * MARGIN, left), Math.max(-1 * MARGIN, top)];
-          const [newWidth, newHeight] = [
-            Math.min(width, this.offset[2]-this.offset[0] + MARGIN - newLeft),
-            Math.min(height, this.offset[3]-this.offset[1] + MARGIN - newTop)
-          ];
-          return [newLeft, newTop, newWidth, newHeight];
-        });
+      if (!this.layerId || this.layerId < 0) return highlights;
+
+      const id = this.layerId;
+      const img = this.meta.layer[this.image.layer].byId[id];
+      if (!img) return highlights;
+
+      let [x1,y1,x2,y2] = img.xy_box;
+      let sortedXs = [x1,x2].sort(), sortedYs = [y1,y2].sort();
+      const image_offset = [sortedXs[0], sortedYs[0], sortedXs[1], sortedYs[1]];
+      
+      for (let [layer, bys] of Object.entries(this.meta.layer)) { // eslint-disable-line no-unused-vars
+        const overlapXs = bys.byLocation.searchValue(sortedXs);
+        for (let overlaps of overlapXs) {
+          for (let o of overlaps.searchValue(sortedYs)) {
+            if (!o || !o.xy_box) continue;
+            [x1,x2,y1,y2] = [...[o.xy_box[0], o.xy_box[2]].sort(), ...[o.xy_box[1], o.xy_box[3]].sort()];
+            console.log("overlap", JSON.stringify(o), x1, y1, x2, y2, JSON.stringify(image_offset));
+            highlights.push([
+              x1-image_offset[0],
+              y1-image_offset[1],
+              x2-image_offset[0],
+              y2-image_offset[1],
+              colors[highlights.length % colors.length]
+            ]);
+          }
+        }
+      }
+
+      highlights = highlights.map(([left,top,width,height,color])=>{
+        const [newLeft, newTop] = [Math.max(-1 * MARGIN, left), Math.max(-1 * MARGIN, top)];
+        const [newWidth, newHeight] = [
+          Math.min(width, image_offset[2]-image_offset[0] + MARGIN - newLeft),
+          Math.min(height, image_offset[3]-image_offset[1] + MARGIN - newTop)
+        ];
+        return [newLeft, newTop, newWidth, newHeight, color];
+      });
       return highlights;
     },
   },
@@ -127,6 +189,26 @@ export default {
 </script>
 
 <style>
+#prev-image, #next-image {
+  position: absolute;
+  height: 100%;
+  z-index: 100;
+  width: 2em;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  text-align: center;
+}
+#prev-image {
+  margin-left: -1em;
+}
+#next-image {
+  right: 0;
+}
+#prev-image:hover, #next-image:hover {
+  background-color: #9993;
+  cursor: pointer;
+}
 #imageAllPrepared {
   position: absolute;
   right: 0;

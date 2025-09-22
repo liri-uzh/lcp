@@ -586,7 +586,9 @@ export default {
         for (let [aname, aprops] of Object.entries(attrs||{})) {
           if (aprops.type != "image")
             continue
-          const filename = this.meta[this.data[resultIndex][0]][layerName][aname];
+          const meta = this.meta[this.data[resultIndex][0]];
+          if (!meta || !(layerName in meta)) continue;
+          const filename = meta[layerName][aname];
           if (!filename)
             return null;
           return [filename, layerName];
