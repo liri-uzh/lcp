@@ -468,7 +468,7 @@
                             <ResultsPlainTableView
                               v-if="plainType == 'table' || resultContainsSet(resultSet)"
                               :data="WSDataResults.result[index + 1] || []"
-                              :sentences="WSDataSentences.result[-1] || []"
+                              :sentences="WSDataSentences.result[-1] || {}"
                               :languages="selectedLanguages"
                               :meta="WSDataMeta.bySegment"
                               :attributes="resultSet.attributes"
@@ -483,7 +483,7 @@
                             <ResultsKWICView
                               v-else-if="resultContainsSet(resultSet) == false"
                               :data="WSDataResults.result[index + 1] || []"
-                              :sentences="WSDataSentences.result[-1] || []"
+                              :sentences="WSDataSentences.result[-1] || {}"
                               :languages="selectedLanguages"
                               :meta="WSDataMeta.bySegment"
                               :attributes="resultSet.attributes"
@@ -736,12 +736,10 @@
           <div class="modal-body text-start" v-if="image">
             <ImageViewer
               :image="image"
-              :resultIndex="image.resultIndex"
               :columnHeaders="image.columnHeaders"
               :corpus="this.selectedCorpora.corpus"
-              :allPrepared="imagePrepared"
               :meta="WSDataMeta"
-              :sentences="WSDataSentences"
+              :sentences="WSDataSentences.result[-1] || {}"
               @getImageAnnotations="getImageAnnotations"
             />
           </div>
@@ -941,8 +939,6 @@ import Utils from "@/utils";
 import { IntervalTree } from "@/intervaltrees";
 import config from "@/config";
 
-const TokenToDisplay = Utils.TokenToDisplay;
-
 export default {
   name: "QueryView",
   data() {
@@ -999,8 +995,7 @@ export default {
       querySubmitted: false,
 
       image: null,
-      imagePrepared: [], 
-      imageAnnotations: {},
+      imageAnnotations: {}, // keep track of which images were fetched 
       attemptImageUpdate: -1,
 
       modalIndexKey: 0,
@@ -1191,19 +1186,6 @@ export default {
         }, 1500);
       }
     },
-    image() {
-      const id = this.image.layerId;
-      const layer = this.image.layer;
-      if (!id || !layer || !(layer in this.WSDataMeta.layer) || !this.imageAnnotations._prepared)
-        return;
-      const img = this.WSDataMeta.layer[layer].byId[id];
-      if (!img) return;
-      const range = img.char_range;
-      const segments = this.WSDataMeta.layer[this.selectedCorpora.corpus.segment].byStream.searchValue(range);
-      this.imagePrepared = segments.map(
-        s=> this.imageAnnotations._prepared[s._id].map((t,i)=>new TokenToDisplay(t, i+1, [], this.image.columnHeaders, {}))
-      );
-    }
     // currentDocument() {
     //   this.loadDocument();
     // },
@@ -1309,7 +1291,7 @@ export default {
         found = xitv[0].value.search(ys, n=>n.low==ys[0] && n.high==ys[1] && JSON.stringify(n.value)==JSON.stringify(value)).length > 0;
       }
       else
-        found = interval.search(range, n=>n.low==range[0] && n.high==range[1] && JSON.stringify(n.value)==JSON.stringify(value));
+        found = interval.search(range, n=>n.low==range[0] && n.high==range[1] && JSON.stringify(n.value)==JSON.stringify(value)).length > 0;
       return found;
     },
     corpusDataType: Utils.corpusDataType,
@@ -1436,6 +1418,7 @@ export default {
           this.insertRange(byAnchor, range, info);
         }
       }
+      this.WSDataMeta = {...this.WSDataMeta};
     },
     onSocketMessage(data) {
       // the below is just temporary code
@@ -1492,12 +1475,17 @@ export default {
 
         if (data["action"] == "image_annotations") {
           const meta = [], ids = [];
-          this.imageAnnotations._prepared = this.imageAnnotations._prepared || {};
           for (let [row] of data.annotations) {
-            if (row[0] == "_prepared") this.imageAnnotations._prepared[row[1]] = row[2];
-            else meta.push([[], ...row]);
+            if (row[0] == "_prepared") {
+              const [seg_id, seg_offset, seg_content] = row.slice(1,)
+              if (seg_id in this.WSDataSentences.result[-1]) continue;
+              this.WSDataSentences.result[-1][seg_id] = [seg_offset, seg_content];
+            }
+            else
+              meta.push([[], ...row]);
             if (row[0] == data.layer) ids.push(row[1]);
           }
+          this.WSDataSentences = {...this.WSDataSentences};
           for (let id of ids)
             this.imageAnnotations[id] = 1;
           if (meta.length)
@@ -1638,16 +1626,16 @@ export default {
             this.WSDataSentences.hash == data.hash &&
             !data.full
           ) {
-            Object.keys(this.WSDataSentences.result).forEach((key) => {
-              if (key > 0 && key in data.result) {
-                this.WSDataSentences.result[key] = this.WSDataSentences.result[
-                  key
-                ].concat(data.result[key]);
-              }
-            });
+            for (let key in data.result) {
+              if (key <= 0) continue;
+              this.WSDataSentences.result[key] = {
+                ...(this.WSDataSentences.result[key]||{}),
+                ...data.result[key]
+              };
+            }
             if (-1 in data.result) {
               this.WSDataSentences.result[-1] = {
-                ...this.WSDataSentences.result[-1],
+                ...(this.WSDataSentences.result[-1] || {}),
                 ...data.result[-1],
               };
             }
@@ -1669,6 +1657,7 @@ export default {
               );
             }
           }
+          this.WSDataSentences = {...this.WSDataSentences};
           // if (["satisfied", "overtime"].includes(this.WSDataResults.status)) {
           //   this.loading = false;
           // }

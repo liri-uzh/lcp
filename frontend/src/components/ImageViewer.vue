@@ -1,18 +1,7 @@
 <template>
-  <div id="prev-image" @click="updateImageId(image.layerId - 1)"> &lt; </div>
-  <div id="next-image" @click="updateImageId(image.layerId + 1)"> &gt; </div>
+  <div id="prev-image" @click="updateImageId(layerId - 1)"> &lt; </div>
+  <div id="next-image" @click="updateImageId(layerId + 1)"> &gt; </div>
   <span>{{ image.layer }} #{{ layerId }}</span>
-  <div v-if="onItemPage">
-    <strong>Hit:</strong>&nbsp;
-    <PlainTokens
-      :item="item"
-      :columnHeaders="columnHeaders"
-      :currentToken="currentToken"
-      :resultIndex="0"
-      @showPopover="()=>null"
-      @closePopover="()=>null"
-    />
-  </div>
   <div
     ref="image"
     class="image-container"
@@ -43,7 +32,12 @@
     </div>
   </div>
   <div id="imageAllPrepared" v-if="allPrepared instanceof Array && allPrepared.length > 0">
-    <div class="segment" v-for="(prep, n) in allPrepared" :key="`image-prepared-${n}`">
+    <div
+      class="segment"
+      v-for="(prep, n) in allPrepared"
+      :key="`image-prepared-${n}`"
+      :class="prep._highlight > 0 ? 'highlight' : ''"
+    >
       <PlainTokens
         :item="prep"
         :columnHeaders="columnHeaders"
@@ -59,6 +53,11 @@
 <script>
 import PlainTokens from "@/components/results/PlainToken.vue";
 
+import Utils from "@/utils";
+import config from "@/config";
+
+const TokenToDisplay = Utils.TokenToDisplay;
+
 const MARGIN = 10;
 
 export default {
@@ -67,7 +66,6 @@ export default {
     PlainTokens
   },
   data() {
-    console.log("layer", this.image.layer, "layerId", this.image.layerId, "corpus", this.corpus);
     return {
       zoom: 1,
       offsetX: 0,
@@ -77,17 +75,14 @@ export default {
       src: this.image.src,
       dragStart: null,
       currentToken: null,
-      onItemPage: this.item ? true : false,
     }
   },
   props: [
     "image",
-    "resultIndex",
     "columnHeaders",
     "corpus",
     "meta",
     "sentences",
-    "allPrepared"
   ],
   emits: ["getImageAnnotations"],
   methods: {
@@ -133,9 +128,26 @@ export default {
     }
   },
   computed: {
-    highlights() {
+    allPrepared() {
+      const img = this.meta.layer[this.image.layer].byId[this.layerId];
+      if (!img) return [];
 
-      console.log("highlights");
+      const prepared = [];
+      const segments = this.meta.layer[this.corpus.segment].byStream.searchValue([...img.char_range].sort());
+      for (let segment of segments) {
+        if (!(segment._id in this.sentences)) continue;
+        const [segOffset, preTokens] = this.sentences[segment._id];
+        if (!preTokens) continue
+        let groups = [];
+        if (this.image.resultSegment == segment._id)
+          groups = this.image.groups;
+        const tokens = preTokens.map((t,i)=>new TokenToDisplay(t, (segOffset||1)+i, groups, this.columnHeaders, {}));
+        tokens._highlight = groups.length;
+        prepared.push(tokens);
+      }
+      return prepared;
+    },
+    highlights() {
 
       const colors = ["green","blue","orange","pink","brown"];
 
@@ -149,14 +161,13 @@ export default {
       let [x1,y1,x2,y2] = img.xy_box;
       let sortedXs = [x1,x2].sort(), sortedYs = [y1,y2].sort();
       const image_offset = [sortedXs[0], sortedYs[0], sortedXs[1], sortedYs[1]];
-      
+
       for (let [layer, bys] of Object.entries(this.meta.layer)) { // eslint-disable-line no-unused-vars
         const overlapXs = bys.byLocation.searchValue(sortedXs);
         for (let overlaps of overlapXs) {
           for (let o of overlaps.searchValue(sortedYs)) {
             if (!o || !o.xy_box) continue;
             [x1,x2,y1,y2] = [...[o.xy_box[0], o.xy_box[2]].sort(), ...[o.xy_box[1], o.xy_box[3]].sort()];
-            console.log("overlap", JSON.stringify(o), x1, y1, x2, y2, JSON.stringify(image_offset));
             highlights.push([
               x1-image_offset[0],
               y1-image_offset[1],
@@ -178,6 +189,13 @@ export default {
       });
       return highlights;
     },
+    baseMediaUrl() {
+      let retval = ""
+      if (this.corpus) {
+        retval = `${config.baseMediaUrl}/${this.corpus.schema_path}/`
+      }
+      return retval
+    }
   },
   mounted() {
     // pass
@@ -189,6 +207,9 @@ export default {
 </script>
 
 <style>
+.segment.highlight {
+  border: solid 2px green;
+}
 #prev-image, #next-image {
   position: absolute;
   height: 100%;

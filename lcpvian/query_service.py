@@ -251,7 +251,7 @@ class QueryService:
         seg = config["segment"]
         seg_id = seg + "_id"
         query = aligned + sql_str(
-            "\nUNION ALL SELECT jsonb_build_array('_prepared', {}.{}, prep.content) AS res FROM {} JOIN {}.{} prep ON prep.{} = {}.{};",
+            "\nUNION ALL SELECT jsonb_build_array('_prepared', {}.{}, prep.id_offset, prep.content) AS res FROM {} JOIN {}.{} prep ON prep.{} = {}.{};",
             seg,
             seg_id,
             seg,

@@ -625,14 +625,14 @@ export default {
         boxes[n][2] -= image_offset[0];
         boxes[n][3] -= image_offset[1];
       }
-      const layerId = this.meta[this.data[resultIndex][0]][imageLayer]._id;
-      const item = this.formatTokens(this.data[resultIndex]);
+      const segId = this.data[resultIndex][0];
+      const layerId = this.meta[segId][imageLayer]._id;
       this.image = {
         name: filename.replace(/\.[^.]+$/,""),
         src: this.baseMediaUrl + filename,
         boxes: boxes,
-        item: item,
-        resultIndex: resultIndex,
+        resultSegment: segId,
+        groups: this.data ? this.getGroups(this.data[0], true) : [],
         offset: image_offset,
         layer: imageLayer,
         layerId: layerId,
