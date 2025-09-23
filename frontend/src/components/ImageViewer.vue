@@ -117,6 +117,17 @@ export default {
     updageImageContent() {
       const id = this.layerId;
       const img = this.meta.layer[this.image.layer].byId[id];
+      // automatically resize and reposition image here
+      setTimeout(()=>{
+        const viewerContainer = document.querySelector("#viewer-container");
+        const img = document.querySelector("#displayedImage");
+        const viewerWidth = viewerContainer.getBoundingClientRect().width;
+        const imgWidth = img.getBoundingClientRect().width;
+        const originalWidth = imgWidth/this.zoom;
+        this.offsetX = 0;
+        this.offsetY = 0;
+        this.zoom = (viewerWidth * 0.45) / originalWidth;
+      }, 10);
       if (!img) return;
       const attrs = this.corpus.layer[this.image.layer].attributes;
       const image_col = Object.entries(attrs).find(kv=>kv[1].type == "image")[0];
@@ -196,6 +207,7 @@ export default {
         ];
         return [newLeft, newTop, newWidth, newHeight, color];
       });
+
       return highlights;
     },
     baseMediaUrl() {
@@ -207,10 +219,17 @@ export default {
     }
   },
   mounted() {
-    // pass
+    this._keydownhandler = e=>{
+      if (e.key == "ArrowLeft") this.updateImageId(this.layerId - 1);
+      else if (e.key == "ArrowRight") this.updateImageId(this.layerId + 1);
+      else return;
+      e.stopPropagation();
+      e.preventDefault();
+    };
+    document.addEventListener("keydown", this._keydownhandler);
   },
   beforeUnmount() {
-    // pass
+    document.removeEventListener("keydown", this._keydownhandler);
   }
 };
 </script>
@@ -247,8 +266,8 @@ export default {
   position: absolute;
   right: 0;
   top: 0;
-  max-width: 50%;
-  margin-right: 1em;
+  max-width: calc(50% - 2em);
+  margin-right: 2em;
   height: 100%;
   display: flex;
   flex-direction: column;

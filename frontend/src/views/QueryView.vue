@@ -1411,7 +1411,7 @@ export default {
           if (!(anc_col in info)) continue;
           info[anc_col] = info[anc_col]
             .split(",")
-            .map(x=>parseInt(x.replace(/[[()]/,"")))
+            .map(x=>parseInt(x.replace(/[[()]/g,"")))
             .map((v,i)=>v-(anc_col != "xy_box" && i==1));
           const range = info[anc_col];
           const byAnchor = layer_dict[`by${anc_name}`];

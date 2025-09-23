@@ -1,10 +1,12 @@
 // Node class representing an interval and the max value in its subtree
 class IntervalNode {
     constructor(interval, value) {
-        this.interval = [...interval].sort(); // [low, high]
-        this.low = this.interval[0];
-        this.high = this.interval[1];
-        this.max = interval[1];
+        let [low, high] = interval;
+        if (high < low) [high,low] = interval;
+        this.interval = [low,high]
+        this.low = low;
+        this.high = high;
+        this.max = high;
         this.left = null;
         this.right = null;
         this.value = value;
