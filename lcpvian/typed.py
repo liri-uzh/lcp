@@ -160,6 +160,7 @@ class QueryArgs(BaseArgs):
 
 class DocIDArgs(BaseArgs):
     corpus_id: int
+    kind: str
 
 
 class SentJob(BaseArgs, total=False):

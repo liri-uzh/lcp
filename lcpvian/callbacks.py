@@ -87,21 +87,11 @@ def _document_ids(
     job_kwargs: dict = cast(dict, job.kwargs)
     user = cast(str, kwargs.get("user", job_kwargs["user"]))
     room = cast(str | None, kwargs.get("room", job_kwargs["room"]))
+    kind = cast(str, kwargs.get("kind", job_kwargs.get("kind", "audio")))
     if not room:
         return None
     msg_id = str(uuid4())
-    formatted = {
-        str(idx): {
-            "name": name,
-            "media": media,
-            "frame_range": (
-                [frame_range.lower, frame_range.upper] if frame_range else [0, 0]
-            ),
-        }
-        for idx, name, media, frame_range in cast(
-            list[tuple[int, str, dict, Any]], result
-        )
-    }
+    formatted = {str(idx): info for idx, info in cast(list[tuple[int, dict]], result)}
     action = "document_ids"
     jso = {
         "document_ids": formatted,
@@ -111,6 +101,7 @@ def _document_ids(
         "room": room,
         "job": job.id,
         "corpus_id": job_kwargs["corpus_id"],
+        "kind": kind,
     }
     return _publish_msg(connection, jso, msg_id)
 

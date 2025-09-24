@@ -151,7 +151,7 @@ export const useCorpusStore = defineStore("corpusData", {
       });
     },
     fetchImageAnnotations(data) {
-      if (!(data.ids instanceof Array) || data.ids.length==0) return;
+      if (!(data.ids instanceof Array) && !(data.xy_box instanceof Array)) return;
       httpApi.post("/image_annotations", data).then((response) => {
         return response.data;
       });

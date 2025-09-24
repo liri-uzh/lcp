@@ -64,9 +64,13 @@ async def image_annotations(request: web.Request) -> web.Response:
     )
     corpus = request_data["corpus"]
     layer = request_data["layer"]
-    ids = request_data["ids"]
+    ids = request_data.get("ids", [])
+    xy_box = request_data.get("xy_box", [])
     assert all(isinstance(id, int) for id in ids), ValueError(
         "All the IDs should be integers in an image annotation request"
+    )
+    assert all(isinstance(xy, int) for xy in xy_box), ValueError(
+        "All the values of xy_box must be integers in an image annotation request"
     )
 
     room: str | None = request_data.get("room")
@@ -87,7 +91,7 @@ async def image_annotations(request: web.Request) -> web.Response:
         f"Could not find a layer named {layer} with an image attribute in this corpus."
     )
     job = request.app["query_service"].image_annotations(
-        corpus_conf, layer, ids, user, room
+        corpus_conf, layer, ids, xy_box, user, room
     )
     info: dict[str, str] = {"status": "started", "job": job.id}
     return web.json_response(info)
@@ -109,6 +113,7 @@ async def document_ids(request: web.Request) -> web.Response:
     corpus_id = str(request.match_info["corpus_id"])
     config: Config = request.app["config"]
     schema = config[corpus_id]["schema_path"]
+    kind: str = request_data.get("kind", "audio")
 
     if not authenticator.check_corpus_allowed(
         corpus_id,
@@ -119,7 +124,7 @@ async def document_ids(request: web.Request) -> web.Response:
 
     if "doc_ids" not in config[corpus_id]:
         job = request.app["query_service"].document_ids(
-            schema, int(corpus_id), user, room, config[corpus_id]
+            schema, int(corpus_id), user, room, config[corpus_id], kind=kind
         )
         info: dict[str, str] = {"status": "started", "job": job.id}
         return web.json_response(info)
@@ -135,6 +140,7 @@ async def document_ids(request: web.Request) -> web.Response:
         "room": room,
         "job": job_id,
         "corpus_id": int(corpus_id),
+        "kind": kind,
     }
     await push_msg(
         request.app["websockets"],

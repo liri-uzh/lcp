@@ -58,13 +58,11 @@ from .typed import (
     JSONObject,
 )
 from .utils import (
-    _default_tracks,
     _format_config_query,
     _set_config,
     get_aligned_annotations,
     hasher,
     literal_sql,
-    range_to_array,
     sql_str,
 )
 from .abstract_query.utils import _get_table, _get_mapping
@@ -97,19 +95,33 @@ class QueryService:
         room: str | None,
         config: dict,
         queue: str = "internal",
+        kind: str = "audio",
     ) -> Job:
         """
-        Fetch document id: name data from DB.
-
-        The fetch from cache should not be needed, as on subsequent jobs
-        we can get the data from app["config"]
+        Fetch document id + info from DB.
         """
         doc_layer = config.get("document", "document").lower()
-        query = f"SELECT {doc_layer}_id, name, media, frame_range FROM {schema}.{doc_layer};"
+        # info: name -> column
+        info: dict[str, str] = {
+            "name": "name",
+            "media": "media",
+            "frame_range": "frame_range",
+        }
+        if kind == "image":
+            info = {"xy_box": "xy_box"}
+        jsonb_info = (
+            "jsonb_build_object("
+            + ",".join(literal_sql(k) + "," + sql_str(v) for k, v in info.items())
+            + ")"
+        )
+        query = f"SELECT {doc_layer}_id, {jsonb_info} FROM " + sql_str(
+            "{}.{}", schema, doc_layer
+        )
         kwargs: DocIDArgs = {
             "user": user,
             "room": room,
             "corpus_id": corpus_id,
+            "kind": kind,
         }
         hashed = str(hasher((query, corpus_id)))
         job: Job
@@ -214,6 +226,7 @@ class QueryService:
         config: CorpusConfig,
         layer: str,
         ids: list[int],
+        xy_box: list[int],
         user: str,
         room: str | None,
         queue: str = "internal",
@@ -222,15 +235,21 @@ class QueryService:
         Fetch annotation related to an image layer from DB/cache
         """
         schema = config["schema_path"]
-        from_cte = (
-            sql_str(
-                "SELECT d.xy_box FROM {}.{} d WHERE d.{}",
+        from_cte = ""
+        if ids:
+            from_cte = sql_str(
+                "SELECT d.xy_box FROM {}.{} d WHERE ",
                 schema,
                 layer.lower(),
-                f"{layer.lower()}_id",
+            ) + (
+                sql_str("d.{}", layer.lower() + "_id")
+                + f" IN ({','.join(str(id) for id in ids)})"
             )
-            + f" IN ({','.join(str(id) for id in ids)})"
-        )
+        elif xy_box:
+            formed_box = literal_sql(
+                f"({xy_box[0]},{xy_box[1]}),({xy_box[2]},{xy_box[3]})"
+            )
+            from_cte = f"SELECT {formed_box}::box AS xy_box"
 
         exclude: dict[str, Any] = {}
         tok = config["token"]

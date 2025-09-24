@@ -1,11 +1,35 @@
 <template
 >
+  <div class="container-fuild">
+    <div class="row" v-if="corpus">
+      <div class="col-12 col-md-3">
+        <div class="mb-3 mt-3">
+          <!-- <label class="form-label">Document</label> -->
+          <multiselect
+            v-model="currentDocumentSelected"
+            :options="documentOptions"
+            :multiple="false"
+            label="name"
+            :placeholder="$t('common-select-document')"
+            track-by="value"
+          ></multiselect>
+        </div>
+      </div>
+      <div class="col-12 col-md-4">
+        <div class="mb-3 mt-3 text-center text-md-start">
+          <button type="button" class="btn btn-primary" @click="$emit('switchToQueryTab')">{{ $t('common-query-corpus') }}</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div
     id="viewer-container"
     ref="viewerContainer"
     @pointermove="onPointerMove"
     @pointerup="onPointerStop"
     @pointercancel="onPointerStop"
+    v-if="corpus && imageLayer && layerId"
   >
     <div id="prev-image" @click="updateImageId(layerId - 1)"> &lt; </div>
     <div id="next-image" @click="updateImageId(layerId + 1)"> &gt; </div>
@@ -13,7 +37,7 @@
       <div id="rotate-image-left" @click="rotateBy(-1)"><FontAwesomeIcon :icon="['fas', 'rotate-left']" /></div>
       <div id="rotate-image-right" @click="rotateBy(1)"><FontAwesomeIcon :icon="['fas', 'rotate-right']" /></div>
     </div>
-    <span>{{ image.layer }} #{{ layerId }}</span>
+    <span>{{ imageLayer }} #{{ layerId }}</span>
     <div
       ref="imageContainer"
       class="image-container"
@@ -86,6 +110,11 @@
 </template>
 
 <script>
+import { mapState } from "pinia";
+
+import { useCorpusStore } from "@/stores/corpusStore";
+import { useUserStore } from "@/stores/userStore";
+
 import PlainTokens from "@/components/results/PlainToken.vue";
 
 import Utils from "@/utils";
@@ -111,16 +140,18 @@ export default {
       src: this.image.src,
       dragStart: null,
       currentToken: null,
+      currentDocumentSelected: null,
+      documentOptions: [],
     }
   },
   props: [
     "image",
-    "columnHeaders",
     "corpus",
     "meta",
     "sentences",
+    "documentIds"
   ],
-  emits: ["getImageAnnotations"],
+  emits: ["getImageAnnotations", "switchToQueryTab"],
   methods: {
     filterAttributes(layer, attributes) {
       const ret = {};
@@ -147,6 +178,16 @@ export default {
       this.offsetX = [0,270].includes(this.rotate) ? 0 : (this.rotate == 90 ? ibcr.height : ibcr.width) / this.zoom;
       this.offsetY = this.rotate < 180 ? 0 : (this.rotate == 180 ? ibcr.height : ibcr.width) / this.zoom;
       this.zoom = (vbcr[dim] * 0.45) / original;
+      // TODO: update currentdocument
+      // if (layer == this.corpus.document) {
+      //   const doc_id = overlaps[0]._id;
+      //   if (doc_id == this.currentDocumentSelected.value.id)
+      //     continue;
+      //   this.currentDocumentSelected = {
+      //     name: this.corpus.document + " " + doc_id,
+      //     value: {id: doc_id, xy_box: overlaps[0].xy_box}
+      //   }
+      // }
     },
     rotateBy(by) {
       this.rotate = (360 + this.rotate + by * 90) % 360;
@@ -176,15 +217,15 @@ export default {
       this.zoom = Math.max(0.2, Math.min(2.0, this.zoom - e.deltaY/500));
     },
     getFilename() {
-      const img = this.meta.layer[this.image.layer].byId[this.layerId];
+      const img = this.meta.layer[this.imageLayer].byId[this.layerId];
       if (!img) return "";
-      const attrs = this.corpus.layer[this.image.layer].attributes;
+      const attrs = this.corpus.layer[this.imageLayer].attributes;
       const image_col = Object.entries(attrs).find(kv=>kv[1].type == "image")[0];
       return img[image_col];
     },
     updateImageContent() {
       const id = this.layerId;
-      const img = this.meta.layer[this.image.layer].byId[id];
+      const img = this.meta.layer[this.imageLayer].byId[id];
       // automatically resize and reposition image here
       setTimeout(()=>this.adjustImage(), 50);
       if (!img) return;
@@ -197,13 +238,30 @@ export default {
       if (!this.image) return;
       this.src = "";
       this.layerId = id;
-      this.$emit("getImageAnnotations", this.image.layer, id);
+      this.$emit("getImageAnnotations", this.imageLayer, id);
       this.updateImageContent();
+    },
+    loadDocuments() {
+      useCorpusStore().fetchDocuments({
+        room: this.roomId,
+        user: this.userData.user.id,
+        corpora_id: this.corpus.meta.id,
+        kind: "image"
+      });
     }
   },
   computed: {
+    ...mapState(useUserStore, ["userData", "roomId"]),
+    imageLayer() {
+      return (Object.entries(this.corpus.layer).find((l)=>Object.values(l[1].attributes||{}).find(a=>a.type == "image")) || [null])[0];
+    },
+    columnHeaders() {
+      if (!this.corpus) return [];
+      const seg = this.corpus.segment;
+      return this.corpus.mapping.layer[seg].prepared.columnHeaders;
+    },
     nonSegments() {
-      const img = this.meta.layer[this.image.layer].byId[this.layerId];
+      const img = this.meta.layer[this.imageLayer].byId[this.layerId];
       if (!img) return {};
       const [x1,y1,x2,y2] = img.xy_box;
       const xs = [x1,x2], ys = [y1,y2];
@@ -217,7 +275,7 @@ export default {
       return ret;
     },
     allPrepared() {
-      const img = this.meta.layer[this.image.layer].byId[this.layerId];
+      const img = this.meta.layer[this.imageLayer].byId[this.layerId];
       if (!img) return [];
 
       const prepared = [];
@@ -244,7 +302,7 @@ export default {
       if (!this.layerId || this.layerId < 0) return highlights;
 
       const id = this.layerId;
-      const img = this.meta.layer[this.image.layer].byId[id];
+      const img = this.meta.layer[this.imageLayer].byId[id];
       if (!img) return highlights;
 
       let [x1,y1,x2,y2] = img.xy_box;
@@ -298,10 +356,31 @@ export default {
     },
     layerId() {
       setTimeout(()=>this.adjustImage(), 20);
+    },
+    documentIds() {
+      this.documentOptions = Object.entries(this.documentIds)
+        .map(([id,info])=>Object({
+          name: this.corpus.document + " " + id,
+          value: {id: id, xy_box: JSON.parse("["+info.xy_box.replace(/[()]+/g,"")+"]")}
+        }));
+      console.log(this.documentOptions, this.documentIds);
+      if (!this.currentDocumentSelected)
+        this.currentDocumentSelected = this.documentOptions[0];
+    },
+    meta() {
+      if (this.layerId) return;
+      if (!this.meta.layer) return;
+      const images = this.meta.layer[this.imageLayer];
+      if (!images || !images.byId || images.byId.length == 0) return;
+      this.layerId = parseInt(Object.keys(images.byId)[0]);
+    },
+    currentDocumentSelected() {
+      this.$emit("getImageAnnotations", this.imageLayer, this.currentDocumentSelected.value.xy_box);
     }
   },
   mounted() {
     this._keydownhandler = e=>{
+      if (this.$refs.viewerContainer.getBoundingClientRect.width == 0) return;
       if (e.key == "ArrowLeft") this.updateImageId(this.layerId - 1);
       else if (e.key == "ArrowRight") this.updateImageId(this.layerId + 1);
       else return;
@@ -309,7 +388,7 @@ export default {
       e.preventDefault();
     };
     document.addEventListener("keydown", this._keydownhandler);
-    this.adjustImage();
+    this.loadDocuments();
   },
   beforeUnmount() {
     document.removeEventListener("keydown", this._keydownhandler);
@@ -339,7 +418,9 @@ export default {
 }
 #viewer-container {
   width: 100%;
-  height: 100%;
+  max-height: 50vh;
+  /* height: 100%; */
+  position: relative;
 }
 .segment.highlight {
   border: solid 2px green;
@@ -367,10 +448,10 @@ export default {
 #annotations {
   position: absolute;
   right: 0;
-  top: 0;
+  top: 10em;
   max-width: calc(50% - 2em);
   margin: 2em;
-  height: calc(100% - 5em);
+  /* height: calc(100% - 5em); */
   display: flex;
   flex-direction: column;
   justify-content: center;

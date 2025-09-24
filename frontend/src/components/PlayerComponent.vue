@@ -847,7 +847,9 @@ export default {
         }
         else if (data["action"] === "document_ids") {
           this.documentDict = Object.fromEntries(Object.entries(data.document_ids).map(([id, props]) => [id, props.name]));
-          this.corpusData = Object.entries(data.document_ids).map(([id, props]) => [id, props.name, Object.values(props.media), props.frame_range]);
+          this.corpusData = Object.entries(data.document_ids).map(
+            ([id, props]) => [id, props.name, Object.values(props.media), JSON.parse(props.frame_range.replace(")","]"))]
+          );
 
           // Preselect first document
           if (!this.currentDocumentSelected) {

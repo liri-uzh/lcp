@@ -275,11 +275,25 @@
               </div>
               <div class="tab-pane fade" :class="{ active: activeMainTab === 'data', show: activeMainTab === 'data' }"
                 id="nav-data" role="tabpanel" aria-labelledby="nav-data-tab">
-                <PlayerComponent v-if="selectedCorpora && showExploreTab()" :key="selectedCorpora"
-                  :selectedCorpora="selectedCorpora" :selectedMediaForPlay="selectedMediaForPlay"
-                  :hoveredResult="hoveredResult" :dataType="corpusDataType(selectedCorpora.corpus)"
-                  @switchToQueryTab="setMainTab" />
-
+                <PlayerComponent
+                  v-if="showExploreTab()"
+                  :key="selectedCorpora"
+                  :selectedCorpora="selectedCorpora"
+                  :selectedMediaForPlay="selectedMediaForPlay"
+                  :hoveredResult="hoveredResult"
+                  :dataType="corpusDataType(selectedCorpora.corpus)"
+                  @switchToQueryTab="setMainTab"
+                />
+                <ImageViewer
+                  v-else-if="shouldImageViewer()"
+                  :image="image"
+                  :corpus="selectedCorpora.corpus"
+                  :meta="WSDataMeta"
+                  :sentences="WSDataSentences.result[-1] || {}"
+                  :documentIds="documentIds"
+                  @getImageAnnotations="getImageAnnotations"
+                  @switchToQueryTab="setMainTab"
+                />
                 <hr>
                 <div class="mt-5 row" v-if="querySubmitted">
                   <div v-if="loading" class="col-12 col-md-1">
@@ -720,7 +734,7 @@
       </div>
     </div>
 
-    <div class="modal fade" id="imageModal" tabindex="-1" aria-labelledby="imageModalLabel"
+    <!-- <div class="modal fade" id="imageModal" tabindex="-1" aria-labelledby="imageModalLabel"
       aria-hidden="true" ref="vuemodaldetails">
       <div class="modal-dialog modal-full">
         <div class="modal-content">
@@ -740,6 +754,7 @@
               :corpus="this.selectedCorpora.corpus"
               :meta="WSDataMeta"
               :sentences="WSDataSentences.result[-1] || {}"
+              :documentIds="documentIds"
               @getImageAnnotations="getImageAnnotations"
             />
           </div>
@@ -750,7 +765,7 @@
           </div>
         </div>
       </div>
-    </div>
+    </div> -->
 
 
     <div class="modal fade" id="DQDModal" tabindex="-1" aria-labelledby="DQDModalLabel"
@@ -954,7 +969,7 @@ export default {
       isQueryValidData: null,
       WSDataResults: "",
       WSDataMeta: {"layer": {}, "bySegment": {}},
-      WSDataSentences: {},
+      WSDataSentences: {result: {}},
       nResults: 200,
       activeResultIndex: 1,
       selectedLanguages: ["en"],
@@ -989,18 +1004,21 @@ export default {
       selectedQuery: null,
       userQueries: [],
 
-      activeMainTab: ['soundscript', 'videoscope'].includes(config.appType) ? "data" : "query",
+      activeMainTab: ['soundscript', 'videoscope'].includes(config.appType) || this.shouldImageViewer() ? "data" : "query",
       graphIndex: 0,
       appType: config.appType,
       querySubmitted: false,
 
-      image: null,
+      documentIds: {},
+
+      image: {},
       imageAnnotations: {}, // keep track of which images were fetched
       attemptImageUpdate: -1,
 
       modalIndexKey: 0,
       noCorpus: null,
       local: window.location.hostname == "localhost"
+
     };
   },
   components: {
@@ -1077,7 +1095,8 @@ export default {
       }
     },
     selectedCorpora() {
-      this.activeMainTab = ['soundscript', 'videoscope'].includes(config.appType) ? "data" : "query"
+      this.activeMainTab = ['soundscript', 'videoscope'].includes(config.appType) ? "data" : "query";
+      if (this.shouldImageViewer()) this.activeMainTab = "data";
       this.querySubmitted = false
       this.queryStatus = null
       this.checkAuthUser();
@@ -1121,7 +1140,7 @@ export default {
         this.querySatisfied = "";
         this.WSDataResults = {};
         this.WSDataMeta = {"layer": {}, "bySegment": {}};
-        this.WSDataSentences = {};
+        this.WSDataSentences = {result: {}};
         this.nameExport = "";
       }
     },
@@ -1191,20 +1210,34 @@ export default {
     // },
   },
   methods: {
-    getImageAnnotations(layer, id, window=1) {
+    shouldImageViewer() {
+      if (!this.selectedCorpora || !this.selectedCorpora.corpus) return false;
+      const ret = Object.values(this.selectedCorpora.corpus.layer)
+        .find(l=>Object.values(l.attributes)
+          .find(a=>a && a.type == "image")
+        );
+      console.log("should image viewer?", ret);
+      return ret;
+    },
+    getImageAnnotations(layer, id_or_box, window=1) {
       const ids = [];
-      for (let i = id-window; i <= id+window; i++) {
-        if (i < 0 || i in this.imageAnnotations) continue;
-        ids.push(i);
-      }
+      let xy_box = [];
+      if (id_or_box instanceof Array)
+        xy_box = id_or_box;
+      else
+        for (let i = id_or_box-window; i <= id_or_box+window; i++) {
+          if (i < 0 || i in this.imageAnnotations) continue;
+          ids.push(i);
+        }
       const data = {
         user: this.userData.user.id,
         room: this.roomId,
         corpus: this.selectedCorpora.corpus.meta.id,
         layer: layer,
-        ids: ids
+        ids: ids,
+        xy_box: xy_box
       };
-      if (ids.length)
+      if (ids.length || xy_box.length)
         useCorpusStore().fetchImageAnnotations(data);
     },
     showImage(image) {
@@ -1475,6 +1508,7 @@ export default {
 
         if (data["action"] == "image_annotations") {
           const meta = [], ids = [];
+          this.WSDataSentences.result[-1] = this.WSDataSentences.result[-1] || {"-1": {}};
           for (let [row] of data.annotations) {
             if (row[0] == "_prepared") {
               const [seg_id, seg_offset, seg_content] = row.slice(1,)
@@ -1552,7 +1586,8 @@ export default {
           };
           useCorpusStore().fetchExport(info);
         } else if (data["action"] === "document_ids") {
-          useWsStore().addMessageForPlayer(data)
+          useWsStore().addMessageForPlayer(data);
+          this.documentIds = data["document_ids"]
           return;
         } else if (data["action"] === "stopped") {
           if (data.request) {
@@ -1770,7 +1805,7 @@ export default {
         this.stop();
         if (cleanResults == true) {
           this.WSDataResults = {};
-          this.WSDataSentences = {};
+          this.WSDataSentences = {result: {}};
         }
       }
       let data = {
