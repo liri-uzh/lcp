@@ -2,20 +2,26 @@
 >
   <div
     id="viewer-container"
+    ref="viewerContainer"
     @pointermove="onPointerMove"
     @pointerup="onPointerStop"
     @pointercancel="onPointerStop"
   >
     <div id="prev-image" @click="updateImageId(layerId - 1)"> &lt; </div>
     <div id="next-image" @click="updateImageId(layerId + 1)"> &gt; </div>
+    <div class="rotate-nav">
+      <div id="rotate-image-left" @click="rotateBy(-1)"><FontAwesomeIcon :icon="['fas', 'rotate-left']" /></div>
+      <div id="rotate-image-right" @click="rotateBy(1)"><FontAwesomeIcon :icon="['fas', 'rotate-right']" /></div>
+    </div>
     <span>{{ image.layer }} #{{ layerId }}</span>
     <div
-      ref="image"
+      ref="imageContainer"
       class="image-container"
-      :style="`transform: scale(${zoom}) translate(${offsetX}px, ${offsetY}px);`"
+      :style="`transform: scale(${zoom}) translate(${offsetX}px, ${offsetY}px) rotate(${rotate}deg);`"
     >
       <img
         id="displayedImage"
+        ref="displayedImage"
         :src="src"
         draggable="false"
         @wheel="onWheel"
@@ -35,21 +41,45 @@
       >
       </div>
     </div>
-    <div id="imageAllPrepared" v-if="allPrepared instanceof Array && allPrepared.length > 0">
-      <div
-        class="segment"
-        v-for="(prep, n) in allPrepared"
-        :key="`image-prepared-${n}`"
-        :class="prep._highlight > 0 ? 'highlight' : ''"
-      >
-        <PlainTokens
-          :item="prep"
-          :columnHeaders="columnHeaders"
-          :currentToken="currentToken"
-          :resultIndex="0"
-          @showPopover="()=>null"
-          @closePopover="()=>null"
-        />
+    <div id="annotations">
+      <div class="non-segments">
+        <div
+          class="non-segment"
+          v-for="(annotations,layer) in nonSegments"
+          :key="`annotation-layer-${layer}`"
+        >
+          {{ layer }}
+          <div
+            class="annotation"
+            v-for="(annotation, n) in annotations"
+            :key="`annotation-layer-${layer}-annotation-${n}`"
+          >
+            <div
+              class="annotation-attribute"
+              v-for="(value,attribute) in filterAttributes(layer, annotation)"
+              :key="`annotation-layer-${layer}-annotation-${n}-attribute-${attribute}`"
+            >
+              {{ attribute }} : {{ value }}
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="segments" v-if="allPrepared instanceof Array && allPrepared.length > 0">
+        <div
+          class="segment"
+          v-for="(prep, n) in allPrepared"
+          :key="`image-prepared-${n}`"
+          :class="prep._highlight > 0 ? 'highlight' : ''"
+        >
+          <PlainTokens
+            :item="prep"
+            :columnHeaders="columnHeaders"
+            :currentToken="currentToken"
+            :resultIndex="0"
+            @showPopover="()=>null"
+            @closePopover="()=>null"
+          />
+        </div>
       </div>
     </div>
   </div>
@@ -73,6 +103,7 @@ export default {
   data() {
     return {
       zoom: 1,
+      rotate: 0,
       offsetX: 0,
       offsetY: 0,
       layerId: this.image.layerId,
@@ -91,6 +122,32 @@ export default {
   ],
   emits: ["getImageAnnotations"],
   methods: {
+    filterAttributes(layer, attributes) {
+      const ret = {};
+      const validAttributes = this.corpus.layer[layer].attributes;
+      for (let [attribute,value] of Object.entries(attributes)) {
+        if (!(attribute in validAttributes)) continue;
+        ret[attribute] = value;
+      }
+      return ret;
+    },
+    adjustImage() {
+      const viewerContainer = this.$refs.viewerContainer;
+      const img = this.$refs.displayedImage;
+      const vbcr = viewerContainer.getBoundingClientRect();
+      const ibcr = img.getBoundingClientRect();
+      if ([vbcr.width,vbcr.height,ibcr.width,ibcr.height].includes(0))
+        return setTimeout(()=>this.adjustImage());
+      const dim = this.rotate % 180 ? 'height' : 'width';
+      const original = ibcr[dim] / this.zoom;
+      this.offsetX = [0,270].includes(this.rotate) ? 0 : (this.rotate == 90 ? ibcr.height : ibcr.width) / this.zoom;
+      this.offsetY = this.rotate < 180 ? 0 : (this.rotate == 180 ? ibcr.height : ibcr.width) / this.zoom;
+      this.zoom = (vbcr[dim] * 0.45) / original;
+    },
+    rotateBy(by) {
+      this.rotate = (360 + this.rotate + by * 90) % 360;
+      this.adjustImage();
+    },
     onPointerDown(e) {
       const {clientX, clientY} = e;
       this.dragStart = {
@@ -114,20 +171,11 @@ export default {
       e.stopPropagation();
       this.zoom = Math.max(0.2, Math.min(2.0, this.zoom - e.deltaY/500));
     },
-    updageImageContent() {
+    updateImageContent() {
       const id = this.layerId;
       const img = this.meta.layer[this.image.layer].byId[id];
       // automatically resize and reposition image here
-      setTimeout(()=>{
-        const viewerContainer = document.querySelector("#viewer-container");
-        const img = document.querySelector("#displayedImage");
-        const viewerWidth = viewerContainer.getBoundingClientRect().width;
-        const imgWidth = img.getBoundingClientRect().width;
-        const originalWidth = imgWidth/this.zoom;
-        this.offsetX = 0;
-        this.offsetY = 0;
-        this.zoom = (viewerWidth * 0.45) / originalWidth;
-      }, 10);
+      setTimeout(()=>this.adjustImage(), 50);
       if (!img) return;
       const attrs = this.corpus.layer[this.image.layer].attributes;
       const image_col = Object.entries(attrs).find(kv=>kv[1].type == "image")[0];
@@ -136,14 +184,28 @@ export default {
       this.src = this.baseMediaUrl + filename;
     },
     updateImageId(id) {
-      if (id < 0) return;
+      if (id < 1) return;
       if (!this.image) return;
       this.layerId = id;
       this.$emit("getImageAnnotations", this.image.layer, id);
-      this.updageImageContent();
+      this.updateImageContent();
     }
   },
   computed: {
+    nonSegments() {
+      const img = this.meta.layer[this.image.layer].byId[this.layerId];
+      if (!img) return {};
+      const [x1,y1,x2,y2] = img.xy_box;
+      const xs = [x1,x2], ys = [y1,y2];
+      const ret = {};
+      for (let [layer, bys] of Object.entries(this.meta.layer)) {
+        const overlapXs = bys.byLocation.searchValue(xs);
+        const overlaps = overlapXs.map(o=>o.searchValue(ys)).filter(x=>x.length>0).flat();
+        if (overlaps.length==0) continue;
+        ret[layer] = [...(ret[layer] || []), ...overlaps];
+      }
+      return ret;
+    },
     allPrepared() {
       const img = this.meta.layer[this.image.layer].byId[this.layerId];
       if (!img) return [];
@@ -218,6 +280,13 @@ export default {
       return retval
     }
   },
+  watch: {
+    image() {
+      this.src = this.image.src;
+      this.layerId = this.image.layerId;
+      setTimeout(()=>this.adjustImage(), 20);
+    }
+  },
   mounted() {
     this._keydownhandler = e=>{
       if (e.key == "ArrowLeft") this.updateImageId(this.layerId - 1);
@@ -227,6 +296,7 @@ export default {
       e.preventDefault();
     };
     document.addEventListener("keydown", this._keydownhandler);
+    this.adjustImage();
   },
   beforeUnmount() {
     document.removeEventListener("keydown", this._keydownhandler);
@@ -235,6 +305,25 @@ export default {
 </script>
 
 <style>
+.non-segments {
+  margin-bottom: 2em;
+}
+.non-segment {
+  font-weight: bold;
+  margin-bottom: 1em;
+}
+.non-segment .annotation {
+  font-weight: normal;
+  margin-left: 1em;
+  height: 4em;
+  overflow-y: scroll;
+  resize: vertical;
+}
+.rotate-nav {
+  display: flex;
+  justify-content: space-between;
+  margin: 0em 2em;
+}
 #viewer-container {
   width: 100%;
   height: 100%;
@@ -262,13 +351,13 @@ export default {
   background-color: #9993;
   cursor: pointer;
 }
-#imageAllPrepared {
+#annotations {
   position: absolute;
   right: 0;
   top: 0;
   max-width: calc(50% - 2em);
-  margin-right: 2em;
-  height: 100%;
+  margin: 2em;
+  height: calc(100% - 5em);
   display: flex;
   flex-direction: column;
   justify-content: center;

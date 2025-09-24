@@ -466,7 +466,6 @@ export default {
       modalIndex: null,
       currentPage: 1,
       allowedMetaColums: allowedMetaColums,
-      groups: this.data ? this.getGroups(this.data[0], true) : [],
       randInt: Math.floor(Math.random() * 1000),
       playIndex: -1,
       image: null,
@@ -482,23 +481,6 @@ export default {
     FontAwesomeIcon
 },
   methods: {
-    // getGroups1(data) {
-    //   let groups = [];
-    //   let tmpGroup = [];
-    //   let tokenData = JSON.parse(JSON.stringify(data));
-    //   tokenData = tokenData.splice(1, tokenData.length)[0];
-    //   tokenData.forEach((tokenId, idx) => {
-    //     if (idx > 0 && Math.abs(tokenData[idx] - tokenData[idx - 1]) > 1) {
-    //       if (tmpGroup.length > 0) {
-    //         groups.push(tmpGroup.sort());
-    //       }
-    //       tmpGroup = [];
-    //     }
-    //     tmpGroup.push(tokenId);
-    //   });
-    //   groups.push(tmpGroup.sort());
-    //   return groups;
-    // },
     selectLine(index, detach) {
       if (detach && (this.showAudio(index) || this.showVideo(index)))
         this.detachSelectedLine = true;
@@ -506,26 +488,6 @@ export default {
         this.detachSelectedLine = false;
       this.selectedLine = index;
       this.selectedPage = this.currentPage;
-    },
-    getGroups(data, initial=false) {
-      let groups = [];
-      let tmpGroup = [];
-      let tokenData = JSON.parse(JSON.stringify(data));
-      tokenData = tokenData.splice(1, tokenData.length).sort();
-      if (initial === true) {
-        tokenData = tokenData[0]
-      }
-      tokenData.forEach((tokenId, idx) => {
-        if (idx > 0 && Math.abs(tokenData[idx] - tokenData[idx - 1]) > 1) {
-          if (tmpGroup.length > 0) {
-            groups.push(tmpGroup.sort());
-          }
-          tmpGroup = [];
-        }
-        tmpGroup.push(tokenId);
-      });
-      groups.push(tmpGroup.sort());
-      return groups;
     },
     showPopover(token, resultIndex, event) {
       this.popoverY = event.clientY + 10;
@@ -600,40 +562,18 @@ export default {
       if (meta===null)
         meta = this.currentMeta;
       if (!meta) return;
-      const boxes = [];
-      const colors = ["green","blue","orange","pink","brown"];
-      let image_offset = [];
-      let color = 1;
-      for (let [layer, props] of Object.entries(meta||{})) {
-        if (!props.xy_box)
-          continue;
-        let xy_box = props.xy_box;//.match(/\d+/g).map(v=>parseInt(v))
-        if (xy_box[0] > xy_box[2])
-          xy_box = [xy_box[2], xy_box[3], xy_box[0], xy_box[1]];
-        if (imageLayer && imageLayer == layer) {
-          image_offset = xy_box;
-          continue;
-        }
-        if (!this.corpora.corpus.layer[layer].anchoring.location)
-          continue;
-        boxes.push([...xy_box, colors[color % colors.length]]);
-        color++;
-      }
-      for (let n = 0; image_offset.length && n < boxes.length; n++) {
-        boxes[n][0] -= image_offset[0];
-        boxes[n][1] -= image_offset[1];
-        boxes[n][2] -= image_offset[0];
-        boxes[n][3] -= image_offset[1];
-      }
       const segId = this.data[resultIndex][0];
       const layerId = this.meta[segId][imageLayer]._id;
+      const dataForGroups = (this.data || []).find(r=>r[0]==segId);
+      let groups = [];
+      try {
+        groups = dataForGroups ? JSON.parse(JSON.stringify(dataForGroups[1])) : [];
+      } catch { null }
       this.image = {
         name: filename.replace(/\.[^.]+$/,""),
         src: this.baseMediaUrl + filename,
-        boxes: boxes,
         resultSegment: segId,
-        groups: this.data ? this.getGroups(this.data[0], true) : [],
-        offset: image_offset,
+        groups: groups,
         layer: imageLayer,
         layerId: layerId,
         columnHeaders: this.columnHeaders

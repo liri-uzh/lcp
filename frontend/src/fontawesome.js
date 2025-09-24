@@ -42,6 +42,7 @@ import {
   faPlus,
   faPowerOff,
   faRotateLeft,
+  faRotateRight,
   faTable,
   faThumbTack,
   faTrash,
@@ -99,6 +100,7 @@ library.add(faPlay);
 library.add(faPlus);
 library.add(faPowerOff);
 library.add(faRotateLeft);
+library.add(faRotateRight);
 library.add(faTable);
 library.add(faThumbTack);
 library.add(faTrash);

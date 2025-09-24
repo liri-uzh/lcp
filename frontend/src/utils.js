@@ -7,8 +7,9 @@ class TokenToDisplay {
       throw Error(`Invalid format for token ${JSON.stringify(tokenArray)}`);
     if (isNaN(Number(index)) || index<=0)
       throw Error(`Invalid index (${index}) for token ${JSON.stringify(tokenArray)}`);
-    if (!(groups instanceof Array) || groups.find(g=>!(g instanceof Array)))
+    if (!(groups instanceof Array))
       throw Error(`Invalid groups (${JSON.stringify(groups)}) for token ${JSON.stringify(tokenArray)}`);
+    groups = groups.map(g=>g instanceof Array ? g : [g]);
     columnHeaders.forEach( (header,i) => this[header] = tokenArray[i] );
     this.token = tokenArray;
     this.index = index;
