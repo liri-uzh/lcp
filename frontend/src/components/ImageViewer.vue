@@ -132,12 +132,16 @@ export default {
       return ret;
     },
     adjustImage() {
+      const filename = this.getFilename();
+      if (!filename)
+        return window.requestAnimationFrame(()=>this.adjustImage());
+      this.src = this.baseMediaUrl + filename;
       const viewerContainer = this.$refs.viewerContainer;
       const img = this.$refs.displayedImage;
       const vbcr = viewerContainer.getBoundingClientRect();
       const ibcr = img.getBoundingClientRect();
       if ([vbcr.width,vbcr.height,ibcr.width,ibcr.height].includes(0))
-        return setTimeout(()=>this.adjustImage());
+        return window.requestAnimationFrame(()=>this.adjustImage());
       const dim = this.rotate % 180 ? 'height' : 'width';
       const original = ibcr[dim] / this.zoom;
       this.offsetX = [0,270].includes(this.rotate) ? 0 : (this.rotate == 90 ? ibcr.height : ibcr.width) / this.zoom;
@@ -171,21 +175,27 @@ export default {
       e.stopPropagation();
       this.zoom = Math.max(0.2, Math.min(2.0, this.zoom - e.deltaY/500));
     },
+    getFilename() {
+      const img = this.meta.layer[this.image.layer].byId[this.layerId];
+      if (!img) return "";
+      const attrs = this.corpus.layer[this.image.layer].attributes;
+      const image_col = Object.entries(attrs).find(kv=>kv[1].type == "image")[0];
+      return img[image_col];
+    },
     updateImageContent() {
       const id = this.layerId;
       const img = this.meta.layer[this.image.layer].byId[id];
       // automatically resize and reposition image here
       setTimeout(()=>this.adjustImage(), 50);
       if (!img) return;
-      const attrs = this.corpus.layer[this.image.layer].attributes;
-      const image_col = Object.entries(attrs).find(kv=>kv[1].type == "image")[0];
-      const filename = img[image_col];
+      const filename = this.getFilename();
       this.name = filename.replace(/\.[^.]+$/,"");
       this.src = this.baseMediaUrl + filename;
     },
     updateImageId(id) {
       if (id < 1) return;
       if (!this.image) return;
+      this.src = "";
       this.layerId = id;
       this.$emit("getImageAnnotations", this.image.layer, id);
       this.updateImageContent();
@@ -284,6 +294,9 @@ export default {
     image() {
       this.src = this.image.src;
       this.layerId = this.image.layerId;
+      setTimeout(()=>this.adjustImage(), 20);
+    },
+    layerId() {
       setTimeout(()=>this.adjustImage(), 20);
     }
   },
