@@ -220,10 +220,10 @@
                       <button
                         type="button"
                         class="btn btn-primary me-2 mb-2"
-                        v-if="queryStatus in {'satisfied':1,'finished':1} && !loading && userData.user.anon != true"
+                        v-if="queryStatus && userData.user.anon != true && !noResults"
                         data-bs-toggle="modal"
                         data-bs-target="#exportModal"
-                        @click="setExportFilename('xml')"
+                        @click="setExportFilename()"
                       >
                         <FontAwesomeIcon :icon="['fas', 'file-export']" />
                         {{ $t('common-export') }}
@@ -396,10 +396,10 @@
                   <div class="row">
                     <div class="col-12" v-if="WSDataResults && WSDataResults.result">
                       <div
-                        v-if="queryStatus in {'satisfied':1,'finished':1} && !loading && userData.user.anon != true && !noResults"
+                        v-if="queryStatus && userData.user.anon != true && !noResults"
                         data-bs-toggle="modal"
                         data-bs-target="#exportModal"
-                        @click="setExportFilename('xml')"
+                        @click="setExportFilename()"
                         class="export btn btn-primary me-1 mb-1"
                         :title="$t('common-export')"
                       >
@@ -550,7 +550,7 @@
                     role="tab"
                     aria-controls="nav-exportxml"
                     aria-selected="false"
-                    @click="(exportTab = 'xml') && setExportFilename('xml')"
+                    @click="(exportTab = 'xml') && setExportFilename()"
                   >
                     XML
                   </button>
@@ -563,7 +563,7 @@
                     role="tab"
                     aria-controls="nav-exportswissdox"
                     aria-selected="false"
-                    @click="(exportTab = 'swissdox') && setExportFilename('swissdox')"
+                    @click="(exportTab = 'swissdox') && setExportFilename()"
                     v-if="selectedCorpora && selectedCorpora.corpus && selectedCorpora.corpus.shortname.match(/swissdox/i)"
                   >
                     SwissdoxViz
@@ -592,7 +592,7 @@
                     id="nameExport"
                     name="nameExport"
                     v-model="nameExport"
-                  />
+                  />.{{ exportTab }}
                   <button
                     type="button"
                     @click="exportResults('xml', /*download=*/true, /*preview=*/true)"
@@ -1275,11 +1275,9 @@ export default {
       if (!corpus) return "";
       return corpus.corpus.meta.sample_query || corpus.corpus.sample_query || ""
     },
-    setExportFilename(format) {
+    setExportFilename() {
       if (!this.nameExport)
-        this.nameExport = `${this.selectedCorpora.corpus.shortname} ${new Date().toLocaleString()}.${format}`;
-      else
-        this.nameExport = this.nameExport.replace(/\.[^.]+$/,"."+format);
+        this.nameExport = `${this.selectedCorpora.corpus.shortname} ${new Date().toLocaleString()}`;
       this.nameExport = this.nameExport.replace(/\/+/g,"-").replace(/,+/g,"");
     },
     setMainTab() {
@@ -1764,6 +1762,7 @@ export default {
       svg.style.height = `${g.getBoundingClientRect().height}px`;
     },
     async exportResults(format, download = false, preview = false) {
+      if (!(this.status in {satisfied:1, finished:1})) this.stop();
       const to_export = {};
       to_export.format = {
         'plain': 'dump',
@@ -1772,8 +1771,8 @@ export default {
       }[format];
       to_export.preview = preview;
       to_export.download = download;
-      this.setExportFilename(format);
-      to_export.filename = this.nameExport;
+      this.setExportFilename();
+      to_export.filename = this.nameExport + "." + format;
       let full = !preview;
       let resume = full; // If not a full query, no need to resume the query: we already have the necessary results
       if (format == 'swissdox') {
