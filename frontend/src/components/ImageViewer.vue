@@ -1,5 +1,4 @@
-<template
->
+<template>
   <div class="container-fuild">
     <div class="row" v-if="corpus">
       <div class="col-12 col-md-3">
@@ -23,6 +22,7 @@
     </div>
   </div>
 
+  <LoadingView class="image-loading" override="1" v-if="!currentImage"/>
   <div
     id="viewer-container"
     ref="viewerContainer"
@@ -37,13 +37,12 @@
       <div id="rotate-image-left" @click="rotateBy(-1)"><FontAwesomeIcon :icon="['fas', 'rotate-left']" /></div>
       <div id="rotate-image-right" @click="rotateBy(1)"><FontAwesomeIcon :icon="['fas', 'rotate-right']" /></div>
     </div>
-    <span>{{ imageLayer }} #{{ layerId }}</span>
+    <span>{{ imageLayer }} #{{ layerId }} ({{ filename.replace(/\.[^.]+$/,"") }})</span>
     <div
       ref="imageContainer"
       class="image-container"
       :style="`transform: scale(${zoom}) translate(${offsetX}px, ${offsetY}px) rotate(${rotate}deg);`"
     >
-      <LoadingView v-if="!src || !src.trim()" class="image-loading" />
       <img
         id="displayedImage"
         ref="displayedImage"
@@ -140,7 +139,6 @@ export default {
       offsetY: 0,
       layerId: this.image.layerId,
       name: this.image.name,
-      src: this.image.src,
       dragStart: null,
       currentToken: null,
       currentDocumentSelected: null,
@@ -156,6 +154,12 @@ export default {
   ],
   emits: ["getImageAnnotations", "switchToQueryTab"],
   methods: {
+    overlaps(itv, xy_box) {
+      const [x1,y1,x2,y2] = xy_box;
+      const overlapXs = itv.searchValue([x1,x2]);
+      const overlaps = overlapXs.map(o=>o.searchValue([y1,y2])).flat();
+      return overlaps;
+    },
     filterAttributes(layer, attributes) {
       const ret = {};
       const validAttributes = this.corpus.layer[layer].attributes;
@@ -168,11 +172,9 @@ export default {
     adjustImage() {
       const viewerContainer = this.$refs.viewerContainer;
       const img = this.$refs.displayedImage;
-      const filename = this.getFilename();
+      const filename = this.filename;
       if (!filename || !viewerContainer || !img)
         return window.requestAnimationFrame(()=>this.adjustImage());
-      if (!this.src)
-        this.src = this.baseMediaUrl + filename;
       const vbcr = viewerContainer.getBoundingClientRect();
       const ibcr = img.getBoundingClientRect();
       if ([vbcr.width,vbcr.height,ibcr.width,ibcr.height].includes(0))
@@ -210,17 +212,8 @@ export default {
       e.stopPropagation();
       this.zoom = Math.max(0.2, Math.min(2.0, this.zoom - e.deltaY/500));
     },
-    getFilename() {
-      const img = this.currentImage;
-      if (!img) return "";
-      const attrs = this.corpus.layer[this.imageLayer].attributes;
-      const image_col = Object.entries(attrs).find(kv=>kv[1].type == "image")[0];
-      return img[image_col];
-    },
     updateImageId(id) {
       if (id < 1) return;
-      if (!this.image) return;
-      this.src = "";
       this.layerId = id;
       this.$emit("getImageAnnotations", this.imageLayer, id);
     },
@@ -231,6 +224,20 @@ export default {
         corpora_id: this.corpus.meta.id,
         kind: "image"
       });
+    },
+    shouldFetchForDocument() {
+      // returns true if one needs to fetch annotations
+      if (!this.currentDocumentSelected) return;
+      const box = this.currentDocumentSelected.value.xy_box;
+      let foundImages = [];
+      if (this.meta.layer && this.meta.layer[this.imageLayer])
+        foundImages = this.overlaps(this.meta.layer[this.imageLayer].byLocation, box)
+      if (foundImages.length>0) {
+        if (this.currentImage && foundImages.find(i=>i._id == this.layerId)) return;
+        this.layerId = foundImages[0]._id;
+        return;
+      }
+      return true;
     }
   },
   computed: {
@@ -245,6 +252,24 @@ export default {
       if (!img) return;
       return img;
     },
+    imageAttr() {
+      if (!this.imageLayer) return "";
+      if (!this.corpus || !this.corpus.layer || !this.corpus.layer[this.imageLayer]) return "";
+      const attrs = this.corpus.layer[this.imageLayer].attributes || {};
+      return (Object.entries(attrs).find(kv=>kv[1].type == "image") || [""])[0];
+    },
+    filename() {
+      const img = this.currentImage;
+      if (!img) return "";
+      return img[this.imageAttr] || "";
+    },
+    src() {
+      // Update current document
+      const filename = this.filename;
+      if (!filename) return "";
+      this.adjustImage();
+      return this.baseMediaUrl + filename;
+    },
     imageLayer() {
       return (Object.entries(this.corpus.layer).find((l)=>Object.values(l[1].attributes||{}).find(a=>a.type == "image")) || [null])[0];
     },
@@ -256,13 +281,9 @@ export default {
     nonSegments() {
       const img = this.currentImage;
       if (!img) return {};
-      const [x1,y1,x2,y2] = img.xy_box;
-      const xs = [x1,x2], ys = [y1,y2];
       const ret = {};
       for (let [layer, bys] of Object.entries(this.meta.layer)) {
-        const overlapXs = bys.byLocation.searchValue(xs);
-        const overlaps = overlapXs.map(o=>o.searchValue(ys)).filter(x=>x.length>0).flat();
-        if (overlaps.length==0) continue;
+        const overlaps = this.overlaps(bys.byLocation, img.xy_box);
         ret[layer] = [...(ret[layer] || []), ...overlaps];
       }
       return ret;
@@ -302,22 +323,20 @@ export default {
       const image_offset = [sortedXs[0], sortedYs[0], sortedXs[1], sortedYs[1]];
 
       for (let [layer, bys] of Object.entries(this.meta.layer)) { // eslint-disable-line no-unused-vars
-        const overlapXs = bys.byLocation.searchValue(sortedXs);
-        for (let overlaps of overlapXs) {
-          for (let o of overlaps.searchValue(sortedYs)) {
-            if (!o || !o.xy_box) continue;
-            [x1,x2,y1,y2] = [
-              ...[o.xy_box[0], o.xy_box[2]].sort(n=>parseInt(n)),
-              ...[o.xy_box[1], o.xy_box[3]].sort(n=>parseInt(n))
-            ];
-            highlights.push([
-              x1-image_offset[0],
-              y1-image_offset[1],
-              x2-image_offset[0],
-              y2-image_offset[1],
-              colors[highlights.length % colors.length]
-            ]);
-          }
+        const overlaps = this.overlaps(bys.byLocation, img.xy_box);
+        for (let o of overlaps) {
+          if (!o || !o.xy_box) continue;
+          [x1,x2,y1,y2] = [
+            ...[o.xy_box[0], o.xy_box[2]].sort(n=>parseInt(n)),
+            ...[o.xy_box[1], o.xy_box[3]].sort(n=>parseInt(n))
+          ];
+          highlights.push([
+            x1-image_offset[0],
+            y1-image_offset[1],
+            x2-image_offset[0],
+            y2-image_offset[1],
+            colors[highlights.length % colors.length]
+          ]);
         }
       }
 
@@ -342,30 +361,33 @@ export default {
   },
   watch: {
     image() {
-      this.src = this.image.src;
       this.layerId = this.image.layerId;
-      setTimeout(()=>this.adjustImage(), 20);
-    },
-    src() {
-      // Update current document
-      const img = this.currentImage;
-      if (!img) return;
-      const [x1,y1,x2,y2] = img.xy_box;
-      const docs = this.meta.layer[this.corpus.document].byLocation.searchValue([x1,x2]).map(o=>o.searchValue([y1,y2])).flat();
-      if (docs.length && (!this.currentDocumentSelected || docs[0]._id != this.currentDocumentSelected.value.id))
-        this.currentDocumentSelected = {
-          name: this.corpus.document + " " + docs[0]._id,
-          value: {id: docs[0].id, xy_box: docs[0].xy_box}
-        };
+      this.adjustImage();
     },
     layerId() {
       // automatically resize and reposition image here
-      setTimeout(()=>this.adjustImage(), 50);
+      this.adjustImage();
       const img = this.currentImage;
       if (!img) return;
-      const filename = this.getFilename();
+      const filename = this.filename;
+      if (!filename) return;
       this.name = filename.replace(/\.[^.]+$/,"");
-      this.src = this.baseMediaUrl + filename;
+    },
+    currentImage() {
+      if (!this.currentImage) return;
+      setTimeout(()=>this.adjustImage(), 50);
+      if (!this.meta || !this.meta.layer || !this.meta.layer[this.corpus.document]) return;
+      const docs = this.overlaps(this.meta.layer[this.corpus.document].byLocation, this.currentImage.xy_box);
+      if (docs.length==0) return;
+      const doc = docs[0];
+      if (this.currentDocumentSelected && doc._id == this.currentDocumentSelected.value.id) return;
+      this.currentDocumentSelected = {
+        name: this.corpus.document + " " + doc._id,
+        value: {
+          id: doc._id,
+          xy_box: doc.xy_box
+        }
+      };
     },
     documentIds() {
       this.documentOptions = Object.entries(this.documentIds)
@@ -373,34 +395,19 @@ export default {
           name: this.corpus.document + " " + id,
           value: {id: id, xy_box: JSON.parse("["+info.xy_box.replace(/[()]+/g,"")+"]")}
         }));
-      console.log(this.documentOptions, this.documentIds);
       if (!this.currentDocumentSelected)
         this.currentDocumentSelected = this.documentOptions[0];
     },
     meta() {
-      if (this.layerId) return;
+      if (this.currentImage) return;
       if (!this.meta.layer) return;
-      const images = this.meta.layer[this.imageLayer];
-      if (!images || !images.byId || images.byId.length == 0) return;
-      this.layerId = parseInt(Object.keys(images.byId)[0]);
+      if (this.shouldFetchForDocument()) return;
     },
     currentDocumentSelected() {
       if (!this.currentDocumentSelected) return;
-      const box = this.currentDocumentSelected.value.xy_box;
-      const [x1,y1,x2,y2] = box;
-      let foundImages = [];
-      console.log(this.meta.layer);
-      if (this.meta.layer && this.meta.layer[this.imageLayer])
-        foundImages = this.meta.layer[this.imageLayer].byLocation
-          .searchValue([x1,x2]).map( o=>o.searchValue([y1,y2]) ).flat();
-      console.log("box, foundImages?", box, foundImages);
-      if (foundImages.length>0) {
-        if (foundImages.find(i=>i._id == this.layerId)) return;
-        this.layerId = foundImages[0]._id;
-      }
-      else {
-        this.src = "";
-        this.$emit("getImageAnnotations", this.imageLayer, box);
+      if (this.shouldFetchForDocument()) {
+        this.layerId = null;
+        this.$emit("getImageAnnotations", this.imageLayer, this.currentDocumentSelected.value.xy_box);
       }
     }
   },
@@ -425,6 +432,9 @@ export default {
 
 <style>
 .image-loading {
+  position: absolute;
+  top: 0;
+  left: 0;
   width: 5em;
   height: 5em;
 }
@@ -479,7 +489,7 @@ export default {
 #annotations {
   position: absolute;
   right: 0;
-  top: 10em;
+  top: 0;
   max-width: calc(50% - 2em);
   margin: 2em;
   /* height: calc(100% - 5em); */

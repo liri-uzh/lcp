@@ -1224,7 +1224,7 @@ export default {
         xy_box = id_or_box;
       else
         for (let i = id_or_box-window; i <= id_or_box+window; i++) {
-          if (i < 0 || i in this.imageAnnotations) continue;
+          if (i <= 0 || i in this.imageAnnotations) continue;
           ids.push(i);
         }
       const data = {
@@ -1447,6 +1447,7 @@ export default {
           this.insertRange(byAnchor, range, info);
         }
       }
+      console.log("updating WSDataMeta");
       this.WSDataMeta = {...this.WSDataMeta};
     },
     onSocketMessage(data) {
