@@ -18,7 +18,6 @@
     "build:catchphrase": "env APP_TYPE=catchphrase vue-cli-service build"
   },
   "dependencies": {
-    "@flatten-js/interval-tree": "^1.1.3",
     "@fluent/bundle": "^0.18.0",
     "@fortawesome/fontawesome-svg-core": "^6.3.0",
     "@fortawesome/free-solid-svg-icons": "^6.3.0",
