@@ -1,13 +1,7 @@
-from collections import defaultdict
 from typing import Any, Sequence, cast
 
 from .typed import JSON, LabelLayer, QueryPart, JSONObject
-from .utils import (
-    Config,
-    SUFFIXES,
-    _get_underlang,
-    arg_sort_key,
-)
+from .utils import Config, SUFFIXES, _get_underlang, arg_sort_key, literal_sql
 
 from typing import Self
 
@@ -186,6 +180,12 @@ class Prefilter:
         _cols = cast(JSONObject, layers[self.config["segment"]])
         return self.lang in cast(JSONObject, _cols.get("partitions", {}))
 
+    def _tsquery(self, query: str) -> str:
+        formed_query = literal_sql(query)
+        if formed_query.startswith("concat("):
+            formed_query += "::tsquery"
+        return formed_query
+
     def _stringify(self, prefilters: list[str]) -> str:
         """
         Build the actual SQL query part
@@ -212,10 +212,11 @@ class Prefilter:
                         and stripped_c not in conjuncts
                     ):
                         conjuncts.append(stripped_c)
-        stringified = f"vec.vector @@ '{' <1> '.join(prefilters) }'"
+        formed_prefilters = self._tsquery(" <1> ".join(prefilters))
+        stringified = f"vec.vector @@  {formed_prefilters}"
         if len(conjuncts) > 1:
             # Including the single terms aside their sequence makes queries much faster
-            cond_conjuncts = [f"vec.vector @@ '{c}'" for c in conjuncts]
+            cond_conjuncts = [f"vec.vector @@ {self._tsquery(c)}" for c in conjuncts]
             stringified = " AND ".join(cond_conjuncts) + " AND " + stringified
         return stringified
 
