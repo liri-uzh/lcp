@@ -2,7 +2,7 @@
 Endpoints for multimodal document/document ids fetching
 """
 
-from typing import Sequence, Any
+from typing import Sequence, Any, cast
 
 from aiohttp import web
 
@@ -64,8 +64,8 @@ async def image_annotations(request: web.Request) -> web.Response:
     )
     corpus = request_data["corpus"]
     layer = request_data["layer"]
-    ids = request_data.get("ids", [])
-    xy_box = request_data.get("xy_box", [])
+    ids: list = cast(list, request_data.get("ids", []))
+    xy_box: list = cast(list, request_data.get("xy_box", []))
     assert all(isinstance(id, int) for id in ids), ValueError(
         "All the IDs should be integers in an image annotation request"
     )
