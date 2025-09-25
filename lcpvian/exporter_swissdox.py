@@ -172,7 +172,7 @@ class Exporter(ExporterXML):
         res = await _db_query(
             query, {"article_ids": [aid for aid in article_ids]}, is_main=True
         )
-        print("export complete!")
+        print("articles retrieved! now creating the duckdb file")
         dest_folder = os.path.join(RESULTS_SWISSDOX, "exports")
         if not os.path.exists(dest_folder):
             os.makedirs(dest_folder)
@@ -192,8 +192,10 @@ class Exporter(ExporterXML):
             else:
                 # The subsequent rows contain actual data
                 df = pandas.DataFrame.from_dict(
-                    {cname: cvalue if cvalue else [] for cname, cvalue in data.items()},
-                    columns=tables[table_name],
+                    {
+                        cname: data[cname] if data.get(cname) else []
+                        for cname in tables[table_name]
+                    },
                 )
                 con.execute(f"INSERT INTO {table_name} SELECT * FROM df;")
         user = self._request.user
