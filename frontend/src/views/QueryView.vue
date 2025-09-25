@@ -1212,12 +1212,10 @@ export default {
   methods: {
     shouldImageViewer() {
       if (!this.selectedCorpora || !this.selectedCorpora.corpus) return false;
-      const ret = Object.values(this.selectedCorpora.corpus.layer)
-        .find(l=>Object.values(l.attributes)
+      return Object.values(this.selectedCorpora.corpus.layer || {})
+        .find(l=>Object.values(l.attributes || {})
           .find(a=>a && a.type == "image")
         );
-      console.log("should image viewer?", ret);
-      return ret;
     },
     getImageAnnotations(layer, id_or_box, window=1) {
       const ids = [];

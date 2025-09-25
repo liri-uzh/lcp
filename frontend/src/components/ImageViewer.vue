@@ -43,6 +43,7 @@
       class="image-container"
       :style="`transform: scale(${zoom}) translate(${offsetX}px, ${offsetY}px) rotate(${rotate}deg);`"
     >
+      <LoadingView v-if="!src || !src.trim()" class="image-loading" />
       <img
         id="displayedImage"
         ref="displayedImage"
@@ -115,6 +116,7 @@ import { mapState } from "pinia";
 import { useCorpusStore } from "@/stores/corpusStore";
 import { useUserStore } from "@/stores/userStore";
 
+import LoadingView from "@/components/LoadingView.vue";
 import PlainTokens from "@/components/results/PlainToken.vue";
 
 import Utils from "@/utils";
@@ -127,7 +129,8 @@ const MARGIN = 10;
 export default {
   name: "ImageViewer",
   components: {
-    PlainTokens
+    PlainTokens,
+    LoadingView
   },
   data() {
     return {
@@ -163,12 +166,13 @@ export default {
       return ret;
     },
     adjustImage() {
-      const filename = this.getFilename();
-      if (!filename)
-        return window.requestAnimationFrame(()=>this.adjustImage());
-      this.src = this.baseMediaUrl + filename;
       const viewerContainer = this.$refs.viewerContainer;
       const img = this.$refs.displayedImage;
+      const filename = this.getFilename();
+      if (!filename || !viewerContainer || !img)
+        return window.requestAnimationFrame(()=>this.adjustImage());
+      if (!this.src)
+        this.src = this.baseMediaUrl + filename;
       const vbcr = viewerContainer.getBoundingClientRect();
       const ibcr = img.getBoundingClientRect();
       if ([vbcr.width,vbcr.height,ibcr.width,ibcr.height].includes(0))
@@ -178,16 +182,6 @@ export default {
       this.offsetX = [0,270].includes(this.rotate) ? 0 : (this.rotate == 90 ? ibcr.height : ibcr.width) / this.zoom;
       this.offsetY = this.rotate < 180 ? 0 : (this.rotate == 180 ? ibcr.height : ibcr.width) / this.zoom;
       this.zoom = (vbcr[dim] * 0.45) / original;
-      // TODO: update currentdocument
-      // if (layer == this.corpus.document) {
-      //   const doc_id = overlaps[0]._id;
-      //   if (doc_id == this.currentDocumentSelected.value.id)
-      //     continue;
-      //   this.currentDocumentSelected = {
-      //     name: this.corpus.document + " " + doc_id,
-      //     value: {id: doc_id, xy_box: overlaps[0].xy_box}
-      //   }
-      // }
     },
     rotateBy(by) {
       this.rotate = (360 + this.rotate + by * 90) % 360;
@@ -217,21 +211,11 @@ export default {
       this.zoom = Math.max(0.2, Math.min(2.0, this.zoom - e.deltaY/500));
     },
     getFilename() {
-      const img = this.meta.layer[this.imageLayer].byId[this.layerId];
+      const img = this.currentImage;
       if (!img) return "";
       const attrs = this.corpus.layer[this.imageLayer].attributes;
       const image_col = Object.entries(attrs).find(kv=>kv[1].type == "image")[0];
       return img[image_col];
-    },
-    updateImageContent() {
-      const id = this.layerId;
-      const img = this.meta.layer[this.imageLayer].byId[id];
-      // automatically resize and reposition image here
-      setTimeout(()=>this.adjustImage(), 50);
-      if (!img) return;
-      const filename = this.getFilename();
-      this.name = filename.replace(/\.[^.]+$/,"");
-      this.src = this.baseMediaUrl + filename;
     },
     updateImageId(id) {
       if (id < 1) return;
@@ -239,7 +223,6 @@ export default {
       this.src = "";
       this.layerId = id;
       this.$emit("getImageAnnotations", this.imageLayer, id);
-      this.updateImageContent();
     },
     loadDocuments() {
       useCorpusStore().fetchDocuments({
@@ -252,6 +235,16 @@ export default {
   },
   computed: {
     ...mapState(useUserStore, ["userData", "roomId"]),
+    currentImage() {
+      if (!this.layerId) return;
+      if (!this.imageLayer) return;
+      if (!this.meta.layer) return;
+      const images = this.meta.layer[this.imageLayer];
+      if (!images) return;
+      const img = (images.byId || {})[this.layerId];
+      if (!img) return;
+      return img;
+    },
     imageLayer() {
       return (Object.entries(this.corpus.layer).find((l)=>Object.values(l[1].attributes||{}).find(a=>a.type == "image")) || [null])[0];
     },
@@ -261,7 +254,7 @@ export default {
       return this.corpus.mapping.layer[seg].prepared.columnHeaders;
     },
     nonSegments() {
-      const img = this.meta.layer[this.imageLayer].byId[this.layerId];
+      const img = this.currentImage;
       if (!img) return {};
       const [x1,y1,x2,y2] = img.xy_box;
       const xs = [x1,x2], ys = [y1,y2];
@@ -275,7 +268,7 @@ export default {
       return ret;
     },
     allPrepared() {
-      const img = this.meta.layer[this.imageLayer].byId[this.layerId];
+      const img = this.currentImage;
       if (!img) return [];
 
       const prepared = [];
@@ -301,8 +294,7 @@ export default {
       let highlights = [];
       if (!this.layerId || this.layerId < 0) return highlights;
 
-      const id = this.layerId;
-      const img = this.meta.layer[this.imageLayer].byId[id];
+      const img = this.currentImage;
       if (!img) return highlights;
 
       let [x1,y1,x2,y2] = img.xy_box;
@@ -354,8 +346,26 @@ export default {
       this.layerId = this.image.layerId;
       setTimeout(()=>this.adjustImage(), 20);
     },
+    src() {
+      // Update current document
+      const img = this.currentImage;
+      if (!img) return;
+      const [x1,y1,x2,y2] = img.xy_box;
+      const docs = this.meta.layer[this.corpus.document].byLocation.searchValue([x1,x2]).map(o=>o.searchValue([y1,y2])).flat();
+      if (docs.length && (!this.currentDocumentSelected || docs[0]._id != this.currentDocumentSelected.value.id))
+        this.currentDocumentSelected = {
+          name: this.corpus.document + " " + docs[0]._id,
+          value: {id: docs[0].id, xy_box: docs[0].xy_box}
+        };
+    },
     layerId() {
-      setTimeout(()=>this.adjustImage(), 20);
+      // automatically resize and reposition image here
+      setTimeout(()=>this.adjustImage(), 50);
+      const img = this.currentImage;
+      if (!img) return;
+      const filename = this.getFilename();
+      this.name = filename.replace(/\.[^.]+$/,"");
+      this.src = this.baseMediaUrl + filename;
     },
     documentIds() {
       this.documentOptions = Object.entries(this.documentIds)
@@ -375,12 +385,29 @@ export default {
       this.layerId = parseInt(Object.keys(images.byId)[0]);
     },
     currentDocumentSelected() {
-      this.$emit("getImageAnnotations", this.imageLayer, this.currentDocumentSelected.value.xy_box);
+      if (!this.currentDocumentSelected) return;
+      const box = this.currentDocumentSelected.value.xy_box;
+      const [x1,y1,x2,y2] = box;
+      let foundImages = [];
+      console.log(this.meta.layer);
+      if (this.meta.layer && this.meta.layer[this.imageLayer])
+        foundImages = this.meta.layer[this.imageLayer].byLocation
+          .searchValue([x1,x2]).map( o=>o.searchValue([y1,y2]) ).flat();
+      console.log("box, foundImages?", box, foundImages);
+      if (foundImages.length>0) {
+        if (foundImages.find(i=>i._id == this.layerId)) return;
+        this.layerId = foundImages[0]._id;
+      }
+      else {
+        this.src = "";
+        this.$emit("getImageAnnotations", this.imageLayer, box);
+      }
     }
   },
   mounted() {
     this._keydownhandler = e=>{
-      if (this.$refs.viewerContainer.getBoundingClientRect.width == 0) return;
+      if (!this.$refs.viewerContainer) return;
+      if (this.$refs.viewerContainer.getBoundingClientRect().width == 0) return;
       if (e.key == "ArrowLeft") this.updateImageId(this.layerId - 1);
       else if (e.key == "ArrowRight") this.updateImageId(this.layerId + 1);
       else return;
@@ -397,6 +424,10 @@ export default {
 </script>
 
 <style>
+.image-loading {
+  width: 5em;
+  height: 5em;
+}
 .non-segments {
   margin-bottom: 2em;
 }
