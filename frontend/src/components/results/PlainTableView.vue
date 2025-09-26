@@ -482,7 +482,7 @@ export default {
 },
   methods: {
     selectLine(index, detach) {
-      if (detach && (this.showAudio(index) || this.showVideo(index)))
+      if (detach && (this.showAudio(index) || this.showVideo(index) || this.imageLayerAttribute[0]))
         this.detachSelectedLine = true;
       else
         this.detachSelectedLine = false;
@@ -541,22 +541,14 @@ export default {
     },
     getImage(resultIndex) {
       if (!this.corpora.corpus) return null;
-      for (let [layerName, props] of Object.entries(this.corpora.corpus.layer)) {
-        let attrs = props.attributes || {};
-        if ("meta" in attrs)
-          attrs = {attrs, ...attrs.meta};
-        for (let [aname, aprops] of Object.entries(attrs||{})) {
-          if (aprops.type != "image")
-            continue
-          const meta = this.meta[this.data[resultIndex][0]];
-          if (!meta || !(layerName in meta)) continue;
-          const filename = meta[layerName][aname];
-          if (!filename)
-            return null;
-          return [filename, layerName];
-        }
-      }
-      return null;
+      const [layerName, aname] = this.imageLayerAttribute;
+      if (!layerName || !aname) return null;
+      const meta = this.meta[this.data[resultIndex][0]];
+      if (!meta || !(layerName in meta)) return null;
+      const filename = meta[layerName][aname];
+      if (!filename)
+        return null;
+      return [filename, layerName];
     },
     showImage(filename, imageLayer, resultIndex, meta=null) {
       if (meta===null)
@@ -578,6 +570,7 @@ export default {
         layerId: layerId,
         columnHeaders: this.columnHeaders
       };
+      this.detachSelectedLine = true;
       this.$emit("showImage", this.image);
     },
     hoverResultLine(resultIndex) {
@@ -807,6 +800,19 @@ export default {
     }
   },
   computed: {
+    imageLayerAttribute() {
+      if (!this.corpora.corpus) return ["",""];
+      for (let [layerName, props] of Object.entries(this.corpora.corpus.layer)) {
+        let attrs = props.attributes || {};
+        if ("meta" in attrs)
+          attrs = {attrs, ...attrs.meta};
+        for (let [aname, aprops] of Object.entries(attrs||{})) {
+          if (aprops.type == "image")
+            return [layerName,aname];
+        }
+      }
+      return ["",""];
+    },
     headToken() {
       let token = "-";
       let headIndex = this.columnHeaders.indexOf("head");

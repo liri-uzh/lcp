@@ -22,6 +22,8 @@ import {
   faDatabase,
   faDownload,
   faExpand,
+  faEye,
+  faEyeSlash,
   faFileExport,
   faFilter,
   faFont,
@@ -80,6 +82,8 @@ library.add(faCopy);
 library.add(faDatabase);
 library.add(faDownload);
 library.add(faExpand);
+library.add(faEye);
+library.add(faEyeSlash);
 library.add(faFileExport);
 library.add(faFilter);
 library.add(faFont);

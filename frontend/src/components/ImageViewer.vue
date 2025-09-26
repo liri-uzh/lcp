@@ -41,7 +41,7 @@
     <div
       ref="imageContainer"
       class="image-container"
-      :style="`transform: scale(${zoom}) translate(${offsetX}px, ${offsetY}px) rotate(${rotate}deg);`"
+      :style="`transform: translate(${offsetX}px, ${offsetY}px) scale(${zoom}) rotate(${rotate}deg);`"
     >
       <img
         id="displayedImage"
@@ -50,17 +50,19 @@
         draggable="false"
         @wheel="onWheel"
         @pointerdown="onPointerDown"
+        @load="onImageLoad"
       />
       <div
-        v-for="(xyc, n) in highlights"
+        v-for="([x1,y1,x2,y2,color,layer,id]) in highlights"
         class="highlight-box"
-        :key="`div-highlight-${n}`"
+        :key="`div-highlight-${layer}-${id}`"
         :style="[
-          ['left',xyc[0]-1],
-          ['top',xyc[1]-1],
-          ['width',(xyc[2]-xyc[0])+2],
-          ['height',(xyc[3]-xyc[1])+2],
-          ['border-color',xyc[4]]
+          ['left',x1-1],
+          ['top',y1-1],
+          ['width',(x2-x1)+2],
+          ['height',(y2-y1)+2],
+          ['border-color',color],
+          ['display',isVisible(layer,id) ? 'block' : 'none']
         ].map(([p,v],n)=>p+': '+v+(n<4?'px':'')).join('; ')"
       >
       </div>
@@ -72,18 +74,28 @@
           v-for="(annotations,layer) in nonSegments"
           :key="`annotation-layer-${layer}`"
         >
-          {{ layer }}
-          <div
-            class="annotation"
-            v-for="(annotation, n) in annotations"
-            :key="`annotation-layer-${layer}-annotation-${n}`"
-          >
+          <div class="annotation-layer-name" @click="switchVisible(layer)">
+            <FontAwesomeIcon :icon="['fas', this.isVisible(layer) ? 'eye' : 'eye-slash']" />
+            {{ layer }}
+          </div>
+          <div class="annotation-list">
             <div
-              class="annotation-attribute"
-              v-for="(value,attribute) in filterAttributes(layer, annotation)"
-              :key="`annotation-layer-${layer}-annotation-${n}-attribute-${attribute}`"
+              class="annotation"
+              v-for="(annotation, n) in annotations"
+              :key="`annotation-layer-${layer}-annotation-${n}`"
+              :style="`opacity: ${isVisible(layer, annotation._id) ? 1 : 0.5};`"
             >
-              {{ attribute }} : {{ value }}
+              <div class="annotation-box" @click="switchVisible(layer, annotation._id)">
+                <div class="annotation-idx">{{ layer }} {{ n+1 }}</div>
+                <div
+                  class="annotation-attribute"
+                  v-for="(value,attribute) in filterAttributes(layer, annotation)"
+                  :key="`annotation-layer-${layer}-annotation-${n}-attribute-${attribute}`"
+                >
+                  {{ attribute }} : {{ value }}
+                </div>
+              </div>
+              <div class="annotation-idx">{{ getAnnotationName(layer, n, annotation) }}</div>
             </div>
           </div>
         </div>
@@ -137,12 +149,15 @@ export default {
       rotate: 0,
       offsetX: 0,
       offsetY: 0,
+      imageWidth: 0,
+      imageHeight: 0,
       layerId: this.image.layerId,
       name: this.image.name,
       dragStart: null,
       currentToken: null,
       currentDocumentSelected: null,
       documentOptions: [],
+      annotationVisibility: {}
     }
   },
   props: [
@@ -154,6 +169,13 @@ export default {
   ],
   emits: ["getImageAnnotations", "switchToQueryTab"],
   methods: {
+    getAnnotationName(layer, n, attributes) {
+      if (attributes.form) return attributes.form;
+      else return layer + " " + String(n + 1);
+    },
+    onImageLoad() {
+      this.adjustImage();
+    },
     overlaps(itv, xy_box) {
       const [x1,y1,x2,y2] = xy_box;
       const overlapXs = itv.searchValue([x1,x2]);
@@ -169,21 +191,31 @@ export default {
       }
       return ret;
     },
-    adjustImage() {
+    async adjustImage() {
+      if (this.imageWidth == 0 || this.imageHeight == 0) {
+        const img = new Image();
+        img.src = this.src;
+        img.style.visibility = "hidden";
+        document.body.append(img);
+        while (img.getBoundingClientRect().width == 0)
+          await new Promise(r=>setTimeout(r, 1));
+        const {width, height} = img.getBoundingClientRect();
+        this.imageWidth = width;
+        this.imageHeight = height;
+        img.remove();
+      }
       const viewerContainer = this.$refs.viewerContainer;
       const img = this.$refs.displayedImage;
       const filename = this.filename;
       if (!filename || !viewerContainer || !img)
         return window.requestAnimationFrame(()=>this.adjustImage());
       const vbcr = viewerContainer.getBoundingClientRect();
-      const ibcr = img.getBoundingClientRect();
-      if ([vbcr.width,vbcr.height,ibcr.width,ibcr.height].includes(0))
+      if (vbcr.width == 0 || vbcr.height == 0)
         return window.requestAnimationFrame(()=>this.adjustImage());
-      const dim = this.rotate % 180 ? 'height' : 'width';
-      const original = ibcr[dim] / this.zoom;
-      this.offsetX = [0,270].includes(this.rotate) ? 0 : (this.rotate == 90 ? ibcr.height : ibcr.width) / this.zoom;
-      this.offsetY = this.rotate < 180 ? 0 : (this.rotate == 180 ? ibcr.height : ibcr.width) / this.zoom;
-      this.zoom = (vbcr[dim] * 0.45) / original;
+      this.zoom = (vbcr.width * 0.45) / this.imageWidth;
+      const [newWidth, newHeight] = [this.imageWidth * this.zoom, this.imageHeight * this.zoom];
+      this.offsetX = {0: 0, 90: newHeight, 180: newWidth, 270: 0}[this.rotate];
+      this.offsetY = {0: 0, 90: 0, 180: newHeight, 270: newWidth}[this.rotate];
     },
     rotateBy(by) {
       this.rotate = (360 + this.rotate + by * 90) % 360;
@@ -238,6 +270,25 @@ export default {
         return;
       }
       return true;
+    },
+    isVisible(layer, annotationId) {
+      if (!(layer in this.annotationVisibility)) return true;
+      if (!this.annotationVisibility[layer].show) return false;
+      if (annotationId === undefined) return true;
+      if (!(annotationId in this.annotationVisibility[layer].annotations))
+        return true;
+      return this.annotationVisibility[layer].annotations[annotationId];
+    },
+    switchVisible(layer, annotationId) {
+      this.annotationVisibility[layer] = this.annotationVisibility[layer] || {show: true, annotations: {}};
+      const av = this.annotationVisibility[layer];
+      if (annotationId === undefined)
+        av.show = !av.show;
+      else {
+        if (!(annotationId in av.annotations))
+          av.annotations[annotationId] = true;
+        av.annotations[annotationId] = !av.annotations[annotationId];
+      }
     }
   },
   computed: {
@@ -267,7 +318,6 @@ export default {
       // Update current document
       const filename = this.filename;
       if (!filename) return "";
-      this.adjustImage();
       return this.baseMediaUrl + filename;
     },
     imageLayer() {
@@ -284,6 +334,7 @@ export default {
       const ret = {};
       for (let [layer, bys] of Object.entries(this.meta.layer)) {
         const overlaps = this.overlaps(bys.byLocation, img.xy_box);
+        if (overlaps.length == 0) continue;
         ret[layer] = [...(ret[layer] || []), ...overlaps];
       }
       return ret;
@@ -293,8 +344,7 @@ export default {
       if (!img) return [];
 
       const prepared = [];
-      const char_range = [...img.char_range].sort(n=>parseInt(n));
-      const segments = this.meta.layer[this.corpus.segment].byStream.searchValue(char_range);
+      const segments = this.meta.layer[this.corpus.segment].byStream.searchValue(img.char_range);
       for (let segment of segments.sort((a,b)=>a.char_range[0] - b.char_range[0])) {
         if (!(segment._id in this.sentences)) continue;
         const [segOffset, preTokens] = this.sentences[segment._id];
@@ -319,7 +369,8 @@ export default {
       if (!img) return highlights;
 
       let [x1,y1,x2,y2] = img.xy_box;
-      let sortedXs = [x1,x2].sort(n=>parseInt(n)), sortedYs = [y1,y2].sort(n=>parseInt(n));
+      const sortedXs = [x1 > x2 ? x2 : x1, x1 > x2 ? x1 : x2];
+      const sortedYs = [y1 > y2 ? y2 : y1, y1 > y2 ? y1 : y2];
       const image_offset = [sortedXs[0], sortedYs[0], sortedXs[1], sortedYs[1]];
 
       for (let [layer, bys] of Object.entries(this.meta.layer)) { // eslint-disable-line no-unused-vars
@@ -327,26 +378,28 @@ export default {
         for (let o of overlaps) {
           if (!o || !o.xy_box) continue;
           [x1,x2,y1,y2] = [
-            ...[o.xy_box[0], o.xy_box[2]].sort(n=>parseInt(n)),
-            ...[o.xy_box[1], o.xy_box[3]].sort(n=>parseInt(n))
+            ...[o.xy_box[0], o.xy_box[2]].sort((a,b)=>parseInt(a) - parseInt(b)),
+            ...[o.xy_box[1], o.xy_box[3]].sort((a,b)=>parseInt(a) - parseInt(b))
           ];
           highlights.push([
             x1-image_offset[0],
             y1-image_offset[1],
             x2-image_offset[0],
             y2-image_offset[1],
-            colors[highlights.length % colors.length]
+            colors[highlights.length % colors.length],
+            layer,
+            o._id
           ]);
         }
       }
 
-      highlights = highlights.map(([left,top,width,height,color])=>{
+      highlights = highlights.map(([left,top,width,height,color,layer,id])=>{
         const [newLeft, newTop] = [Math.max(-1 * MARGIN, left), Math.max(-1 * MARGIN, top)];
         const [newWidth, newHeight] = [
           Math.min(width, image_offset[2]-image_offset[0] + MARGIN - newLeft),
           Math.min(height, image_offset[3]-image_offset[1] + MARGIN - newTop)
         ];
-        return [newLeft, newTop, newWidth, newHeight, color];
+        return [newLeft, newTop, newWidth, newHeight, color, layer, id];
       });
 
       return highlights;
@@ -362,11 +415,9 @@ export default {
   watch: {
     image() {
       this.layerId = this.image.layerId;
-      this.adjustImage();
     },
     layerId() {
       // automatically resize and reposition image here
-      this.adjustImage();
       const img = this.currentImage;
       if (!img) return;
       const filename = this.filename;
@@ -374,8 +425,9 @@ export default {
       this.name = filename.replace(/\.[^.]+$/,"");
     },
     currentImage() {
+      this.imageWidth = 0;
+      this.imageHeight = 0;
       if (!this.currentImage) return;
-      setTimeout(()=>this.adjustImage(), 50);
       if (!this.meta || !this.meta.layer || !this.meta.layer[this.corpus.document]) return;
       const docs = this.overlaps(this.meta.layer[this.corpus.document].byLocation, this.currentImage.xy_box);
       if (docs.length==0) return;
@@ -409,6 +461,14 @@ export default {
         this.layerId = null;
         this.$emit("getImageAnnotations", this.imageLayer, this.currentDocumentSelected.value.xy_box);
       }
+    },
+    nonSegments() {
+      for (let [layer, annotations] of Object.entries(this.nonSegments || {})) {
+        if (!(layer in this.annotationVisibility))
+          this.annotationVisibility[layer] = {show: true, annotations: {}};
+        for (let annotation of annotations)
+          this.annotationVisibility[layer].annotations[annotation._id] = true;
+      }
     }
   },
   mounted() {
@@ -438,19 +498,40 @@ export default {
   width: 5em;
   height: 5em;
 }
-.non-segments {
-  margin-bottom: 2em;
-}
 .non-segment {
-  font-weight: bold;
+  max-height: 20vh;
+  overflow-y: scroll;
   margin-bottom: 1em;
 }
+.annotation-layer-name {
+  font-weight: bold;
+  margin-bottom: 0.25em 0em;
+}
+.annotation-list {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+}
+.annotation-list .annotation {
+  background-color: beige;
+  padding: 0.25em;
+  border-radius: 0.5em;
+}
+.annotation-list .annotation .annotation-box {
+  display: none;
+  background-color: beige;
+  padding: 0.25em;
+  border-radius: 0.5em;
+  margin: -5px 0px 0px -5px;
+  box-shadow: black 0px 0px 5px;
+}
+.annotation-list .annotation:hover .annotation-box {
+  position: absolute;
+  display: block;
+  z-index: 99;
+}
 .non-segment .annotation {
-  font-weight: normal;
-  margin-left: 1em;
-  height: 4em;
-  overflow-y: scroll;
-  resize: vertical;
+  margin: 0.25em;
 }
 .rotate-nav {
   display: flex;
@@ -459,9 +540,10 @@ export default {
 }
 #viewer-container {
   width: 100%;
-  max-height: 50vh;
-  /* height: 100%; */
+  height: 50vh;
   position: relative;
+  overflow: hidden;
+  resize: vertical;
 }
 .segment.highlight {
   border: solid 2px green;
@@ -476,9 +558,6 @@ export default {
   justify-content: center;
   text-align: center;
 }
-#prev-image {
-  margin-left: -1em;
-}
 #next-image {
   right: 0;
 }
@@ -490,12 +569,12 @@ export default {
   position: absolute;
   right: 0;
   top: 0;
-  max-width: calc(50% - 2em);
+  width: calc(50% - 2em);
   margin: 2em;
-  /* height: calc(100% - 5em); */
+  height: 50vh;
+  overflow-y: scroll;
   display: flex;
   flex-direction: column;
-  justify-content: center;
 }
 .image-container {
   position: relative;

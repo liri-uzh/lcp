@@ -289,10 +289,11 @@
                   :image="image"
                   :corpus="selectedCorpora.corpus"
                   :meta="WSDataMeta"
-                  :sentences="WSDataSentences.result[-1] || {}"
+                  :sentences="WSDataSentences || {}"
                   :documentIds="documentIds"
                   @getImageAnnotations="getImageAnnotations"
                   @switchToQueryTab="setMainTab"
+                  ref="imageViewer"
                 />
                 <hr>
                 <div class="mt-5 row" v-if="querySubmitted">
@@ -383,7 +384,7 @@
                   </div>
                 </div>
 
-                <div v-if="percentageDone == 100 && (!WSDataSentences || !WSDataSentences.result)"
+                <div v-if="percentageDone == 100 && Object.keys(WSDataSentences || {}).length == 0"
                   style="text-align: center" class="mb-3 mt-2">
                   <div v-if="noResults">
                     {{ $t('common-no-results') }}!
@@ -433,8 +434,7 @@
                               :key="`result-btn-${index}`"
                               v-if="
                                 (resultSet.type == 'plain' &&
-                                  WSDataSentences &&
-                                  WSDataSentences.result) ||
+                                  Object.keys(WSDataSentences || {}).length) ||
                                 resultSet.type != 'plain'
                               ">
                               <FontAwesomeIcon v-if="resultSet.type == 'plain'" :icon="['fas', 'barcode']" />
@@ -461,8 +461,7 @@
                           :key="`result-tab-${index}`">
                           <span v-if="
                             resultSet.type == 'plain' &&
-                            WSDataSentences &&
-                            WSDataSentences.result
+                            Object.keys(WSDataSentences||{}).length
                           ">
                             <div class="btn-group mt-2 btn-group-sm mb-3">
                               <a href="#" @click.stop.prevent="plainType = 'table'" class="btn" :class="plainType == 'table' || resultContainsSet(resultSet)
@@ -482,7 +481,7 @@
                             <ResultsPlainTableView
                               v-if="plainType == 'table' || resultContainsSet(resultSet)"
                               :data="WSDataResults.result[index + 1] || []"
-                              :sentences="WSDataSentences.result[-1] || {}"
+                              :sentences="WSDataSentences || {}"
                               :languages="selectedLanguages"
                               :meta="WSDataMeta.bySegment"
                               :attributes="resultSet.attributes"
@@ -497,7 +496,7 @@
                             <ResultsKWICView
                               v-else-if="resultContainsSet(resultSet) == false"
                               :data="WSDataResults.result[index + 1] || []"
-                              :sentences="WSDataSentences.result[-1] || {}"
+                              :sentences="WSDataSentences || {}"
                               :languages="selectedLanguages"
                               :meta="WSDataMeta.bySegment"
                               :attributes="resultSet.attributes"
@@ -969,7 +968,7 @@ export default {
       isQueryValidData: null,
       WSDataResults: "",
       WSDataMeta: {"layer": {}, "bySegment": {}},
-      WSDataSentences: {result: {}},
+      WSDataSentences: {},
       nResults: 200,
       activeResultIndex: 1,
       selectedLanguages: ["en"],
@@ -1140,7 +1139,7 @@ export default {
         this.querySatisfied = "";
         this.WSDataResults = {};
         this.WSDataMeta = {"layer": {}, "bySegment": {}};
-        this.WSDataSentences = {result: {}};
+        this.WSDataSentences = {};
         this.nameExport = "";
       }
     },
@@ -1239,12 +1238,9 @@ export default {
         useCorpusStore().fetchImageAnnotations(data);
     },
     showImage(image) {
-      console.log("showImage", image);
       this.image = image;
-      const modal = new Modal(document.getElementById('imageModal'));
-      this.modalIndexKey++;
-      modal.show();
       this.getImageAnnotations(image.layer, image.layerId);
+      setTimeout(()=>this.$refs.imageViewer.$refs.viewerContainer.scrollIntoView(), 50);
     },
     toggleModal(language) {
     	let modalEl;
@@ -1297,7 +1293,8 @@ export default {
       if (this.rangeValueInInterval(interval, range, value)) return;
       if (range.length == 4) {
         const [x1, y1, x2, y2] = range;
-        const xs = [x1,x2].sort(n=>parseInt(n)), ys = [y1,y2].sort(n=>parseInt(n));
+        const xs = [x1,x2].sort((a,b)=>parseInt(a) - parseInt(b));
+        const ys = [y1,y2].sort((a,b)=>parseInt(a) - parseInt(b));
         let x = interval.search(xs, n=>n.low==xs[0] && n.high==xs[1]);
         if (x.length)
           x = x[0].value;
@@ -1314,13 +1311,16 @@ export default {
       let found = null;
       if (range.length == 4) {
         const [x1,y1,x2,y2] = range;
-        const xs = [x1,x2].sort(n=>parseInt(n)), ys = [y1,y2].sort(n=>parseInt(n));
-        const xitv = interval.search(xs, n=>n.low==xs[0] && n.high==xs[1]);
-        if (xitv.length == 0 || !(xitv[0].value instanceof IntervalTree)) return found;
-        found = xitv[0].value.search(ys, n=>n.low==ys[0] && n.high==ys[1] && JSON.stringify(n.value)==JSON.stringify(value)).length > 0;
+        const xs = x1 < x2 ? [x1,x2] : [x2,x1];
+        const ys = y1 < y2 ? [y1,y2] : [y2,y1];
+        const xitv = interval.searchValue(xs, n=>n.low==xs[0] && n.high==xs[1]);
+        if (xitv.length == 0 || !(xitv[0] instanceof IntervalTree)) return found;
+        found = xitv[0].search(ys, n=>n.low==ys[0] && n.high==ys[1] && JSON.stringify(n.value)==JSON.stringify(value)).length > 0;
       }
-      else
-        found = interval.search(range, n=>n.low==range[0] && n.high==range[1] && JSON.stringify(n.value)==JSON.stringify(value)).length > 0;
+      else {
+        const [low, high] = range[0] < range[1] ? range : [range[1],range[0]];
+        found = interval.search([low,high], n=>n.low==low && n.high==high && JSON.stringify(n.value)==JSON.stringify(value)).length > 0;
+      }
       return found;
     },
     corpusDataType: Utils.corpusDataType,
@@ -1417,6 +1417,11 @@ export default {
     },
     processMeta(meta) {
       const META_LIMIT = 5000;
+      const ancMap = {
+        char_range: "Stream",
+        frame_range: "Time",
+        xy_box: "Location"
+      };
       if (meta.length > META_LIMIT) console.warn(`Too much metadata (over ${META_LIMIT} lines) to process everything`);
       let n = 0;
       for (let [sids, layer, lid, info] of meta) {
@@ -1436,18 +1441,22 @@ export default {
           this.WSDataMeta.bySegment[sid] = this.WSDataMeta.bySegment[sid] || {};
           this.WSDataMeta.bySegment[sid][layer] = info;
         }
-        for (let [anc_col, anc_name] of [["char_range", "Stream"], ["frame_range", "Time"], ["xy_box", "Location"]]) {
+        // Parse the anchors in a first pass
+        for (let anc_col in ancMap) {
           if (!(anc_col in info)) continue;
           info[anc_col] = info[anc_col]
             .split(",")
             .map(x=>parseInt(x.replace(/[[()]/g,"")))
             .map((v,i)=>v-(anc_col != "xy_box" && i==1));
+        }
+        // And insert in a second pass: JSON.stringify is now consistent across iterations
+        for (let [anc_col, anc_name] of Object.entries(ancMap)) {
+          if (!(anc_col in info)) continue;
           const range = info[anc_col];
           const byAnchor = layer_dict[`by${anc_name}`];
           this.insertRange(byAnchor, range, info);
         }
       }
-      console.log("updating WSDataMeta");
       this.WSDataMeta = {...this.WSDataMeta};
     },
     onSocketMessage(data) {
@@ -1505,12 +1514,12 @@ export default {
 
         if (data["action"] == "image_annotations") {
           const meta = [], ids = [];
-          this.WSDataSentences.result[-1] = this.WSDataSentences.result[-1] || {"-1": {}};
+          this.WSDataSentences = this.WSDataSentences || {};
           for (let [row] of data.annotations) {
             if (row[0] == "_prepared") {
               const [seg_id, seg_offset, seg_content] = row.slice(1,)
-              if (seg_id in this.WSDataSentences.result[-1]) continue;
-              this.WSDataSentences.result[-1][seg_id] = [seg_offset, seg_content];
+              if (seg_id in this.WSDataSentences) continue;
+              this.WSDataSentences[seg_id] = [seg_offset, seg_content];
             }
             else
               meta.push([[], ...row]);
@@ -1653,40 +1662,16 @@ export default {
           this.updateLoading(data.status);
           const meta = data.result["-2"] || [];
           this.processMeta(meta);
-          if (
-            this.WSDataSentences &&
-            this.WSDataSentences.hash == data.hash &&
-            !data.full
-          ) {
-            for (let key in data.result) {
-              if (key <= 0) continue;
-              this.WSDataSentences.result[key] = {
-                ...(this.WSDataSentences.result[key]||{}),
-                ...data.result[key]
-              };
-            }
-            if (-1 in data.result) {
-              this.WSDataSentences.result[-1] = {
-                ...(this.WSDataSentences.result[-1] || {}),
-                ...data.result[-1],
-              };
-            }
-          } else {
-            this.WSDataSentences = data;
+          if (!(-1 in data.result)) return;
+          this.WSDataSentences = this.WSDataSentences || {};
+          for (let [sid, v] of Object.entries(data.result[-1]))
+            this.WSDataSentences[sid] = v;
+          if (data.full) {
             if (this.WSDataResults) {
               if (!this.WSDataResults.result)
                 this.WSDataResults.result = {};
               if (!this.WSDataResults.result["0"] || !this.WSDataResults.result["0"].result_sets)
                 this.WSDataResults.result["0"] = { result_sets: [] };
-              this.WSDataResults.result["0"].result_sets.forEach(
-                (_resultSet, index) => {
-                  if (_resultSet.type == "plain") {
-                    let resultIndex = index + 1;
-                    if (!(resultIndex in this.WSDataSentences.result))
-                      this.WSDataSentences.result[resultIndex] = [];
-                  }
-                }
-              );
             }
           }
           this.WSDataSentences = {...this.WSDataSentences};
@@ -1801,10 +1786,8 @@ export default {
       if (!to_export && resumeQuery == false) {
         this.failedStatus = false;
         this.stop();
-        if (cleanResults == true) {
+        if (cleanResults == true)
           this.WSDataResults = {};
-          this.WSDataSentences = {result: {}};
-        }
       }
       let data = {
         corpus: this.selectedCorpora.value,
@@ -2040,10 +2023,8 @@ export default {
     },
     noResults() {
       const dr = JSON.parse(JSON.stringify(this.WSDataResults)) || {};
-      const ds = JSON.parse(JSON.stringify(this.WSDataSentences)) || {};
       dr.result = dr.result || {};
-      ds.result = ds.result || {};
-      return [dr,ds].every(d=>Object.entries(d.result).every(([k,v])=>k==0 || !v || v.length==0));
+      return Object.entries(dr.result).every(([k,v])=>k==0 || !v || v.length==0);
     }
   },
   mounted() {
