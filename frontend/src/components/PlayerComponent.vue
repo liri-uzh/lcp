@@ -1271,6 +1271,10 @@ div.active>video {
   text-overflow: ellipsis;
 }
 
+#timelineSettings .modal-content {
+  margin-left: 1em;
+}
+
 #timelinePopin {
   position: absolute;
   width: 25em;
