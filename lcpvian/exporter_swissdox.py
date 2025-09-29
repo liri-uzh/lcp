@@ -137,10 +137,11 @@ class Exporter(ExporterXML):
             f"[SWISSDOX Export {self._request.id}] Process segments for {batch_hash} (QI {self._request.hash})"
         )
         res = payload.get("result", [])
-        index_aid = self._qi.meta_labels.index("Article_id")
         filepath = os.path.join(self.get_working_path(batch_hash), "article_ids")
         with open(filepath, "w") as output:
-            output.write("\n".join(r[index_aid] for r in res["-2"]))
+            output.write(
+                "\n".join(lid for _, lname, lid, _ in res["-2"] if lname == "Article")
+            )
         print(
             f"[SWISSDOX Export {self._request.id}] Done processing segments for {batch_hash} (QI {self._request.hash})"
         )
@@ -171,20 +172,32 @@ class Exporter(ExporterXML):
         res = await _db_query(
             query, {"article_ids": [aid for aid in article_ids]}, is_main=True
         )
-        print("export complete!")
+        print("articles retrieved! now creating the duckdb file")
         dest_folder = os.path.join(RESULTS_SWISSDOX, "exports")
         if not os.path.exists(dest_folder):
             os.makedirs(dest_folder)
         dest = os.path.join(dest_folder, f"{self._qi.hash}.db")
         if os.path.exists(dest):
             os.remove(dest)
-        for table_name, index_col, data in cast(list, res):
-            df = pandas.DataFrame.from_dict(
-                {cname: cvalue if cvalue else [] for cname, cvalue in data.items()}
-            )
-            df.set_index(index_col)
-            con = duckdb.connect(database=dest, read_only=False)
-            con.execute(f"CREATE TABLE {table_name} AS SELECT * FROM df")
+        tables: dict[str, list[str]] = {}
+        con = duckdb.connect(database=dest, read_only=False)
+        for table_name, data in cast(list, res):
+            if table_name not in tables:
+                # First time we encounter the table: data contains column-to-type mapping
+                tables[table_name] = sorted(cname for cname in data)
+                formed_cols = ",".join(
+                    f"{cname} {data[cname]}" for cname in tables[table_name]
+                )
+                con.execute(f"CREATE TABLE {table_name} ({formed_cols});")
+            else:
+                # The subsequent rows contain actual data
+                df = pandas.DataFrame.from_dict(
+                    {
+                        cname: data[cname] if data.get(cname) else []
+                        for cname in tables[table_name]
+                    },
+                )
+                con.execute(f"INSERT INTO {table_name} SELECT * FROM df;")
         user = self._request.user
         userpath = os.path.join(RESULTS_SWISSDOX, user)
         if not os.path.exists(userpath):

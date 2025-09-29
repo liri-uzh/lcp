@@ -1161,12 +1161,15 @@ class SQLSequence:
                 #             f",\n{from_table}.{new_lbl_attr} AS {new_lbl_attr}"
                 #         )
                 if ljs or joins_for_refs_from_prev_table:
-                    from_cross += f"\n                LEFT JOIN "
                     combined_joins: list[str] = [
                         x for x in joins_for_refs_from_prev_table
                     ]
                     combined_joins += [x for x in _to_leftjoins(ljs or {})]
-                    from_cross += f"\n                LEFT JOIN ".join(combined_joins)
+                    if combined_joins:
+                        from_cross += (
+                            "\n                LEFT JOIN "
+                            + f"\n                LEFT JOIN ".join(combined_joins)
+                        )
                 sselect += (",\n                    " if sselect else "") + (
                     " AND ".join(token_conds)
                 )

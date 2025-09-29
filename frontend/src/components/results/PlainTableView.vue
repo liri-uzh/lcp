@@ -64,61 +64,23 @@
             >
               <FontAwesomeIcon :icon="['fas', 'circle-info']" />
             </span>
-            <span
-              v-for="(token) in item"
-              :key="`form-${token.index}`"
-              @mousemove="showPopover(token, resultIndex, $event)"
-              @mouseleave="closePopover"
-            >
-              <span class="token" :class="[
-                (currentToken && columnHeaders && currentToken[columnHeaders.indexOf('head')] == token.index ? 'highlight' : ''),
-                (token.group >= 0 ? `text-bold color-group-${token.group}` : '')
-              ]">{{ token.form }}</span>
-              <span class="space" v-if="token.spaceAfter !== 0">&nbsp;</span>
-            </span>
-            <!-- <template
-              v-for="(group, groupIndex) in groups"
-              :key="`tbody-${groupIndex}`"
-            >
-              <span
-                class="token"
-                v-for="(token, tokenIndex) in item[groupIndex * 2]"
-                :key="`rc-${tokenIndex}`"
-                :class="bgCheck(resultIndex, groupIndex, tokenIndex, item, 1)"
-                @mousemove="showPopover(token, resultIndex, $event)"
-                @mouseleave="closePopover"
-              >
-                {{ token[0] }}
-              </span>
-              <span
-                class="token"
-                v-for="(token, tokenIndex) in item[groupIndex * 2 + 1]"
-                :key="`form-${tokenIndex}`"
-                :class="bgCheck(resultIndex, groupIndex, tokenIndex, item, 2)"
-                @mousemove="showPopover(token, resultIndex, $event)"
-                @mouseleave="closePopover"
-              >
-                {{ token[0] }}
-              </span>
-            </template>
-            <span
-              class="token"
-              v-for="(token, tokenIndex) in item[groups.length * 2]"
-              :key="`lt-${tokenIndex}`"
-              :class="
-                bgCheck(resultIndex, groups.length - 1, tokenIndex, item, 3)
-              "
-              @mousemove="showPopover(token, resultIndex, $event)"
-              @mouseleave="closePopover"
-            >
-              {{ token[0] }}
-            </span> -->
+            <PlainTokens
+              :item="item"
+              :columnHeaders="columnHeaders"
+              :currentToken="currentToken"
+              :resultIndex="resultIndex"
+              @showPopover="showPopover"
+              @closePopover="closePopover"
+            />
           </td>
           <td class="action-button"
-            data-bs-toggle="modal"
-            :data-bs-target="`#imageModal${randInt}`"
-            @click="showImage(...getImage(resultIndex), this.meta[this.data[resultIndex][0]])"
+            @click="showImage(...getImage(resultIndex), resultIndex, this.meta[this.data[resultIndex][0]])"
             v-if="getImage(resultIndex)"
+          >
+            <FontAwesomeIcon :icon="['fas', 'image']" />
+          </td>
+          <td class="action-button" style="opacity: 0.5;" title="No or more than one images"
+            v-else-if="Object.entries(this.meta[this.data[resultIndex][0]] || {}).find((lp=>lp[1].xy_box))"
           >
             <FontAwesomeIcon :icon="['fas', 'image']" />
           </td>
@@ -210,13 +172,13 @@
               </span>
               <table class="popover-deatils-table mb-2">
                 <template v-for="(meta_value, meta_key) in meta" :key="`${layer}-${meta_key}`">
-                  <tr v-if="allowedMetaColums[layer].includes(meta_key) && (meta_value || meta_fold(layer))">
+                  <tr v-if="allowedMetaColums[layer].includes(meta_key) && (!isEmpty(meta_value) || meta_fold(layer))">
                     <td>{{ meta_key }}</td>
                     <td v-if="(corpora.corpus.layer[layer].attributes[meta_key]||{}).type == 'image'">
                       <span
                         data-bs-toggle="modal"
                         :data-bs-target="`#imageModal${randInt}`"
-                        @click="showImage(meta_value, layer)"
+                        @click="showImage(meta_value, layer, this.currentResultIndex)"
                         v-html="meta_value"
                       >
                       </span>
@@ -257,46 +219,6 @@
                 :languages="languages"
                 :key="modalIndex"
                 v-if="modalVisible"
-              />
-            </div>
-          </div>
-          <div class="modal-footer">
-            <button
-              type="button"
-              class="btn btn-secondary"
-              data-bs-dismiss="modal"
-            >
-              {{ $t('common-close') }}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-    <div
-      class="modal fade modal-xl"
-      :id="`imageModal${randInt}`"
-      tabindex="-1"
-      aria-labelledby="imageModalLabel"
-      aria-hidden="true"
-    >
-      <div class="modal-dialog modal-full">
-        <div class="modal-content">
-          <div class="modal-header">
-            <h5 class="modal-title" id="imageModalLabel">{{ $t('results-image-viewer') }}</h5>
-            <button
-              type="button"
-              class="btn-close"
-              data-bs-dismiss="modal"
-              :aria-label="$t('common-close')"
-            ></button>
-          </div>
-          <div class="modal-body text-start">
-            <div class="modal-body-content">
-              <ImageViewer
-                :src="image.src"
-                :name="image.name"
-                :boxes="image.boxes"
-                v-if="image"
               />
             </div>
           </div>
@@ -493,7 +415,7 @@ span.action-button:hover {
 </style>
 
 <script>
-import ImageViewer from "@/components/ImageViewer.vue";
+import PlainTokens from "@/components/results/PlainToken.vue";
 import PaginationComponent from "@/components/PaginationComponent.vue";
 import ResultsDetailsModalView from "@/components/results/DetailsModalView.vue";
 import { useNotificationStore } from "@/stores/notificationStore";
@@ -501,42 +423,11 @@ import Utils from "@/utils.js";
 import { FontAwesomeIcon } from "@fortawesome/vue-fontawesome";
 import config from "@/config";
 
-// import WaveSurfer from 'wavesurfer.js'
-// import RegionsPlugin from 'wavesurfer.js/dist/plugins/regions.esm.js'
-
-class TokenToDisplay {
-  constructor(tokenArray, index, groups, columnHeaders, annotations) {
-    if (!(tokenArray instanceof Array) || tokenArray.length < 1)
-      throw Error(`Invalid format for token ${JSON.stringify(tokenArray)}`);
-    if (isNaN(Number(index)) || index<=0)
-      throw Error(`Invalid index (${index}) for token ${JSON.stringify(tokenArray)}`);
-    if (!(groups instanceof Array) || groups.find(g=>!(g instanceof Array)))
-      throw Error(`Invalid groups (${JSON.stringify(groups)}) for token ${JSON.stringify(tokenArray)}`);
-    columnHeaders.forEach( (header,i) => this[header] = tokenArray[i] );
-    this.token = tokenArray;
-    this.index = index;
-    this.group = groups.findIndex( g => g.find(id=>id==index) );
-    this.columnHeaders = columnHeaders.filter(ch=>ch!= 'spaceAfter');
-    for (let [annotation_name, annotation_occurences] of Object.entries(annotations||{})) {
-      for (let [ann_start_idx, ann_num_toks, annotation] of annotation_occurences) {
-        if (index < ann_start_idx || index > (ann_start_idx+(ann_num_toks-1)))
-          continue;
-        this.columnHeaders.push(annotation_name);
-        tokenArray.push(annotation);
-        // tokenArray.push(
-        //   Object.entries(annotation)
-        //     .filter(a=>a[1])
-        //     .map((([attr_name,attr_value])=>`<abbr title="${attr_name}">${attr_value}</abbr>`))
-        //     .join(", ")
-        // );
-      }
-    }
-  }
-}
+const TokenToDisplay = Utils.TokenToDisplay;
 
 export default {
   name: "ResultsPlainTableView",
-  emits: ["updatePage", "hoverResultLine", "playMedia"],
+  emits: ["updatePage", "hoverResultLine", "playMedia", "showImage"],
   props: [
     "data",
     "sentences",
@@ -575,7 +466,6 @@ export default {
       modalIndex: null,
       currentPage: 1,
       allowedMetaColums: allowedMetaColums,
-      groups: this.data ? this.getGroups(this.data[0], true) : [],
       randInt: Math.floor(Math.random() * 1000),
       playIndex: -1,
       image: null,
@@ -585,56 +475,19 @@ export default {
     };
   },
   components: {
-    ImageViewer,
+    PlainTokens,
     ResultsDetailsModalView,
     PaginationComponent,
     FontAwesomeIcon
 },
   methods: {
-    // getGroups1(data) {
-    //   let groups = [];
-    //   let tmpGroup = [];
-    //   let tokenData = JSON.parse(JSON.stringify(data));
-    //   tokenData = tokenData.splice(1, tokenData.length)[0];
-    //   tokenData.forEach((tokenId, idx) => {
-    //     if (idx > 0 && Math.abs(tokenData[idx] - tokenData[idx - 1]) > 1) {
-    //       if (tmpGroup.length > 0) {
-    //         groups.push(tmpGroup.sort());
-    //       }
-    //       tmpGroup = [];
-    //     }
-    //     tmpGroup.push(tokenId);
-    //   });
-    //   groups.push(tmpGroup.sort());
-    //   return groups;
-    // },
     selectLine(index, detach) {
-      if (detach && (this.showAudio(index) || this.showVideo(index)))
+      if (detach && (this.showAudio(index) || this.showVideo(index) || this.imageLayerAttribute[0]))
         this.detachSelectedLine = true;
       else
         this.detachSelectedLine = false;
       this.selectedLine = index;
       this.selectedPage = this.currentPage;
-    },
-    getGroups(data, initial=false) {
-      let groups = [];
-      let tmpGroup = [];
-      let tokenData = JSON.parse(JSON.stringify(data));
-      tokenData = tokenData.splice(1, tokenData.length).sort();
-      if (initial === true) {
-        tokenData = tokenData[0]
-      }
-      tokenData.forEach((tokenId, idx) => {
-        if (idx > 0 && Math.abs(tokenData[idx] - tokenData[idx - 1]) > 1) {
-          if (tmpGroup.length > 0) {
-            groups.push(tmpGroup.sort());
-          }
-          tmpGroup = [];
-        }
-        tmpGroup.push(tokenId);
-      });
-      groups.push(tmpGroup.sort());
-      return groups;
     },
     showPopover(token, resultIndex, event) {
       this.popoverY = event.clientY + 10;
@@ -652,6 +505,7 @@ export default {
       resultIndex = resultIndex + (this.currentPage - 1) * this.resultsPerPage;
       const sentenceId = this.data[resultIndex][0];
       const layer = this.corpora.corpus.layer;
+      this.currentResultIndex = resultIndex;
       this.currentMeta = Object.fromEntries(Object.entries(this.meta[sentenceId]).sort((x,y)=>y[0] != layer[x[0]]?.contains));
       for (let layer in this.currentMeta) {
         const submeta = this.currentMeta[layer].meta;
@@ -687,52 +541,37 @@ export default {
     },
     getImage(resultIndex) {
       if (!this.corpora.corpus) return null;
-      for (let [layerName, props] of Object.entries(this.corpora.corpus.layer)) {
-        let attrs = props.attributes || {};
-        if ("meta" in attrs)
-          attrs = {attrs, ...attrs.meta};
-        for (let [aname, aprops] of Object.entries(attrs||{}))
-          if (aprops.type == "image") return [
-            this.meta[this.data[resultIndex][0]][layerName][aname],
-            layerName
-          ];
-      }
-      return null;
+      const [layerName, aname] = this.imageLayerAttribute;
+      if (!layerName || !aname) return null;
+      const meta = this.meta[this.data[resultIndex][0]];
+      if (!meta || !(layerName in meta)) return null;
+      const filename = meta[layerName][aname];
+      if (!filename)
+        return null;
+      return [filename, layerName];
     },
-    showImage(filename, imageLayer, meta=null) {
+    showImage(filename, imageLayer, resultIndex, meta=null) {
       if (meta===null)
         meta = this.currentMeta;
       if (!meta) return;
-      const boxes = [];
-      const colors = ["green","blue","orange","pink","brown"];
-      let image_offset = [];
-      let color = 1;
-      for (let [layer, props] of Object.entries(meta||{})) {
-        if (!props.xy_box)
-          continue;
-        let xy_box = props.xy_box.match(/\d+/g).map(v=>parseInt(v))
-        if (xy_box[0] > xy_box[2])
-          xy_box = [xy_box[2], xy_box[3], xy_box[0], xy_box[1]];
-        if (imageLayer && imageLayer == layer) {
-          image_offset = xy_box.slice(0,2);
-          continue;
-        }
-        if (!this.corpora.corpus.layer[layer].anchoring.location)
-          continue;
-        boxes.push([...xy_box, colors[color % colors.length]]);
-        color++;
-      }
-      for (let n = 0; image_offset.length && n < boxes.length; n++) {
-        boxes[n][0] -= image_offset[0];
-        boxes[n][1] -= image_offset[1];
-        boxes[n][2] -= image_offset[0];
-        boxes[n][3] -= image_offset[1];
-      }
+      const segId = this.data[resultIndex][0];
+      const layerId = this.meta[segId][imageLayer]._id;
+      const dataForGroups = (this.data || []).find(r=>r[0]==segId);
+      let groups = [];
+      try {
+        groups = dataForGroups ? JSON.parse(JSON.stringify(dataForGroups[1])) : [];
+      } catch { null }
       this.image = {
         name: filename.replace(/\.[^.]+$/,""),
         src: this.baseMediaUrl + filename,
-        boxes: boxes
+        resultSegment: segId,
+        groups: groups,
+        layer: imageLayer,
+        layerId: layerId,
+        columnHeaders: this.columnHeaders
       };
+      this.detachSelectedLine = true;
+      this.$emit("showImage", this.image);
     },
     hoverResultLine(resultIndex) {
       let line = null;
@@ -850,13 +689,18 @@ export default {
       return meta[layer].frame_range.map(fr=>fr-docLower);
     },
     playAudio(resultIndex) {
-      this.$refs.audioplayer.pause();
+      try {
+        this.$refs.audioplayer.pause();
+      } catch {
+        // pass
+      }
       resultIndex = resultIndex + (this.currentPage - 1) * this.resultsPerPage;
       const sentenceId = this.data[resultIndex][0];
       let meta = this.meta[sentenceId];
       if (meta) {
         // corpus tamplete,
-        let documentId = meta[this.corpora.corpus.firstClass.document].id;
+        const doc_layer = this.corpora.corpus.firstClass.document;
+        let documentId = meta[doc_layer]._id;
         let filename = this.getAudio(resultIndex); // meta[this.corpora.corpus.firstClass.document].audio
         let [startFrameSeg, endFrameSeg] = this.getFrameRange(resultIndex, this.corpora.corpus.firstClass.segment);
         let startTime = startFrameSeg / 25.0;
@@ -890,7 +734,7 @@ export default {
       const sentenceId = this.data[resultIndex][0];
       let meta = this.meta[sentenceId];
       if (meta) {
-        let documentId = meta[this.corpora.corpus.firstClass.document].id;
+        let documentId = meta[this.corpora.corpus.firstClass.document]._id;
         let filename = this.getAudio(resultIndex); // meta[this.corpora.corpus.firstClass.document].audio
         let [startFrameDoc, endFrameDoc] = this.getFrameRange(resultIndex, this.corpora.corpus.firstClass.document);
         let [startFrameSeg, endFrameSeg] = this.getFrameRange(resultIndex, this.corpora.corpus.firstClass.segment);
@@ -926,20 +770,49 @@ export default {
       }
       if (Array.isArray(meta_obj))
         ret = meta_obj.join(", ")
-      else if (typeof(meta_obj) == "string")
+      else if (typeof(meta_obj) in {string: 1, number: 1})
         ret = meta_obj
       else
         ret = Utils.dictToStr(meta_obj, {addTitles: true, reorder: x=>x[0]=="id"}); // small hack to put id first
       return ret;
+    },
+    isEmpty(value) {
+      return (typeof(value) != "number" && !value) || (value instanceof Object && Object.keys(value).length == 0);
     },
     meta_fold(layer, flip) {
       this.currentMeta._unfolded = (this.currentMeta._unfolded || {});
       if (flip)
         this.currentMeta._unfolded[layer] = !this.currentMeta._unfolded[layer];
       return this.currentMeta._unfolded[layer];
+    },
+    formatTokens(row) {
+      const sentenceId = row[0];
+      const startIndex = this.sentences[sentenceId][0];
+      const annotations = this.sentences[sentenceId][2];
+      let tokens = this.sentences[sentenceId][1];
+
+      let tokenData = JSON.parse(JSON.stringify(row[1])); // tokens are already gouped in sets/sequences
+      tokenData = tokenData.map( tokenIdOrSet => tokenIdOrSet instanceof Array ? tokenIdOrSet : [tokenIdOrSet] );
+      // Return a list of TokenToDisplay instances
+      tokens = tokens.map( (token,idx) => new TokenToDisplay(token, startIndex + idx, tokenData, this.columnHeaders, annotations) );
+
+      return tokens;
     }
   },
   computed: {
+    imageLayerAttribute() {
+      if (!this.corpora.corpus) return ["",""];
+      for (let [layerName, props] of Object.entries(this.corpora.corpus.layer)) {
+        let attrs = props.attributes || {};
+        if ("meta" in attrs)
+          attrs = {attrs, ...attrs.meta};
+        for (let [aname, aprops] of Object.entries(attrs||{})) {
+          if (aprops.type == "image")
+            return [layerName,aname];
+        }
+      }
+      return ["",""];
+    },
     headToken() {
       let token = "-";
       let headIndex = this.columnHeaders.indexOf("head");
@@ -963,54 +836,7 @@ export default {
           let sentenceId = row[0];
           return rowIndex >= start && rowIndex < end && this.sentences[sentenceId];
         })
-        .map((row) => {
-          let sentenceId = row[0];
-          let startIndex = this.sentences[sentenceId][0];
-          let tokens = this.sentences[sentenceId][1];
-          let annotations = this.sentences[sentenceId][2];
-
-          let tokenData = JSON.parse(JSON.stringify(row[1])); // tokens are already gouped in sets/sequences
-          tokenData = tokenData.map( tokenIdOrSet => tokenIdOrSet instanceof Array ? tokenIdOrSet : [tokenIdOrSet] );
-          // Return a list of TokenToDisplay instances
-          tokens = tokens.map( (token,idx) => new TokenToDisplay(token, startIndex + idx, tokenData, this.columnHeaders, annotations) );
-
-          return tokens;
-          // let range = tokenData.map( (tokensArr) =>
-          //   tokensArr.map( (tokenId) => tokenId - startIndex )
-          // );
-
-          // let retval = [
-          //   // Before first match
-          //   // Revert when in table
-          //   // tokens.filter((_, index) => index < range[0][0]).reverse(),
-          //   tokens.filter((_, index) => index < range[0][0])
-          // ];
-
-          // for (let index = 0; index < range.length; index++) {
-          //   retval.push(
-          //     tokens.filter(
-          //       (_, tokenIndex) =>
-          //         tokenIndex >= range[index][0] &&
-          //         tokenIndex <= range[index].at(-1)
-          //     )
-          //   );
-          //   // Context between forms
-          //   if (index + 1 < range.length) {
-          //     retval.push(
-          //       tokens.filter(
-          //         (_, tokenIndex) =>
-          //           tokenIndex > range[index].at(-1) &&
-          //           tokenIndex < range[index + 1][0]
-          //       )
-          //     );
-          //   }
-          // }
-
-          // // After last form
-          // retval.push(tokens.filter((_, index) => index > range.at(-1).at(-1)));
-          // retval.push(range);
-          // return retval;
-        });
+        .map(row=>this.formatTokens(row));
     },
     columnHeaders() {
       let partitions = this.corpora.corpus.partitions

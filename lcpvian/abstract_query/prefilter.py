@@ -1,14 +1,7 @@
-from collections import defaultdict
 from typing import Any, Sequence, cast
 
 from .typed import JSON, LabelLayer, QueryPart, JSONObject
-from .utils import (
-    Config,
-    SUFFIXES,
-    _get_underlang,
-    _parse_comparison,
-    arg_sort_key,
-)
+from .utils import Config, SUFFIXES, _get_underlang, arg_sort_key, literal_sql
 
 from typing import Self
 
@@ -35,7 +28,7 @@ class SingleNode:
             self.is_regex = True
         self.is_prefix = _is_prefix(self.query, op=op)
 
-    def as_prefilter(self) -> str:
+    def as_prefilter(self, col_data: dict[str, str]) -> str:
         """
         Turn node into a prefilter string
         """
@@ -71,7 +64,8 @@ class SingleNode:
                     piece = piece.lstrip().lstrip("^")
                     break
             fixed.append(f"{piece}{pref}")
-        tokens = [f"{inv}{{{self.field}}}{s}" for s in fixed]
+        idx = next(k for k, v in col_data.items() if v == self.field)
+        tokens = [f"{inv}{idx}{s}" for s in fixed]
         if len(tokens) > 1:
             return " (" + joiner.join(tokens) + " ) "
         else:
@@ -160,6 +154,22 @@ class Prefilter:
         self.lang = conf.lang
         self._underlang = _get_underlang(self.lang, self.config)
         self._has_partitions = self.has_partitions()
+        self._col_data: dict[str, str] = {}
+        col_data = cast(
+            dict[str, str] | dict[str, dict[str, str]] | list,
+            self.config["mapping"].get("FTSvectorCols", {}),
+        )
+        if isinstance(self._col_data, list):
+            self._col_data = {
+                str(ix): name for ix, name in enumerate(col_data, start=1)
+            }
+        elif self._has_partitions:
+            self._col_data = cast(
+                dict[str, str],
+                cast(dict, col_data).get(cast(str, self.lang), col_data),
+            )
+        else:
+            self._col_data = cast(dict[str, str], col_data)
 
     def has_partitions(self) -> bool:
         """
@@ -170,6 +180,12 @@ class Prefilter:
         _cols = cast(JSONObject, layers[self.config["segment"]])
         return self.lang in cast(JSONObject, _cols.get("partitions", {}))
 
+    def _tsquery(self, query: str) -> str:
+        formed_query = literal_sql(query)
+        if formed_query.startswith("concat("):
+            formed_query += "::tsquery"
+        return formed_query
+
     def _stringify(self, prefilters: list[str]) -> str:
         """
         Build the actual SQL query part
@@ -179,27 +195,11 @@ class Prefilter:
         if not any(x.strip() for x in prefilters):
             return ""
 
-        # todo: remove list when main.corpus standardised
-        col_data = cast(
-            dict[str, str] | dict[str, dict[str, str]] | list,
-            self.config["mapping"].get("FTSvectorCols", {}),
-        )
-        if not col_data:
-            return ""
-        if isinstance(col_data, list):
-            col_data = {str(ix): name for ix, name in enumerate(col_data, start=1)}
-        elif self._has_partitions:
-            col_data = cast(
-                dict[str, str] | dict[str, dict[str, str]] | list,
-                col_data.get(cast(str, self.lang), col_data),
-            )
-        locations: dict[str, str] = {}
         conjuncts: list[str] = []
         tok_name = self.config["firstClass"]["token"]
         tok_attrs = self.config["layer"][tok_name].get("attributes", {})
-        for ix, name in cast(dict[str, str], col_data).items():
+        for ix, name in cast(dict[str, str], self._col_data).items():
             attr_name = name.split()[0]
-            locations[attr_name] = str(ix)
             if tok_attrs.get(attr_name, {}).get("type") != "text":
                 continue
             for pf in prefilters:
@@ -208,18 +208,15 @@ class Prefilter:
                 for c in pf.split("&"):
                     stripped_c = c.strip(" ()")
                     if (
-                        stripped_c.startswith(
-                            ("{" + attr_name + "}", "!{" + attr_name + "}")
-                        )
+                        stripped_c.startswith((str(ix), f"!{ix}"))
                         and stripped_c not in conjuncts
                     ):
                         conjuncts.append(stripped_c)
-        ps = [pf.format(**locations) for pf in prefilters]
-        conjuncts = [c.format(**locations) for c in conjuncts]
-        stringified = f"vec.vector @@ '{' <1> '.join(ps) }'"
+        formed_prefilters = self._tsquery(" <1> ".join(prefilters))
+        stringified = f"vec.vector @@  {formed_prefilters}"
         if len(conjuncts) > 1:
             # Including the single terms aside their sequence makes queries much faster
-            cond_conjuncts = [f"vec.vector @@ '{c}'" for c in conjuncts]
+            cond_conjuncts = [f"vec.vector @@ {self._tsquery(c)}" for c in conjuncts]
             stringified = " AND ".join(cond_conjuncts) + " AND " + stringified
         return stringified
 
@@ -390,7 +387,7 @@ class Prefilter:
         if isinstance(item, Conjuncted):
             return " <1> ".join(self._stringify_nodes([item]))
         elif isinstance(item, SingleNode):
-            return item.as_prefilter()
+            return item.as_prefilter(self._col_data)
         raise NotImplementedError("should not be here")
 
     def _stringify_nodes(

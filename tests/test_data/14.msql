@@ -1,13 +1,11 @@
 WITH preps AS (SELECT Segment_id, id_offset, content, annotations FROM swissdox_3.prepared_segment_de WHERE Segment_id = ANY(:sids)),
-    meta AS (SELECT
-    "Segment"."segment_id" AS "Segment_id", "Segment"."char_range" AS "Segment_char_range", "Article"."article_id" AS "Article_id", "Article"."char_range" AS "Article_char_range", "Article"."head" AS "Article_head", "Article"."source" AS "Article_source", "Article"."pubdate" AS "Article_pubdate", "Article"."subhead" AS "Article_subhead", "Article"."dateline" AS "Article_dateline", "Article"."source_name" AS "Article_source_name", "Article"."meta"::jsonb AS "Article_meta", "Division"."division_id" AS "Division_id", "Division"."char_range" AS "Division_char_range", "Division"."type" AS "Division_type"
-FROM
-    preps
-    LEFT JOIN "swissdox_3"."segment_derest" "Segment" ON "Segment"."segment_id" = preps."segment_id"
-    LEFT JOIN "swissdox_3"."article_de" "Article" ON "Article"."char_range" @> "Segment"."char_range"
-    LEFT JOIN "swissdox_3"."division_de" "Division" ON "Division"."char_range" @> "Segment"."char_range"
-GROUP BY
-    "Segment"."segment_id", "Article"."article_id", "Article"."head", "Article"."source", "Article"."pubdate", "Article"."subhead", "Article"."dateline", "Article"."source_name", "Article"."meta"::jsonb, "Division"."division_id", "Division"."type")
-SELECT -1::int2 AS rstype, jsonb_build_array(preps.segment_id, preps.id_offset, preps.content, preps.annotations) FROM preps
+meta AS (WITH "x" AS (SELECT s.char_range, s."segment_id" FROM preps JOIN swissdox_3.segment_derest s ON s."segment_id" = preps."segment_id"),
+"Article" AS (SELECT array_agg("x"."segment_id") AS "_sids", "Article"."article_id" AS "Article_id","Article"."char_range" AS "char_range","Article"."head" AS "head","Article"."source" AS "source","Article"."pubdate" AS "pubdate","Article"."subhead" AS "subhead","Article"."dateline" AS "dateline","Article"."source_name" AS "source_name","Article"."meta"::jsonb->'SMDId' AS "SMDId","Article"."meta"::jsonb->'author' AS "author","Article"."meta"::jsonb->'doctype' AS "doctype","Article"."meta"::jsonb->'articleId' AS "articleId","Article"."meta"::jsonb->'contentId' AS "contentId","Article"."meta"::jsonb->'articleURL' AS "articleURL","Article"."meta"::jsonb->'otherPubList' AS "otherPubList","Article"."meta"::jsonb->'otherPubCount' AS "otherPubCount" FROM "x" LEFT JOIN "swissdox_3"."article_de" "Article" ON "Article"."char_range" && "x"."char_range" GROUP BY "Article_id"),
+"Division" AS (SELECT array_agg("x"."segment_id") AS "_sids", "Division"."division_id" AS "Division_id","Division"."char_range" AS "char_range","Division"."type" AS "type" FROM "x" LEFT JOIN "swissdox_3"."division_de" "Division" ON "Division"."char_range" && "x"."char_range" GROUP BY "Division_id"),
+"Segment" AS (SELECT array_agg("x"."segment_id") AS "_sids", "Segment"."segment_id" AS "Segment_id","Segment"."char_range" AS "char_range" FROM "x" LEFT JOIN "swissdox_3"."segment_derest" "Segment" ON "Segment"."char_range" && "x"."char_range" GROUP BY "Segment_id")
+SELECT jsonb_build_array("_sids",'Article',"Article_id",jsonb_build_object('char_range',"Article"."char_range",'head',"Article"."head",'source',"Article"."source",'pubdate',"Article"."pubdate",'subhead',"Article"."subhead",'dateline',"Article"."dateline",'source_name',"Article"."source_name",'SMDId',"Article"."SMDId",'author',"Article"."author",'doctype',"Article"."doctype",'articleId',"Article"."articleId",'contentId',"Article"."contentId",'articleURL',"Article"."articleURL",'otherPubList',"Article"."otherPubList",'otherPubCount',"Article"."otherPubCount")) AS res FROM "Article"
+UNION ALL SELECT jsonb_build_array("_sids",'Division',"Division_id",jsonb_build_object('char_range',"Division"."char_range",'type',"Division"."type")) AS res FROM "Division"
+UNION ALL SELECT jsonb_build_array("_sids",'Segment',"Segment_id",jsonb_build_object('char_range',"Segment"."char_range")) AS res FROM "Segment")
+SELECT -1::int2 AS rstype, jsonb_build_array(preps."segment_id", preps.id_offset, preps.content, preps.annotations) FROM preps
 UNION ALL
-SELECT -2::int2 AS rstype, jsonb_build_array(meta."Segment_id", meta."Segment_char_range", meta."Article_id", meta."Article_char_range", meta."Article_head", meta."Article_source", meta."Article_pubdate", meta."Article_subhead", meta."Article_dateline", meta."Article_source_name", meta."Article_meta", meta."Division_id", meta."Division_char_range", meta."Division_type") FROM meta;
+SELECT -2::int2 AS rstype, res FROM meta;

@@ -237,6 +237,7 @@ async def corpora_meta_update(request: web.Request) -> web.Response:
         name=metadata["name"],
         source=metadata.get("source", ""),
         url=metadata.get("url", ""),
+        date=metadata.get("date", ""),
         authors=metadata.get("authors", ""),
         institution=metadata.get("institution", ""),
         revision=metadata.get("revision", ""),

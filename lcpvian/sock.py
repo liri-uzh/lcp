@@ -219,6 +219,7 @@ async def _handle_message(
         "background_job_progress",
         "document",
         "document_ids",
+        "image_annotations",
         "started_export",
         "export_complete",
     )

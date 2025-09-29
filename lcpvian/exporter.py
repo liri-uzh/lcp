@@ -9,6 +9,7 @@ from aiohttp import web
 from base64 import b64decode as btoa
 from functools import cmp_to_key
 from io import TextIOWrapper
+from intervaltree import Interval, IntervalTree
 from lxml.builder import E
 from redis import Redis as RedisConnection
 from rq import Callback, Queue
@@ -23,7 +24,14 @@ from .callbacks import _general_failure
 from .jobfuncs import _export_db
 from .query_classes import Request, QueryInfo
 from .typed import CorpusConfig
-from .utils import _get_iso639_3, _get_mapping, _publish_msg, sanitize_filename
+from .utils import (
+    _get_iso639_3,
+    _get_mapping,
+    _is_anchored,
+    _publish_msg,
+    is_prepared_annotation,
+    sanitize_filename,
+)
 
 EXPORT_TTL = 5000
 RESULTS_DIR = os.getenv("RESULTS", "results")
@@ -528,32 +536,14 @@ class Exporter:
         tok = config["token"]
         return [self.build_token(tok, offset + n, t) for n, t in enumerate(tokens)]
 
-    def write_containees(
-        self,
-        output,
-        all_layers: dict,
-        ordered_containers: dict,
-        layer: str,
-        ids: dict[str, int],
-    ):
+    def write_unit(self, output, id: str, layer: str, unit: dict):
         """
-        Write all the units in IDS and their contained units, recursively, ordered by char_range
+        Write a layer unit to a file
         """
-        units = [all_layers[layer][cid] for cid in ids]
-        units.sort(key=lambda x: int(x.get("char_range", "[0,0)")[1:].split(",")[0]))
-        for unit in units:
-            attr_str, complex_attrs = _get_attributes(unit)
-            output.write(f"\n<{layer} {attr_str}>{complex_attrs}")
-            if layer not in ordered_containers:
-                continue
-            contained_layer, containees_by_cid = ordered_containers[layer]
-            self.write_containees(
-                output,
-                all_layers,
-                ordered_containers,
-                contained_layer,
-                containees_by_cid[unit["id"]],
-            )
+        attr_str, complex_attrs = _get_attributes(unit)
+        output.write(
+            f"<{layer} {_xml_attr('_id')}={quoteattr(str(id))} {attr_str}>{complex_attrs}\n"
+        )
 
     async def process_segments(self, payload: dict, batch_hash: str) -> None:
         """
@@ -567,76 +557,8 @@ class Exporter:
         )
         work_path = self.get_working_path(batch_hash)
         res = payload.get("result", [])
-        meta_labels = self._qi.meta_labels
-        layers_in_meta: set[str] = {l.split("_", 1)[0] for l in meta_labels}
-        config = cast(CorpusConfig, self._config)
-        seg = config["segment"]
-        all_layers: dict[str, dict[str, dict]] = {l: {} for l in layers_in_meta}
-        # all_layers:
-        # {
-        #     "Document": {
-        #         "docid1": {"a1": "v1", "a2": "v2", etc.}
-        #     })
-        # }
-        ordered_containers: dict[str, tuple[str, dict[str, dict[str, int]]]] = {}
-        # ordered_containers:
-        # {
-        #     "Document": ("Division", {
-        #         "docid1": {"divid1": 1, "divid2": 1},
-        #         "docid2": {"divid3": 1, "divid4": 1}
-        #     }),
-        #     "Division": ("Segment", {
-        #         "divid1": {"segid1": 1, "segid2": 1}
-        #         "divid2": {"segid3": 1, "segid4": 1}
-        #     })
-        # }
-        top_layer = _get_top_layer(config, restrict=layers_in_meta)
-        current_layer = last_container = top_layer
-        while 1:
-            current_layer = config["layer"].get(current_layer, {}).get("contains", "")
-            if not current_layer:
-                break
-            if current_layer in layers_in_meta:
-                ordered_containers[last_container] = (current_layer, {})
-                last_container = current_layer
-        layer_to_container = {y: x for x, (y, _) in ordered_containers.items()}
-        unordered_layers_by_top: dict[str, dict[str, dict[str, int]]] = {
-            k: {}
-            for k in layers_in_meta
-            if k not in layer_to_container and k != top_layer
-        }
-        # unordered_layers_by_doc:
-        # {
-        #     "Namedentity": {
-        #        "docid1": {"neid1": 1, "neid2": 1, etc.}
-        #     }
-        # }
-        # META
-        for meta_line in res["-2"]:
-            layer_to_attrs = {
-                l: {
-                    meta_labels[n].split("_", 1)[1]: v
-                    for n, v in enumerate(meta_line)
-                    if meta_labels[n].startswith(f"{l}_")
-                }
-                for l in layers_in_meta
-            }
-            top_id = layer_to_attrs[top_layer]["id"]
-            for l in layers_in_meta:
-                lid = layer_to_attrs[l]["id"]
-                all_layers[l][lid] = layer_to_attrs[l]
-                if l == top_layer:
-                    continue
-                if c := layer_to_container.get(l):
-                    cid = layer_to_attrs[c].get("id", "")
-                    oc = ordered_containers[c][1].setdefault(cid, {})
-                    oc[lid] = 1
-                else:
-                    ulbc = unordered_layers_by_top[l].setdefault(top_id, {})
-                    ulbc[lid] = 1
-            # SEGMENTS
-            sid = layer_to_attrs[seg]["id"]
-            offset, tokens, *annotations = res["-1"][sid]
+        # SEGMENTS
+        for sid, (offset, tokens, *annotations) in res["-1"].items():
             prefix = sid[0:3]
             seg_path = self.get_working_path(prefix)
             fpath = os.path.join(seg_path, f"{sid}.xml")
@@ -655,35 +577,107 @@ class Exporter:
                         seg_output.write(_node_to_string(ann_node))
                 for token in self.build_tokens(offset, tokens):
                     seg_output.write(_node_to_string(token))
-        for top_id, attrs in all_layers[top_layer].items():
-            fpath = os.path.join(work_path, f"{top_id}.xml")
-            with open(fpath, "w") as doc_output:
-                # attr_str = " ".join(
-                #     f"{_xml_attr(k)}={quoteattr(str(v))}" for k, v in attrs.items()
-                # )
-                attr_str, complex_attrs = _get_attributes(attrs)
-                doc_output.write(f"<{top_layer} {attr_str}>{complex_attrs}")
-                # contained layers (div, segs, etc.)
-                contained_layer, containees_by_top_id = ordered_containers[top_layer]
-                self.write_containees(
-                    doc_output,
-                    all_layers,
-                    ordered_containers,
-                    contained_layer,
-                    containees_by_top_id[top_id],
-                )
-                # undordered layers (named entity)
-                for unordered_layer in unordered_layers_by_top:
-                    for ul_id in unordered_layers_by_top[unordered_layer][top_id]:
-                        ul_attrs = all_layers[unordered_layer][ul_id]
-                        # ul_attr_str = " ".join(
-                        #     f"{_xml_attr(k)}={quoteattr(str(v))}"
-                        #     for k, v in ul_attrs.items()
-                        # )
-                        ul_attr_str, ul_complex_attrs = _get_attributes(ul_attrs)
-                        doc_output.write(
-                            f"\n<{unordered_layer} {ul_attr_str}>{ul_complex_attrs}"
+        # META
+        config = cast(CorpusConfig, self._config)
+        top_conf: dict = cast(dict, config["layer"][config["firstClass"]["document"]])
+        valid_anchors = [
+            a
+            for a in ("stream", "time")
+            if _is_anchored(top_conf, cast(dict, config), a)
+        ]
+        anchor_col = {"stream": "char_range", "time": "frame_range"}
+        layers_by_id: dict[str, dict] = {l: {} for l in config["layer"]}
+        layer_ids_by_anchor = {
+            l: {a: IntervalTree() for a in valid_anchors} for l in config["layer"]
+        }
+        layers_in_meta: dict = {}
+        for _, lname, lid, meta in res["-2"]:
+            layers_in_meta[lname] = 1
+            layers_by_id[lname][lid] = meta
+            for a in valid_anchors:
+                anc_meta = meta.get(anchor_col[a], "")
+                if not anc_meta:
+                    continue
+                itv = range(*json.loads(anc_meta.replace(")", "]")))
+                layer_ids_by_anchor[lname][a][itv] = lid
+        top_layer = _get_top_layer(config, restrict=set(layers_in_meta))
+        nested_layers: list[str] = []
+        # Add the layers contained in the top layer first
+        contained_layer = top_layer
+        while 1:
+            contained_layer = (
+                config["layer"].get(contained_layer, {}).get("contains", "")
+            )
+            if not contained_layer:
+                break
+            if contained_layer not in layers_in_meta:
+                continue
+            nested_layers.append(contained_layer)
+
+        # Write the files
+        for lid, attrs in layers_by_id[top_layer].items():
+            fpath = os.path.join(work_path, f"{lid}.xml")
+            top_itv_by_anchor = {
+                a: range(*json.loads(attrs[anchor_col[a]].replace(")", "]")))
+                for a in valid_anchors
+            }
+            with open(fpath, "w") as top_output:
+                self.write_unit(top_output, lid, top_layer, attrs)
+                bottom_layer = next(x for x in reversed(nested_layers))
+                bottom_anchors = layer_ids_by_anchor[bottom_layer]
+                for a in valid_anchors:
+                    if a != "stream":
+                        continue  # restrict to stream for now
+                    top_itv = top_itv_by_anchor[a]
+                    interim_units: dict[str, str] = {
+                        l: "" for l in nested_layers if l != bottom_layer
+                    }
+                    # Retrieve the bottom units
+                    for bottom_unit_id in sorted(bottom_anchors[a][top_itv]):
+                        bottom_unit = layers_by_id[bottom_layer][bottom_unit_id.data]
+                        bottom_unit_itv = range(
+                            *json.loads(bottom_unit[anchor_col[a]].replace(")", "]"))
                         )
+                        for iu_layer, iu_id in interim_units.items():
+                            new_iu_id = next(
+                                (
+                                    x.data
+                                    for x in layer_ids_by_anchor[iu_layer][a][
+                                        bottom_unit_itv
+                                    ]
+                                ),
+                                None,
+                            )
+                            if not new_iu_id or new_iu_id == iu_id:
+                                continue
+                            self.write_unit(
+                                top_output,
+                                new_iu_id,
+                                iu_layer,
+                                layers_by_id[iu_layer][new_iu_id],
+                            )
+                            interim_units[iu_layer] = new_iu_id
+                        self.write_unit(
+                            top_output, bottom_unit_id.data, bottom_layer, bottom_unit
+                        )
+                for unnested_layer in layers_in_meta:
+                    if unnested_layer == top_layer or unnested_layer in nested_layers:
+                        continue
+                    for a in valid_anchors:
+                        if a != "stream":
+                            continue
+                        for unnested_unit_id in sorted(
+                            layer_ids_by_anchor[unnested_layer][a][top_itv]
+                        ):
+                            unnested_unit = layers_by_id[unnested_layer][
+                                unnested_unit_id.data
+                            ]
+                            self.write_unit(
+                                top_output,
+                                unnested_unit_id.data,
+                                unnested_layer,
+                                unnested_unit,
+                            )
         print(
             f"[Export {self._request.id}] Done processing segments for {batch_hash} (QI {self._request.hash})"
         )
@@ -786,8 +780,13 @@ class Exporter:
                 print(f"[Export {self._request.id}] Complete (QI {self._request.hash})")
                 return
             # KWICS
+            # layers_in_meta: set[str] = {
+            #     l.split("_", 1)[0] for l in self._qi.meta_labels
+            # }
             layers_in_meta: set[str] = {
-                l.split("_", 1)[0] for l in self._qi.meta_labels
+                ln
+                for ln in config["layer"]
+                if ln != tok and not is_prepared_annotation(config, ln)
             }
             current_layer = _get_top_layer(
                 cast(CorpusConfig, config), restrict=layers_in_meta
@@ -796,27 +795,27 @@ class Exporter:
             while current_layer := (
                 config["layer"].get(current_layer, {}).get("contains", "")
             ):
-                if current_layer not in layers_in_meta:
-                    continue
+                # if current_layer not in layers_in_meta:
+                #     continue
                 indented_layers.append(current_layer)
             output.write("  <plain>\n")
             # associate each doc with all its files from all the batch subfolders
-            doc_files: dict[str, list[str]] = {}
+            top_files: dict[str, list[str]] = {}
             all_batches = [bh for (bh, _) in self._qi.query_batches.values()]
             for b in all_batches:
                 bpath = os.path.join(wpath, b)
                 if not os.path.exists(bpath):
                     continue
                 for filename in os.listdir(bpath):
-                    paths: list[str] = doc_files.setdefault(filename, [])
+                    paths: list[str] = top_files.setdefault(filename, [])
                     paths.append(bpath)
             # for each doc, go through the files in parallel, one line at a time
             # based on the char_range of the line and the embedding level
-            for doc_file, paths in doc_files.items():
+            for top_file, paths in top_files.items():
                 # handler to read the files in parallel (see _next_line)
                 inputs: list[dict[str, TextIOWrapper | str | int]] = [
                     {
-                        "io": open(os.path.join(p, doc_file), "r"),
+                        "io": open(os.path.join(p, top_file), "r"),
                         "line": "",
                         "layer": "",
                         "char_range": 0,
@@ -852,7 +851,7 @@ class Exporter:
                         output.write(f"{ind}{line}")
                         if inp["layer"] == config["segment"]:
                             # insert the content of the corresponding segment files
-                            sid = (re.search(r" id=\"([^\"]+)\"", line) or ("", ""))[1]
+                            sid = (re.search(r" _id=\"([^\"]+)\"", line) or ("", ""))[1]
                             sprefix = sid[0:3]
                             kwicfn = os.path.join(wpath, sprefix, f"{sid}_kwic.xml")
                             if os.path.exists(kwicfn):

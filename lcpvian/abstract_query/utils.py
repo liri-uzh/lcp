@@ -128,7 +128,10 @@ class SQLCorpus:
             table = RichStr(sql_str("{}.{} {}", self.schema, rel_table, rel_ent_label))
             table.meta["entity"] = entity
             condition = sql_str(
-                f"{entity_label}.alignment_id = {LR}.alignment_id", rel_ent_label
+                f"{entity_label}.{LR} = {LR}.{LR}",
+                "alignment_id",
+                rel_ent_label,
+                "alignment_id",
             )
             joins[table] = {**joins.get(table, {}), condition: 1}
             entity_alias = rel_ent_label

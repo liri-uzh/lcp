@@ -1,16 +1,13 @@
- WITH preps AS (SELECT Segment_id, id_offset, content FROM sparcling1.prepared_segment_en WHERE Segment_id = ANY(:sids)),
-    meta AS (SELECT
-    "Segment"."segment_id" AS "Segment_id", "Segment"."char_range" AS "Segment_char_range", "Turn"."alignment_id" AS "Turn_id", "Turn"."char_range" AS "Turn_char_range", "Turn_aligned"."meta"::jsonb AS "Turn_meta", "Session"."alignment_id" AS "Session_id", "Session"."char_range" AS "Session_char_range", "Session_aligned"."meta"::jsonb AS "Session_meta", "Chapter"."alignment_id" AS "Chapter_id", "Chapter"."char_range" AS "Chapter_char_range"
-FROM
-    preps
-    LEFT JOIN "sparcling1"."segment_enrest" "Segment" ON "Segment"."segment_id" = preps."segment_id"
-    LEFT JOIN "sparcling1"."turn_en" "Turn" ON "Turn"."char_range" @> "Segment"."char_range"
-    LEFT JOIN "sparcling1"."turn_alignment" "Turn_aligned" ON "Turn".alignment_id = "Turn_aligned".alignment_id
-    LEFT JOIN "sparcling1"."session_en" "Session" ON "Session"."char_range" @> "Segment"."char_range"
-    LEFT JOIN "sparcling1"."session_alignment" "Session_aligned" ON "Session".alignment_id = "Session_aligned".alignment_id
-    LEFT JOIN "sparcling1"."chapter_en" "Chapter" ON "Chapter"."char_range" @> "Segment"."char_range"
-GROUP BY
-    "Segment"."segment_id", "Turn"."alignment_id", "Turn_aligned"."meta"::jsonb, "Session"."alignment_id", "Session_aligned"."meta"::jsonb, "Chapter"."alignment_id")
-SELECT -1::int2 AS rstype, jsonb_build_array(preps.segment_id, preps.id_offset, preps.content) FROM preps
+WITH preps AS (SELECT Segment_id, id_offset, content FROM sparcling1.prepared_segment_en WHERE Segment_id = ANY(:sids)),
+meta AS (WITH "x" AS (SELECT s.char_range, s."segment_id" FROM preps JOIN sparcling1.segment_enrest s ON s."segment_id" = preps."segment_id"),
+"Turn" AS (SELECT array_agg("x"."segment_id") AS "_sids", "Turn"."alignment_id" AS "Turn_id","Turn"."char_range" AS "char_range","Turn_aligned"."meta"::jsonb->'surname' AS "surname","Turn_aligned"."meta"::jsonb->'forename' AS "forename","Turn_aligned"."meta"::jsonb->'memberId' AS "memberId","Turn_aligned"."meta"::jsonb->'countryCode' AS "countryCode","Turn_aligned"."meta"::jsonb->'isPresident' AS "isPresident","Turn_aligned"."meta"::jsonb->'politicalGroup' AS "politicalGroup","Turn_aligned"."meta"::jsonb->'originalLanguage' AS "originalLanguage" FROM "x"LEFT JOIN "sparcling1"."turn_en" "Turn" ON "Turn"."char_range" && "x"."char_range" LEFT JOIN "sparcling1"."turn_alignment" "Turn_aligned" ON "Turn"."alignment_id" = "Turn_aligned"."alignment_id" GROUP BY "Turn_id","Turn_aligned"."alignment_id"),
+"Segment" AS (SELECT array_agg("x"."segment_id") AS "_sids", "Segment"."segment_id" AS "Segment_id","Segment"."char_range" AS "char_range" FROM "x"LEFT JOIN "sparcling1"."segment_enrest" "Segment" ON "Segment"."char_range" && "x"."char_range" GROUP BY "Segment_id"),
+"Chapter" AS (SELECT array_agg("x"."segment_id") AS "_sids", "Chapter"."alignment_id" AS "Chapter_id","Chapter"."char_range" AS "char_range" FROM "x"LEFT JOIN "sparcling1"."chapter_en" "Chapter" ON "Chapter"."char_range" && "x"."char_range" GROUP BY "Chapter_id"),
+"Session" AS (SELECT array_agg("x"."segment_id") AS "_sids", "Session"."alignment_id" AS "Session_id","Session"."char_range" AS "char_range","Session_aligned"."meta"::jsonb->'date' AS "date" FROM "x"LEFT JOIN "sparcling1"."session_en" "Session" ON "Session"."char_range" && "x"."char_range" LEFT JOIN "sparcling1"."session_alignment" "Session_aligned" ON "Session"."alignment_id" = "Session_aligned"."alignment_id" GROUP BY "Session_id","Session_aligned"."alignment_id")
+SELECT jsonb_build_array("_sids",'Turn',"Turn_id",jsonb_build_object('char_range',"Turn"."char_range",'surname',"Turn"."surname",'forename',"Turn"."forename",'memberId',"Turn"."memberId",'countryCode',"Turn"."countryCode",'isPresident',"Turn"."isPresident",'politicalGroup',"Turn"."politicalGroup",'originalLanguage',"Turn"."originalLanguage")) AS res FROM "Turn"
+UNION ALL SELECT jsonb_build_array("_sids",'Segment',"Segment_id",jsonb_build_object('char_range',"Segment"."char_range")) AS res FROM "Segment"
+UNION ALL SELECT jsonb_build_array("_sids",'Chapter',"Chapter_id",jsonb_build_object('char_range',"Chapter"."char_range")) AS res FROM "Chapter"
+UNION ALL SELECT jsonb_build_array("_sids",'Session',"Session_id",jsonb_build_object('char_range',"Session"."char_range",'date',"Session"."date")) AS res FROM "Session")
+SELECT -1::int2 AS rstype, jsonb_build_array(preps."segment_id", preps.id_offset, preps.content) FROM preps
 UNION ALL
-SELECT -2::int2 AS rstype, jsonb_build_array(meta."Segment_id", meta."Segment_char_range", meta."Turn_id", meta."Turn_char_range", meta."Turn_meta", meta."Session_id", meta."Session_char_range", meta."Session_meta", meta."Chapter_id", meta."Chapter_char_range") FROM meta;
+SELECT -2::int2 AS rstype, res FROM meta;

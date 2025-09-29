@@ -27,8 +27,8 @@ WITH RECURSIVE fixed_parts AS
    CROSS JOIN "sparcling1"."lemma_en" "t1_lemma"
    CROSS JOIN "sparcling1"."token_enrest" "t2"
    CROSS JOIN "sparcling1"."token_enrest" "t3"
-   WHERE "e"."char_range" && "s"."char_range"
-     AND "e".alignment_id = "e_aligned".alignment_id
+   WHERE "e"."alignment_id" = "e_aligned"."alignment_id"
+     AND "e"."char_range" && "s"."char_range"
      AND "fts_vector_s"."segment_id" = "s"."segment_id"
      AND "s"."segment_id" = "t1"."segment_id"
      AND ("t1"."upos")::text = ('VERB')::text

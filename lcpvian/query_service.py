@@ -41,6 +41,7 @@ from .callbacks import (
     _document,
     _document_ids,
     _general_failure,
+    _image_annotations,
     _upload_failure,
     _queries,
     _schema,
@@ -57,11 +58,12 @@ from .typed import (
     JSONObject,
 )
 from .utils import (
-    _default_tracks,
     _format_config_query,
     _set_config,
+    get_aligned_annotations,
     hasher,
-    range_to_array,
+    literal_sql,
+    sql_str,
 )
 from .abstract_query.utils import _get_table, _get_mapping
 
@@ -93,19 +95,33 @@ class QueryService:
         room: str | None,
         config: dict,
         queue: str = "internal",
+        kind: str = "audio",
     ) -> Job:
         """
-        Fetch document id: name data from DB.
-
-        The fetch from cache should not be needed, as on subsequent jobs
-        we can get the data from app["config"]
+        Fetch document id + info from DB.
         """
         doc_layer = config.get("document", "document").lower()
-        query = f"SELECT {doc_layer}_id, name, media, frame_range FROM {schema}.{doc_layer};"
+        # info: name -> column
+        info: dict[str, str] = {
+            "name": "name",
+            "media": "media",
+            "frame_range": "frame_range",
+        }
+        if kind == "image":
+            info = {"xy_box": "xy_box"}
+        jsonb_info = (
+            "jsonb_build_object("
+            + ",".join(literal_sql(k) + "," + sql_str(v) for k, v in info.items())
+            + ")"
+        )
+        query = f"SELECT {doc_layer}_id, {jsonb_info} FROM " + sql_str(
+            "{}.{}", schema, doc_layer
+        )
         kwargs: DocIDArgs = {
             "user": user,
             "room": room,
             "corpus_id": corpus_id,
+            "kind": kind,
         }
         hashed = str(hasher((query, corpus_id)))
         job: Job
@@ -139,94 +155,42 @@ class QueryService:
         """
         Fetch info about a document from DB/cache
         """
-        tracks: dict = cast(dict, config.get("tracks", _default_tracks(config)))
-        # assert "tracks" in config, KeyError(
-        #     "Couldn't find 'tracks' in the corpus configuration"
-        # )
-        global_tables: dict = {}
-        doc_layer = config.get("document")
-        query = f"WITH doc AS (SELECT frame_range FROM {schema}.{doc_layer} WHERE {doc_layer}_id = :doc_id)"
-        glob_attrs: dict = cast(dict, config.get("globalAttributes", {}))
-        for layer in tracks.get("layers", {}):
-            layer_table = _get_table(
-                layer, config, "", ""
-            )  # no batch and no lang for now
-            attributes = config["layer"].get(layer, {}).get("attributes", {})
-            attributes_names: dict[str, None] = {k: None for k in attributes}
-            mapping = _get_mapping(layer, config, "", "")
-            mapping_attrs: dict[str, Any] = mapping.get("attributes", {})
-            for k in mapping_attrs:
-                attributes_names[k] = None
-            crossjoin = ""
-            whereand = ""
-            lab = layer_table[0]
-            selects = ["'frame_range'", range_to_array(f"{lab}.frame_range")]
-            if layer.lower() == config.get("segment", "").lower():
-                prepared_table = mapping.get("prepared", {}).get(
-                    "relation", f"prepared_{layer}"
-                )
-                crossjoin = f"\n    CROSS JOIN {schema}.{prepared_table} ps"
-                whereand = f"\n    AND {lab}.{layer}_id = ps.{layer}_id"
-                selects += ["'prepared'", "ps.content"]
-            for attr_name in attributes_names:
-                attr_type = attributes.get(attr_name, {}).get("type")
-                if attr_type in ("labels", "vector"):
-                    continue
-                mappings = mapping_attrs.get(attr_name, {})
-                mapping_type = mappings.get("type")
-                name = attr_name
-                ref = f"{lab}.{name}"
-                if mapping_type == "relation":
-                    if attributes.get(attr_name, {}).get("ref") in glob_attrs:
-                        name = f"{mappings.get('key', name)}_id"
-                        ref = f"{lab}.{name}"
-                    else:
-                        table = mappings.get("name", name)
-                        crossjoin += f"\n    CROSS JOIN {schema}.{table} {name}"
-                        key = mappings.get("key", name)
-                        whereand += f"\n    AND {lab}.{key}_id = {name}.{key}_id"
-                        ref = f"{name}.{name}"
-                selects += [f"'{name}'", ref]
-            for attr_name, attr_props in mapping_attrs.items():
-                if attr_name not in glob_attrs:
-                    continue
-                global_tables[attr_name] = attr_props.get("name", attr_name)
-            query += f""",
-{layer} AS (
-    SELECT 'layer', '{layer}', jsonb_build_object({','.join(selects)}) AS props
-    FROM {schema}.{layer_table} {lab}, doc {crossjoin}
-    WHERE {lab}.frame_range <@ doc.frame_range {whereand}
-)"""
-        layers_ctes = [x for x in tracks.get("layers", {})]
-        for gar in tracks.get("group_by", []):
-            assert "globalAttributes" in config, KeyError(
-                "Could not find globalAttributes in corpus config"
-            )
-            gar_table = global_tables.get(gar, gar)
-            lab = gar_table[0]
-            gar_props = [f"({x}.props->'{gar}_id')::text" for x in layers_ctes]
-            selects = [f"'{gar}'", f"{lab}.{gar}", f"'{gar}_id'", f"{lab}.{gar}_id"]
-            query += f""",
-{gar} AS (
-    SELECT DISTINCT 'glob', '{gar}', jsonb_build_object({','.join(selects)}) AS props
-    FROM {schema}.{gar_table} {lab}
-)"""
-        # , {', '.join(layers_ctes)}
-        # WHERE {lab}.{gar}_id IN ({','.join(gar_props)})
-        # Trying to remove WHEREs under the assumption that global attributes will always be small
-        query += f"\nSELECT * FROM {next(x for x in tracks['layers'])}"
-        for n, layer in enumerate(tracks["layers"]):
-            if n == 0:
-                continue
-            query += f"\nUNION ALL SELECT * FROM {layer}"
-        for gar in tracks.get("group_by", {}):
-            query += f"\nUNION ALL SELECT * FROM {gar}"
-        doc_range = range_to_array("doc.frame_range")
-        query += f"\nUNION ALL SELECT 'doc', '{doc_layer}', jsonb_build_object('frame_range',{doc_range}) AS props FROM doc"
-        query += ";"
-        print("document query", query)
-        params = {"doc_id": doc_id}
-        hashed = str(hasher((query, doc_id)))
+        doc_low = config["document"].lower()
+        from_cte = sql_str(
+            "SELECT d.frame_range FROM {}.{} d WHERE d.{} = ",
+            schema,
+            doc_low,
+            f"{doc_low}_id",
+        ) + literal_sql(str(doc_id))
+
+        aligned = get_aligned_annotations(
+            cast(dict, config),
+            "",
+            "",
+            from_cte,
+            anchor="time",
+            # include={l: {} for l in tracks.get("layers", {})},
+            exclude={config["token"]: {}},
+            contains=False,
+            pointer_global_attributes=True,
+        )
+
+        seg = config["segment"]
+        seg_id = seg + "_id"
+        query = aligned + sql_str(
+            "\nUNION ALL SELECT jsonb_build_array('_prepared', {}.{}, prep.content) AS res FROM {} JOIN {}.{} prep ON prep.{} = {}.{};",
+            seg,
+            seg_id,
+            seg,
+            schema,
+            f"prepared_{seg.lower()}",
+            f"{seg.lower()}_id",  # prep.segment_id
+            seg,
+            seg_id,
+        )
+        # print("document query", query)
+
+        hashed = str(hasher(query))
         job: Job
         if self.use_cache:
             try:
@@ -251,7 +215,93 @@ class QueryService:
             on_failure=Callback(_general_failure, self.callback_timeout),
             result_ttl=self.query_ttl,
             job_timeout=self.timeout,
-            args=(query, params),
+            args=(query, {}),
+            # args=(query, params),
+            kwargs=kwargs,
+        )
+        return job
+
+    def image_annotations(
+        self,
+        config: CorpusConfig,
+        layer: str,
+        ids: list[int],
+        xy_box: list[int],
+        user: str,
+        room: str | None,
+        queue: str = "internal",
+    ) -> Job:
+        """
+        Fetch annotation related to an image layer from DB/cache
+        """
+        schema = config["schema_path"]
+        from_cte = ""
+        if ids:
+            from_cte = sql_str(
+                "SELECT d.xy_box FROM {}.{} d WHERE ",
+                schema,
+                layer.lower(),
+            ) + (
+                sql_str("d.{}", layer.lower() + "_id")
+                + f" IN ({','.join(str(id) for id in ids)})"
+            )
+        elif xy_box:
+            formed_box = literal_sql(
+                f"({xy_box[0]},{xy_box[1]}),({xy_box[2]},{xy_box[3]})"
+            )
+            from_cte = f"SELECT {formed_box}::box AS xy_box"
+
+        exclude: dict[str, Any] = {}
+        tok = config["token"]
+        if not config["layer"][tok].get("anchoring", {}).get("location", False):
+            exclude["exclude"] = {tok: {}}
+        print("exclude", exclude)
+
+        aligned = get_aligned_annotations(
+            cast(dict, config),
+            "",
+            "",
+            from_cte,
+            anchor="location",
+            contains=True,
+            **exclude,
+        )
+
+        seg = config["segment"]
+        seg_id = seg + "_id"
+        query = aligned + sql_str(
+            "\nUNION ALL SELECT jsonb_build_array('_prepared', {}.{}, prep.id_offset, prep.content) AS res FROM {} JOIN {}.{} prep ON prep.{} = {}.{};",
+            seg,
+            seg_id,
+            seg,
+            schema,
+            f"prepared_{seg.lower()}",
+            f"{seg.lower()}_id",  # prep.segment_id
+            seg,
+            seg_id,
+        )
+        # print("document query", query)
+
+        hashed = str(hasher(query))
+        job: Job
+        if self.use_cache:
+            try:
+                job = Job.fetch(hashed, connection=self.app["redis"])
+                if job and job.get_status(refresh=True) == "finished":
+                    kwa: BaseArgs = {"user": user, "room": room}
+                    _image_annotations(job, self.app["redis"], job.result, **kwa)
+                    return job
+            except NoSuchJobError:
+                pass
+
+        kwargs = {"user": user, "room": room, "layer": layer}
+        job = self.app[queue].enqueue(
+            _db_query,
+            on_success=Callback(_image_annotations, self.timeout),
+            on_failure=Callback(_general_failure, self.callback_timeout),
+            result_ttl=self.query_ttl,
+            job_timeout=self.timeout,
+            args=(query, {}),
             kwargs=kwargs,
         )
         return job

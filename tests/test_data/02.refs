@@ -33,7 +33,7 @@
         "joins": {
             "\"sparcling1\".\"session_de\" \"se\"": {},
             "\"sparcling1\".\"session_alignment\" \"se_aligned\"": {
-                "\"se\".alignment_id = \"se_aligned\".alignment_id": 1
+                "\"se\".\"alignment_id\" = \"se_aligned\".\"alignment_id\"": 1
             }
         }
     }

@@ -220,10 +220,10 @@
                       <button
                         type="button"
                         class="btn btn-primary me-2 mb-2"
-                        v-if="queryStatus in {'satisfied':1,'finished':1} && !loading && userData.user.anon != true"
+                        v-if="queryStatus && userData.user.anon != true && !noResults"
                         data-bs-toggle="modal"
                         data-bs-target="#exportModal"
-                        @click="setExportFilename('xml')"
+                        @click="setExportFilename()"
                       >
                         <FontAwesomeIcon :icon="['fas', 'file-export']" />
                         {{ $t('common-export') }}
@@ -275,11 +275,26 @@
               </div>
               <div class="tab-pane fade" :class="{ active: activeMainTab === 'data', show: activeMainTab === 'data' }"
                 id="nav-data" role="tabpanel" aria-labelledby="nav-data-tab">
-                <PlayerComponent v-if="selectedCorpora && showExploreTab()" :key="selectedCorpora"
-                  :selectedCorpora="selectedCorpora" :selectedMediaForPlay="selectedMediaForPlay"
-                  :hoveredResult="hoveredResult" :dataType="corpusDataType(selectedCorpora.corpus)"
-                  @switchToQueryTab="setMainTab" />
-
+                <PlayerComponent
+                  v-if="showExploreTab()"
+                  :key="selectedCorpora"
+                  :selectedCorpora="selectedCorpora"
+                  :selectedMediaForPlay="selectedMediaForPlay"
+                  :hoveredResult="hoveredResult"
+                  :dataType="corpusDataType(selectedCorpora.corpus)"
+                  @switchToQueryTab="setMainTab"
+                />
+                <ImageViewer
+                  v-else-if="shouldImageViewer()"
+                  :image="image"
+                  :corpus="selectedCorpora.corpus"
+                  :meta="WSDataMeta"
+                  :sentences="WSDataSentences || {}"
+                  :documentIds="documentIds"
+                  @getImageAnnotations="getImageAnnotations"
+                  @switchToQueryTab="setMainTab"
+                  ref="imageViewer"
+                />
                 <hr>
                 <div class="mt-5 row" v-if="querySubmitted">
                   <div v-if="loading" class="col-12 col-md-1">
@@ -369,7 +384,7 @@
                   </div>
                 </div>
 
-                <div v-if="percentageDone == 100 && (!WSDataSentences || !WSDataSentences.result)"
+                <div v-if="percentageDone == 100 && Object.keys(WSDataSentences || {}).length == 0"
                   style="text-align: center" class="mb-3 mt-2">
                   <div v-if="noResults">
                     {{ $t('common-no-results') }}!
@@ -382,10 +397,10 @@
                   <div class="row">
                     <div class="col-12" v-if="WSDataResults && WSDataResults.result">
                       <div
-                        v-if="queryStatus in {'satisfied':1,'finished':1} && !loading && userData.user.anon != true && !noResults"
+                        v-if="queryStatus && userData.user.anon != true && !noResults"
                         data-bs-toggle="modal"
                         data-bs-target="#exportModal"
-                        @click="setExportFilename('xml')"
+                        @click="setExportFilename()"
                         class="export btn btn-primary me-1 mb-1"
                         :title="$t('common-export')"
                       >
@@ -419,8 +434,7 @@
                               :key="`result-btn-${index}`"
                               v-if="
                                 (resultSet.type == 'plain' &&
-                                  WSDataSentences &&
-                                  WSDataSentences.result) ||
+                                  Object.keys(WSDataSentences || {}).length) ||
                                 resultSet.type != 'plain'
                               ">
                               <FontAwesomeIcon v-if="resultSet.type == 'plain'" :icon="['fas', 'barcode']" />
@@ -447,8 +461,7 @@
                           :key="`result-tab-${index}`">
                           <span v-if="
                             resultSet.type == 'plain' &&
-                            WSDataSentences &&
-                            WSDataSentences.result
+                            Object.keys(WSDataSentences||{}).length
                           ">
                             <div class="btn-group mt-2 btn-group-sm mb-3">
                               <a href="#" @click.stop.prevent="plainType = 'table'" class="btn" :class="plainType == 'table' || resultContainsSet(resultSet)
@@ -468,23 +481,24 @@
                             <ResultsPlainTableView
                               v-if="plainType == 'table' || resultContainsSet(resultSet)"
                               :data="WSDataResults.result[index + 1] || []"
-                              :sentences="WSDataSentences.result[-1] || []"
+                              :sentences="WSDataSentences || {}"
                               :languages="selectedLanguages"
-                              :meta="WSDataMeta"
+                              :meta="WSDataMeta.bySegment"
                               :attributes="resultSet.attributes"
                               :corpora="selectedCorpora"
                               @updatePage="updatePage"
                               @playMedia="playMedia"
                               @hoverResultLine="hoverResultLine"
+                              @showImage="showImage"
                               :resultsPerPage="resultsPerPage"
                               :loading="loading"
                             />
                             <ResultsKWICView
                               v-else-if="resultContainsSet(resultSet) == false"
                               :data="WSDataResults.result[index + 1] || []"
-                              :sentences="WSDataSentences.result[-1] || []"
+                              :sentences="WSDataSentences || {}"
                               :languages="selectedLanguages"
-                              :meta="WSDataMeta"
+                              :meta="WSDataMeta.bySegment"
                               :attributes="resultSet.attributes"
                               :corpora="selectedCorpora"
                               @updatePage="updatePage"
@@ -494,7 +508,7 @@
                           </span>
                           <ResultsTableView v-else-if="resultSet.type != 'plain'"
                             :data="WSDataResults.result[index + 1]" :languages="selectedLanguages"
-                            :attributes="resultSet.attributes" :meta="WSDataMeta" :resultsPerPage="resultsPerPage"
+                            :attributes="resultSet.attributes" :meta="WSDataMeta.bySegment" :resultsPerPage="resultsPerPage"
                             :total="resultSet.total || []"
                             :type="resultSet.type" :corpora="selectedCorpora" />
                         </div>
@@ -535,7 +549,7 @@
                     role="tab"
                     aria-controls="nav-exportxml"
                     aria-selected="false"
-                    @click="(exportTab = 'xml') && setExportFilename('xml')"
+                    @click="(exportTab = 'xml') && setExportFilename()"
                   >
                     XML
                   </button>
@@ -548,7 +562,7 @@
                     role="tab"
                     aria-controls="nav-exportswissdox"
                     aria-selected="false"
-                    @click="(exportTab = 'swissdox') && setExportFilename('swissdox')"
+                    @click="(exportTab = 'swissdox') && setExportFilename()"
                     v-if="selectedCorpora && selectedCorpora.corpus && selectedCorpora.corpus.shortname.match(/swissdox/i)"
                   >
                     SwissdoxViz
@@ -577,7 +591,7 @@
                     id="nameExport"
                     name="nameExport"
                     v-model="nameExport"
-                  />
+                  />.{{ exportTab }}
                   <button
                     type="button"
                     @click="exportResults('xml', /*download=*/true, /*preview=*/true)"
@@ -719,6 +733,39 @@
       </div>
     </div>
 
+    <!-- <div class="modal fade" id="imageModal" tabindex="-1" aria-labelledby="imageModalLabel"
+      aria-hidden="true" ref="vuemodaldetails">
+      <div class="modal-dialog modal-full">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="imageModalLabel">{{ $t('results-image-viewer') }}</h5>
+            <button
+              type="button"
+              class="btn-close"
+              data-bs-dismiss="modal"
+              :aria-label="$t('common-close')"
+            ></button>
+          </div>
+          <div class="modal-body text-start" v-if="image">
+            <ImageViewer
+              :image="image"
+              :columnHeaders="image.columnHeaders"
+              :corpus="this.selectedCorpora.corpus"
+              :meta="WSDataMeta"
+              :sentences="WSDataSentences.result[-1] || {}"
+              :documentIds="documentIds"
+              @getImageAnnotations="getImageAnnotations"
+            />
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+              {{ $t('common-close') }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div> -->
+
 
     <div class="modal fade" id="DQDModal" tabindex="-1" aria-labelledby="DQDModalLabel"
       aria-hidden="true" ref="DQDModal">
@@ -786,11 +833,14 @@
       </div>
     </div>
 
-
   </div>
 </template>
 
 <style scoped>
+.modal-full .modal-body {
+  max-height: calc(100vh - 200px);
+  overflow-y: scroll;
+}
 .queryExample {
   background-color: lightcoral;
 }
@@ -881,13 +931,14 @@ textarea {
 <script>
 import { mapState } from "pinia";
 import { Modal } from "bootstrap";
-import { nextTick } from 'vue'
+import { nextTick } from 'vue';
 
 import { useCorpusStore } from "@/stores/corpusStore";
 import { useNotificationStore } from "@/stores/notificationStore";
 import { useUserStore } from "@/stores/userStore";
 import { useWsStore } from "@/stores/wsStore";
 
+import ImageViewer from "@/components/ImageViewer.vue";
 import CorpusDetailsModal from "@/components/corpus/DetailsModal.vue";
 import Title from "@/components/TitleComponent.vue";
 import ResultsTableView from "@/components/results/TableView.vue";
@@ -899,8 +950,8 @@ import CorpusGraphViewNew from "@/components/CorpusGraphViewNew.vue";
 import PlayerComponent from "@/components/PlayerComponent.vue";
 import { setTooltips, removeTooltips } from "@/tooltips";
 import Utils from "@/utils";
+import { IntervalTree } from "@/intervaltrees";
 import config from "@/config";
-
 
 export default {
   name: "QueryView",
@@ -916,7 +967,7 @@ export default {
       selectedCorpora: null,
       isQueryValidData: null,
       WSDataResults: "",
-      WSDataMeta: {},
+      WSDataMeta: {"layer": {}, "bySegment": {}},
       WSDataSentences: {},
       nResults: 200,
       activeResultIndex: 1,
@@ -941,7 +992,6 @@ export default {
       sqlQuery: null,
       isDebug: false,
       queryStatus: null,
-      // corpusGraph: null,
       corpusModal: null,
       showGraph: '',
       showResultsNotification: false,
@@ -953,27 +1003,21 @@ export default {
       selectedQuery: null,
       userQueries: [],
 
-      // selectedDocument: null,
-      // documentDict: {},
-      // userId: null,
-      // corpusData: [],
-
-      activeMainTab: ['soundscript', 'videoscope'].includes(config.appType) ? "data" : "query",
+      activeMainTab: ['soundscript', 'videoscope'].includes(config.appType) || this.shouldImageViewer() ? "data" : "query",
       graphIndex: 0,
       appType: config.appType,
       querySubmitted: false,
-      // playerIndex: 0,
 
-      // loadingDocument: false,
-      // currentDocumentData: null,
-      // currentDocument: null,
-      // currentMediaDuration: 0,
-      // loadingMedia: false,
-      // timelineEntry: null,
+      documentIds: {},
+
+      image: {},
+      imageAnnotations: {}, // keep track of which images were fetched
+      attemptImageUpdate: -1,
 
       modalIndexKey: 0,
       noCorpus: null,
       local: window.location.hostname == "localhost"
+
     };
   },
   components: {
@@ -986,6 +1030,7 @@ export default {
     // CorpusGraphView,
     CorpusGraphViewNew,
     PlayerComponent,
+    ImageViewer,
   },
   watch: {
     corpora: {
@@ -1049,7 +1094,8 @@ export default {
       }
     },
     selectedCorpora() {
-      this.activeMainTab = ['soundscript', 'videoscope'].includes(config.appType) ? "data" : "query"
+      this.activeMainTab = ['soundscript', 'videoscope'].includes(config.appType) ? "data" : "query";
+      if (this.shouldImageViewer()) this.activeMainTab = "data";
       this.querySubmitted = false
       this.queryStatus = null
       this.checkAuthUser();
@@ -1092,7 +1138,7 @@ export default {
         this.requestId = null;
         this.querySatisfied = "";
         this.WSDataResults = {};
-        this.WSDataMeta = {};
+        this.WSDataMeta = {"layer": {}, "bySegment": {}};
         this.WSDataSentences = {};
         this.nameExport = "";
       }
@@ -1163,6 +1209,39 @@ export default {
     // },
   },
   methods: {
+    shouldImageViewer() {
+      if (!this.selectedCorpora || !this.selectedCorpora.corpus) return false;
+      return Object.values(this.selectedCorpora.corpus.layer || {})
+        .find(l=>Object.values(l.attributes || {})
+          .find(a=>a && a.type == "image")
+        );
+    },
+    getImageAnnotations(layer, id_or_box, window=1) {
+      const ids = [];
+      let xy_box = [];
+      if (id_or_box instanceof Array)
+        xy_box = id_or_box;
+      else
+        for (let i = id_or_box-window; i <= id_or_box+window; i++) {
+          if (i <= 0 || i in this.imageAnnotations) continue;
+          ids.push(i);
+        }
+      const data = {
+        user: this.userData.user.id,
+        room: this.roomId,
+        corpus: this.selectedCorpora.corpus.meta.id,
+        layer: layer,
+        ids: ids,
+        xy_box: xy_box
+      };
+      if (ids.length || xy_box.length)
+        useCorpusStore().fetchImageAnnotations(data);
+    },
+    showImage(image) {
+      this.image = image;
+      this.getImageAnnotations(image.layer, image.layerId);
+      setTimeout(()=>this.$refs.imageViewer.$refs.viewerContainer.scrollIntoView(), 50);
+    },
     toggleModal(language) {
     	let modalEl;
 
@@ -1192,11 +1271,9 @@ export default {
       if (!corpus) return "";
       return corpus.corpus.meta.sample_query || corpus.corpus.sample_query || ""
     },
-    setExportFilename(format) {
+    setExportFilename() {
       if (!this.nameExport)
-        this.nameExport = `${this.selectedCorpora.corpus.shortname} ${new Date().toLocaleString()}.${format}`;
-      else
-        this.nameExport = this.nameExport.replace(/\.[^.]+$/,"."+format);
+        this.nameExport = `${this.selectedCorpora.corpus.shortname} ${new Date().toLocaleString()}`;
       this.nameExport = this.nameExport.replace(/\/+/g,"-").replace(/,+/g,"");
     },
     setMainTab() {
@@ -1211,6 +1288,40 @@ export default {
     },
     playMedia(data) {
       this.selectedMediaForPlay = data;
+    },
+    insertRange(interval, range, value) {
+      if (this.rangeValueInInterval(interval, range, value)) return;
+      if (range.length == 4) {
+        const [x1, y1, x2, y2] = range;
+        const xs = [x1,x2].sort((a,b)=>parseInt(a) - parseInt(b));
+        const ys = [y1,y2].sort((a,b)=>parseInt(a) - parseInt(b));
+        let x = interval.search(xs, n=>n.low==xs[0] && n.high==xs[1]);
+        if (x.length)
+          x = x[0].value;
+        else {
+          x = new IntervalTree();
+          interval.insert(xs, x);
+        }
+        x.insert(ys, value);
+      }
+      else
+        interval.insert(range, value);
+    },
+    rangeValueInInterval(interval, range, value) {
+      let found = null;
+      if (range.length == 4) {
+        const [x1,y1,x2,y2] = range;
+        const xs = x1 < x2 ? [x1,x2] : [x2,x1];
+        const ys = y1 < y2 ? [y1,y2] : [y2,y1];
+        const xitv = interval.searchValue(xs, n=>n.low==xs[0] && n.high==xs[1]);
+        if (xitv.length == 0 || !(xitv[0] instanceof IntervalTree)) return found;
+        found = xitv[0].search(ys, n=>n.low==ys[0] && n.high==ys[1] && JSON.stringify(n.value)==JSON.stringify(value)).length > 0;
+      }
+      else {
+        const [low, high] = range[0] < range[1] ? range : [range[1],range[0]];
+        found = interval.search([low,high], n=>n.low==low && n.high==high && JSON.stringify(n.value)==JSON.stringify(value)).length > 0;
+      }
+      return found;
     },
     corpusDataType: Utils.corpusDataType,
     showExploreTab() {
@@ -1304,43 +1415,50 @@ export default {
       this.modalIndexKey++
       modal.show()
     },
-    // sendLeft() {
-    //   this.$socket.sendObj({
-    //     room: this.roomId,
-    //     // room: null,
-    //     action: "left",
-    //     user: this.userData.user.id,
-    //   });
-    //   this.wsConnected = false;
-    //   console.log("Left WS");
-    // },
-    // connectToRoom() {
-    //   console.log("Connect to WS room", this.wsConnected, this.$socket.readyState)
-    //   if (this.$socket.readyState != 1 || this.wsConnected == false){
-    //     console.log("Connect to WS")
-    //     this.waitForConnection(() => {
-    //       this.$socket.sendObj({
-    //         room: this.roomId,
-    //         // room: null,
-    //         action: "joined",
-    //         user: this.userId,
-    //       });
-    //       this.wsConnected = true;
-    //       this.$socket.onmessage = this.onSocketMessage;
-    //       console.log("Connected to WS")
-    //       this.validate();
-    //     }, 500);
-    //   }
-    // },
-    // waitForConnection(callback, interval) {
-    //   if (this.$socket.readyState === 1) {
-    //     callback();
-    //   } else {
-    //     setTimeout(() => {
-    //       this.waitForConnection(callback, interval);
-    //     }, interval);
-    //   }
-    // },
+    processMeta(meta) {
+      const META_LIMIT = 5000;
+      const ancMap = {
+        char_range: "Stream",
+        frame_range: "Time",
+        xy_box: "Location"
+      };
+      if (meta.length > META_LIMIT) console.warn(`Too much metadata (over ${META_LIMIT} lines) to process everything`);
+      let n = 0;
+      for (let [sids, layer, lid, info] of meta) {
+        n++;
+        if (n>META_LIMIT) break;
+        if (!lid) continue;
+        if (!(layer in this.WSDataMeta.layer))
+          this.WSDataMeta.layer[layer] = {
+            "byId": {},
+            "byStream": new IntervalTree(), "byTime": new IntervalTree(), "byLocation": new IntervalTree()
+          };
+        const layer_dict = this.WSDataMeta.layer[layer];
+        if (lid in layer_dict) continue;
+        info._id = lid;
+        layer_dict.byId[lid] = info;
+        for (let sid of sids) {
+          this.WSDataMeta.bySegment[sid] = this.WSDataMeta.bySegment[sid] || {};
+          this.WSDataMeta.bySegment[sid][layer] = info;
+        }
+        // Parse the anchors in a first pass
+        for (let anc_col in ancMap) {
+          if (!(anc_col in info)) continue;
+          info[anc_col] = info[anc_col]
+            .split(",")
+            .map(x=>parseInt(x.replace(/[[()]/g,"")))
+            .map((v,i)=>v-(anc_col != "xy_box" && i==1));
+        }
+        // And insert in a second pass: JSON.stringify is now consistent across iterations
+        for (let [anc_col, anc_name] of Object.entries(ancMap)) {
+          if (!(anc_col in info)) continue;
+          const range = info[anc_col];
+          const byAnchor = layer_dict[`by${anc_name}`];
+          this.insertRange(byAnchor, range, info);
+        }
+      }
+      this.WSDataMeta = {...this.WSDataMeta};
+    },
     onSocketMessage(data) {
       // the below is just temporary code
       // let data = JSON.parse(event.data);
@@ -1393,6 +1511,26 @@ export default {
           useWsStore().addMessageForPlayer(data);
           return;
         }
+
+        if (data["action"] == "image_annotations") {
+          const meta = [], ids = [];
+          this.WSDataSentences = this.WSDataSentences || {};
+          for (let [row] of data.annotations) {
+            if (row[0] == "_prepared") {
+              const [seg_id, seg_offset, seg_content] = row.slice(1,)
+              if (seg_id in this.WSDataSentences) continue;
+              this.WSDataSentences[seg_id] = [seg_offset, seg_content];
+            }
+            else
+              meta.push([[], ...row]);
+            if (row[0] == data.layer) ids.push(row[1]);
+          }
+          this.WSDataSentences = {...this.WSDataSentences};
+          for (let id of ids)
+            this.imageAnnotations[id] = 1;
+          if (meta.length)
+            this.processMeta(meta);
+          }
 
         if (data["action"] === "update_config") {
           // todo: when a new corpus is added, all connected websockets
@@ -1454,7 +1592,8 @@ export default {
           };
           useCorpusStore().fetchExport(info);
         } else if (data["action"] === "document_ids") {
-          useWsStore().addMessageForPlayer(data)
+          useWsStore().addMessageForPlayer(data);
+          this.documentIds = data["document_ids"]
           return;
         } else if (data["action"] === "stopped") {
           if (data.request) {
@@ -1521,66 +1660,21 @@ export default {
         } else if (data["action"] === "segments") {
           useWsStore().addMessageForPlayer(data);
           this.updateLoading(data.status);
-          const segment = this.selectedCorpora.corpus.firstClass.segment;
-          const meta = data.result["-2"] || []; // change this?
-          const meta_labels = ((data.result["0"] || {}).meta_labels || [])
-            .map( ml => [ml.split("_")[0],ml.split("_").slice(1,).join("_")] );
-          for (let hit_meta of meta) {
-            let segment_id = "";
-            const meta_object = {};
-            for (let n in hit_meta) {
-              let value = hit_meta[n];
-              const [layer, attr] = meta_labels[n];
-              if (layer == segment && attr == "id")
-                segment_id = value;
-              meta_object[layer] = meta_object[layer] || {};
-              if (attr.endsWith("_range") && value) {
-                const ranges = value.match(/\[(\d+),(\d+)\)/);
-                if (ranges)
-                  value = [parseInt(ranges[1]),parseInt(ranges[2])];
-              }
-              if (typeof(value) == "string")
-                value = value.trim();
-              meta_object[layer][attr] = value;
-            }
-            this.WSDataMeta[segment_id] = meta_object;
-          }
-          if (
-            this.WSDataSentences &&
-            this.WSDataSentences.hash == data.hash &&
-            !data.full
-          ) {
-            Object.keys(this.WSDataSentences.result).forEach((key) => {
-              if (key > 0 && key in data.result) {
-                this.WSDataSentences.result[key] = this.WSDataSentences.result[
-                  key
-                ].concat(data.result[key]);
-              }
-            });
-            if (-1 in data.result) {
-              this.WSDataSentences.result[-1] = {
-                ...this.WSDataSentences.result[-1],
-                ...data.result[-1],
-              };
-            }
-          } else {
-            this.WSDataSentences = data;
+          const meta = data.result["-2"] || [];
+          this.processMeta(meta);
+          if (!(-1 in data.result)) return;
+          this.WSDataSentences = this.WSDataSentences || {};
+          for (let [sid, v] of Object.entries(data.result[-1]))
+            this.WSDataSentences[sid] = v;
+          if (data.full) {
             if (this.WSDataResults) {
               if (!this.WSDataResults.result)
                 this.WSDataResults.result = {};
               if (!this.WSDataResults.result["0"] || !this.WSDataResults.result["0"].result_sets)
                 this.WSDataResults.result["0"] = { result_sets: [] };
-              this.WSDataResults.result["0"].result_sets.forEach(
-                (_resultSet, index) => {
-                  if (_resultSet.type == "plain") {
-                    let resultIndex = index + 1;
-                    if (!(resultIndex in this.WSDataSentences.result))
-                      this.WSDataSentences.result[resultIndex] = [];
-                  }
-                }
-              );
             }
           }
+          this.WSDataSentences = {...this.WSDataSentences};
           // if (["satisfied", "overtime"].includes(this.WSDataResults.status)) {
           //   this.loading = false;
           // }
@@ -1654,6 +1748,7 @@ export default {
       svg.style.height = `${g.getBoundingClientRect().height}px`;
     },
     async exportResults(format, download = false, preview = false) {
+      if (!(this.status in {satisfied:1, finished:1})) this.stop();
       const to_export = {};
       to_export.format = {
         'plain': 'dump',
@@ -1662,8 +1757,8 @@ export default {
       }[format];
       to_export.preview = preview;
       to_export.download = download;
-      this.setExportFilename(format);
-      to_export.filename = this.nameExport;
+      this.setExportFilename();
+      to_export.filename = this.nameExport + "." + format;
       let full = !preview;
       let resume = full; // If not a full query, no need to resume the query: we already have the necessary results
       if (format == 'swissdox') {
@@ -1691,10 +1786,8 @@ export default {
       if (!to_export && resumeQuery == false) {
         this.failedStatus = false;
         this.stop();
-        if (cleanResults == true) {
+        if (cleanResults == true)
           this.WSDataResults = {};
-          this.WSDataSentences = {};
-        }
       }
       let data = {
         corpus: this.selectedCorpora.value,
@@ -1840,6 +1933,13 @@ export default {
     ...mapState(useCorpusStore, {corpusLanguages: "languages"}),
     ...mapState(useUserStore, ["userData", "roomId", "debug"]),
     ...mapState(useWsStore, ["messages"]),
+    baseMediaUrl() {
+      let retval = ""
+      if (this.selectedCorpora && this.selectedCorpora.corpus) {
+        retval = `${config.baseMediaUrl}/${this.selectedCorpora.corpus.schema_path}/`
+      }
+      return retval
+    },
     availableLanguages() {
       let retval = [];
       if (this.selectedCorpora) {
@@ -1923,10 +2023,8 @@ export default {
     },
     noResults() {
       const dr = JSON.parse(JSON.stringify(this.WSDataResults)) || {};
-      const ds = JSON.parse(JSON.stringify(this.WSDataSentences)) || {};
       dr.result = dr.result || {};
-      ds.result = ds.result || {};
-      return [dr,ds].every(d=>Object.entries(d.result).every(([k,v])=>k==0 || !v || v.length==0));
+      return Object.entries(dr.result).every(([k,v])=>k==0 || !v || v.length==0);
     }
   },
   mounted() {

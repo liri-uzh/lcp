@@ -1,5 +1,5 @@
 <template>
-  <div class="spinner-placeholder" v-if="status == true">
+  <div class="spinner-placeholder" v-if="status == true || override">
     {{ $t('common-loading') }}
     <div class="loader quantum-spinner"></div>
   </div>
@@ -185,6 +185,7 @@ import { useLoadingStore } from "@/stores/loadingStore";
 
 export default {
   name: "LoadingView",
+  props: ["override"],
   computed: {
     ...mapState(useLoadingStore, ["status"]),
   },

@@ -22,6 +22,8 @@ import {
   faDatabase,
   faDownload,
   faExpand,
+  faEye,
+  faEyeSlash,
   faFileExport,
   faFilter,
   faFont,
@@ -42,6 +44,7 @@ import {
   faPlus,
   faPowerOff,
   faRotateLeft,
+  faRotateRight,
   faTable,
   faThumbTack,
   faTrash,
@@ -79,6 +82,8 @@ library.add(faCopy);
 library.add(faDatabase);
 library.add(faDownload);
 library.add(faExpand);
+library.add(faEye);
+library.add(faEyeSlash);
 library.add(faFileExport);
 library.add(faFilter);
 library.add(faFont);
@@ -99,6 +104,7 @@ library.add(faPlay);
 library.add(faPlus);
 library.add(faPowerOff);
 library.add(faRotateLeft);
+library.add(faRotateRight);
 library.add(faTable);
 library.add(faThumbTack);
 library.add(faTrash);

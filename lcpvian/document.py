@@ -2,7 +2,7 @@
 Endpoints for multimodal document/document ids fetching
 """
 
-from typing import Sequence, Any
+from typing import Sequence, Any, cast
 
 from aiohttp import web
 
@@ -43,6 +43,60 @@ async def document(request: web.Request) -> web.Response:
     return web.json_response(info)
 
 
+async def image_annotations(request: web.Request) -> web.Response:
+    """
+    Start a job fetching image annotations.
+
+    The job's callback will send the document to the user/room via websocket
+    """
+    authenticator = request.app["auth_class"](request.app)
+    user_data: dict = await authenticator.user_details(request)
+
+    request_data: dict[str, str] = await request.json()
+    assert "corpus" in request_data, KeyError(
+        f"Corpus is missing from the request for image annotations"
+    )
+    assert "layer" in request_data, KeyError(
+        f"Layer is missing from the request for image annotations"
+    )
+    assert "ids" in request_data, KeyError(
+        f"IDs are missing from the request for image annotations"
+    )
+    corpus = request_data["corpus"]
+    layer = request_data["layer"]
+    ids: list = cast(list, request_data.get("ids", []))
+    xy_box: list = cast(list, request_data.get("xy_box", []))
+    assert all(isinstance(id, int) for id in ids), ValueError(
+        "All the IDs should be integers in an image annotation request"
+    )
+    assert all(isinstance(xy, int) for xy in xy_box), ValueError(
+        "All the values of xy_box must be integers in an image annotation request"
+    )
+
+    room: str | None = request_data.get("room")
+    user: str = request_data.get("user", "")
+
+    if not authenticator.check_corpus_allowed(
+        str(corpus),
+        user_data,
+        "lcp",
+    ):
+        raise PermissionError("This user is not authorized to access this corpus")
+
+    corpus_conf = request.app["config"][str(corpus)]
+    assert layer in corpus_conf["layer"] and any(
+        a.get("type") == "image"
+        for a in corpus_conf["layer"][layer].get("attributes", {}).values()
+    ), ValueError(
+        f"Could not find a layer named {layer} with an image attribute in this corpus."
+    )
+    job = request.app["query_service"].image_annotations(
+        corpus_conf, layer, ids, xy_box, user, room
+    )
+    info: dict[str, str] = {"status": "started", "job": job.id}
+    return web.json_response(info)
+
+
 async def document_ids(request: web.Request) -> web.Response:
     """
     Get a dict of doc_id: doc_name
@@ -59,6 +113,7 @@ async def document_ids(request: web.Request) -> web.Response:
     corpus_id = str(request.match_info["corpus_id"])
     config: Config = request.app["config"]
     schema = config[corpus_id]["schema_path"]
+    kind: str = request_data.get("kind", "audio")
 
     if not authenticator.check_corpus_allowed(
         corpus_id,
@@ -69,7 +124,7 @@ async def document_ids(request: web.Request) -> web.Response:
 
     if "doc_ids" not in config[corpus_id]:
         job = request.app["query_service"].document_ids(
-            schema, int(corpus_id), user, room, config[corpus_id]
+            schema, int(corpus_id), user, room, config[corpus_id], kind=kind
         )
         info: dict[str, str] = {"status": "started", "job": job.id}
         return web.json_response(info)
@@ -85,6 +140,7 @@ async def document_ids(request: web.Request) -> web.Response:
         "room": room,
         "job": job_id,
         "corpus_id": int(corpus_id),
+        "kind": kind,
     }
     await push_msg(
         request.app["websockets"],

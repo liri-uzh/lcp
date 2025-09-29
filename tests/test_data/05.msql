@@ -1,13 +1,9 @@
 WITH preps AS (SELECT Utterance_id, id_offset, content FROM ofrom.prepared_Utterance WHERE Utterance_id = ANY(:sids)),
-    meta AS (SELECT
-    "Utterance"."utterance_id" AS "Utterance_id", "Utterance"."char_range" AS "Utterance_char_range", "Utterance"."frame_range" AS "Utterance_frame_range", "Utterance_agent"."agent" AS "Utterance_agent", "Utterance"."meta"::jsonb AS "Utterance_meta", "Interview"."interview_id" AS "Interview_id", "Interview"."char_range" AS "Interview_char_range", "Interview"."frame_range" AS "Interview_frame_range", "Interview"."media"::jsonb AS "Interview_media", "Interview"."name"::text AS "Interview_name", "Interview"."meta"::jsonb AS "Interview_meta"
-FROM
-    preps
-    LEFT JOIN "ofrom"."utterancerest" "Utterance" ON "Utterance"."utterance_id" = preps."utterance_id"
-    LEFT JOIN "ofrom"."global_attribute_agent" "Utterance_agent" ON "Utterance_agent"."agent_id" = "Utterance"."agent_id"
-    LEFT JOIN "ofrom"."interview" "Interview" ON "Interview"."char_range" @> "Utterance"."char_range"
-GROUP BY
-    "Utterance"."utterance_id", "Utterance_agent"."agent", "Utterance"."meta"::jsonb, "Interview"."interview_id", "Interview"."meta"::jsonb)
-SELECT -1::int2 AS rstype, jsonb_build_array(preps.utterance_id, preps.id_offset, preps.content) FROM preps
+meta AS (WITH "x" AS (SELECT s.char_range, s."utterance_id" FROM preps JOIN ofrom.utterancerest s ON s."utterance_id" = preps."utterance_id"),
+"Interview" AS (SELECT array_agg("x"."utterance_id") AS "_sids", "Interview"."interview_id" AS "Interview_id","Interview"."char_range" AS "char_range","Interview"."frame_range" AS "frame_range","Interview"."meta"::jsonb->'end' AS "end","Interview"."meta"->>'name' AS "name","Interview"."meta"::jsonb->'audio' AS "audio","Interview"."meta"::jsonb->'start' AS "start","Interview"."meta"::jsonb->'filename' AS "filename","Interview"."media"::jsonb AS "media" FROM "x" LEFT JOIN "ofrom"."interview" "Interview" ON "Interview"."char_range" && "x"."char_range" GROUP BY "Interview_id"),
+"Utterance" AS (SELECT array_agg("x"."utterance_id") AS "_sids", "Utterance"."utterance_id" AS "Utterance_id","Utterance"."char_range" AS "char_range","Utterance"."frame_range" AS "frame_range","Utterance_agent"."agent" AS "agent","Utterance"."meta"::jsonb->'end' AS "end","Utterance"."meta"::jsonb->'text' AS "text","Utterance"."meta"::jsonb->'start' AS "start","Utterance"."meta"::jsonb->'sent_id' AS "sent_id","Utterance"."meta"::jsonb->'speaker' AS "speaker" FROM "x" LEFT JOIN "ofrom"."utterancerest" "Utterance" ON "Utterance"."char_range" && "x"."char_range" LEFT JOIN "ofrom"."global_attribute_agent" "Utterance_agent" ON "Utterance_agent"."agent_id" = "Utterance"."agent_id" GROUP BY "Utterance_id", "Utterance_agent"."agent_id")
+SELECT jsonb_build_array("_sids",'Interview',"Interview_id",jsonb_build_object('char_range',"Interview"."char_range",'frame_range',"Interview"."frame_range",'end',"Interview"."end",'name',"Interview"."name",'audio',"Interview"."audio",'start',"Interview"."start",'filename',"Interview"."filename",'media',"Interview"."media")) AS res FROM "Interview"
+UNION ALL SELECT jsonb_build_array("_sids",'Utterance',"Utterance_id",jsonb_build_object('char_range',"Utterance"."char_range",'frame_range',"Utterance"."frame_range",'agent',"Utterance"."agent",'end',"Utterance"."end",'text',"Utterance"."text",'start',"Utterance"."start",'sent_id',"Utterance"."sent_id",'speaker',"Utterance"."speaker")) AS res FROM "Utterance")
+SELECT -1::int2 AS rstype, jsonb_build_array(preps."utterance_id", preps.id_offset, preps.content) FROM preps
 UNION ALL
-SELECT -2::int2 AS rstype, jsonb_build_array(meta."Utterance_id", meta."Utterance_char_range", meta."Utterance_frame_range", meta."Utterance_agent", meta."Utterance_meta", meta."Interview_id", meta."Interview_char_range", meta."Interview_frame_range", meta."Interview_media", meta."Interview_name", meta."Interview_meta") FROM meta;
+SELECT -2::int2 AS rstype, res FROM meta;
