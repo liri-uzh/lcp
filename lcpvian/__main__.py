@@ -36,8 +36,12 @@ elif command == "config":
 elif command == "worker":
     from .worker import start_worker
 
+    queue: str = next((i for i in reversed(sys.argv) if i not in COMMANDS), "internal")
+    if queue not in ("internal", "query", "background"):
+        queue = "internal"
+
     print("Starting worker...")
-    start_worker()
+    start_worker(queue)
 
 elif command == "dqd":
     print("Parsing DQD...")

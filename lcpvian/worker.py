@@ -162,16 +162,23 @@ class MyWorker(Worker):
         super().__init__(*args, **kwargs)
 
 
-async def work() -> None:
+async def work(queue: str = "internal", all_in_one: bool = False) -> None:
+    valid_queues = ("internal", "query", "background")
+    assert queue in valid_queues, TypeError(
+        f"Tried to run a worker with an invalid queue name ({queue}). The queue should be one of: {', '.join(q for q in valid_queues)}"
+    )
     with Connection(redis_conn):
-        w = MyWorker(["internal", "query", "background"])
+        w = MyWorker([q for q in valid_queues] if all_in_one else [queue])
         w.work()
 
 
-def start_worker() -> None:
+def start_worker(queue: str = "internal") -> None:
+    all_in_one: bool = bool(os.environ.get("IS_DOCKER", 0))
+    if all_in_one in ("0", "false", "FALSE", "False"):
+        all_in_one = False
     try:
         with asyncio.Runner(loop_factory=uvloop.new_event_loop) as runner:
-            runner.run(work())
+            runner.run(work(queue, all_in_one=all_in_one))
     except KeyboardInterrupt:
         print("Worker stopped.")
 
