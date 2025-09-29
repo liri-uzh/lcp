@@ -29,6 +29,7 @@ from .utils import (
     _get_mapping,
     _is_anchored,
     _publish_msg,
+    is_prepared_annotation,
     sanitize_filename,
 )
 
@@ -779,8 +780,13 @@ class Exporter:
                 print(f"[Export {self._request.id}] Complete (QI {self._request.hash})")
                 return
             # KWICS
+            # layers_in_meta: set[str] = {
+            #     l.split("_", 1)[0] for l in self._qi.meta_labels
+            # }
             layers_in_meta: set[str] = {
-                l.split("_", 1)[0] for l in self._qi.meta_labels
+                ln
+                for ln in config["layer"]
+                if ln != tok and not is_prepared_annotation(config, ln)
             }
             current_layer = _get_top_layer(
                 cast(CorpusConfig, config), restrict=layers_in_meta
