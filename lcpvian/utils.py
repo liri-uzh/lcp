@@ -383,23 +383,6 @@ def _update_query_info(
     return _update_redis_obj(connection, qi_key, info)
 
 
-def _get_request(
-    connection: RedisConnection, hash: str = "", job: Job | None = None
-) -> dict[str, Any]:
-    qi_key = f"request::{hash}"
-    return _get_redis_obj(connection, qi_key)
-
-
-def _update_request(
-    connection: RedisConnection,
-    hash: str = "",
-    job: Job | None = None,
-    info: dict[str, Any] = {},
-) -> dict[str, Any]:
-    qi_key = f"request::{hash}"
-    return _update_redis_obj(connection, qi_key, info)
-
-
 async def sem_coro(
     semaphore: asyncio.Semaphore, coro: Awaitable[list[tuple[int | str | bool]]]
 ) -> list[tuple[int | str | bool]]:

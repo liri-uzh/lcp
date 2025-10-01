@@ -47,7 +47,7 @@ def batch_callback(job: Job, connection: RedisConnection, batch_name: str):
     if not qi.kwic_keys:
         return
 
-    min_offset = min(r.offset for r in qi.requests)
+    min_offset = min(r.offset for r in qi.requests) if qi.requests else 0
     # Send only if this batch exceeds the offset and this batch starts before what's required
     need_segments_this_batch = (
         lines_now > 0 and lines_so_far >= min_offset and qi.required > lines_before
@@ -131,17 +131,17 @@ async def do_segment_and_meta(
         for req_id, (o, l) in reqs_offsets.items()
     }
     for sqid in segments_this_batch:
-        reqs_nlines: dict[str, dict[int, int]] = {req_id: {} for req_id in reqs_sids}
+        reqs_nlines: dict[str, dict[str, int]] = {req_id: {} for req_id in reqs_sids}
         for nline, (_, (sid, *_)) in enumerate(qi.get_from_cache(sqid)):
             sids_of_line = sid if isinstance(sid, list) else [sid]
             for req_id, sids_in_req in reqs_sids.items():
                 if not any(s in sids_in_req for s in sids_of_line):
                     continue
-                reqs_nlines[req_id][nline] = 1
+                reqs_nlines[req_id][str(nline)] = 1
         for r in qi.requests:
             if sqid in r.segment_lines_for_hash:
                 continue
-            r.update_dict("segment_lines_for_hash", {sqid: reqs_nlines[r.id]})
+            r.segment_lines_for_hash[sqid] = reqs_nlines[r.id]
     qi.publish(batch_name, "segments")
 
 
@@ -170,7 +170,7 @@ async def do_batch(qhash: str, batch: list):
         print(f"No job in cache for {batch_name}, running it now")
         await qi.run_query_on_batch(batch)
         batch_hash, _ = qi.query_batches.get(batch_name, ("", 0))
-    min_offset = min(r.offset for r in qi.requests)
+    min_offset = min(r.offset for r in qi.requests) if qi.requests else 0
     await qi.run_aggregate(min_offset, batch)
     qi.publish(batch_name, "main")
     return batch_name
@@ -230,13 +230,14 @@ def process_query(
         json_query = json.loads(request.query)
     except json.JSONDecodeError:
         json_query = convert(request.query, config)
+    lang = cast(str | None, request.languages[0] if request.languages else None)
     all_batches = _get_query_batches(config, request.languages)
     sql_query, meta_json, post_processes = json_to_sql(
         cast(QueryJSON, json_query),
         schema=config.get("schema_path", ""),
         batch=cast(str, all_batches[0][0]),
         config=config,
-        lang=request.languages[0] if request.languages else None,
+        lang=lang,
     )
     print("SQL query:", sql_query)
     shash = hasher(sql_query)

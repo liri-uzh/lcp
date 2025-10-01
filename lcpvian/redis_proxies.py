@@ -70,8 +70,11 @@ class RedisDict(dict):
     def __bool__(self):
         return len(self.keys()) > 0
 
-    def __contains__(self, key: str) -> bool:
+    def __contains__(self, key) -> bool:
         return key in self.keys()
+
+    def __iter__(self):
+        return iter((k, v) for k, v in self.items())
 
     def __delete__(self, pointer_key: str = ""):
         pointers = RedisDict(self._redis, f"{self._redis_key}::pointers")
@@ -107,7 +110,7 @@ class RedisDict(dict):
         return [x.decode() for x in self._redis.hkeys(self._redis_key)]
 
     def values(self):
-        values: list[Any] = []
+        values = []
         for k in self.keys():
             values.append(self.__getattr__(k))
         return values
@@ -145,6 +148,9 @@ class RedisList(list):
     def __bool__(self):
         return len(self) > 0
 
+    def __iter__(self):
+        return iter(self.__getitem__(n) for n in range(len(self)))
+
     def __delete__(self, pointer_key: str = ""):
         pointers = RedisDict(self._redis, f"{self._prefix}::pointers")
         if pointer_key and pointer_key in pointers:
@@ -163,14 +169,14 @@ class RedisList(list):
     def _entry_key(self, index: int):
         return f"{self._prefix}:{index}"
 
-    def __setitem__(self, index: int, value: Any):
+    def __setitem__(self, index, value):
         length = len(self)
         if index < 0:
             index = length + index
         if index < 0 or index >= length:
             raise IndexError("list assignment index out of range")
         key = self._entry_key(index)
-        existing: Any = self.__getitem__(index)
+        existing = self.__getitem__(index)
         if existing and isinstance(existing, (RedisDict, RedisList)):
             existing.__delete__(pointer_key=self._prefix)
         if isinstance(value, (RedisDict, RedisList)):
@@ -182,7 +188,7 @@ class RedisList(list):
         elif isinstance(value, (dict, list)):
             new_key = md5(f"{self._prefix}::{key}".encode("utf-8")).digest().hex()
             is_list = isinstance(value, list)
-            sub_obj: dict | list = (
+            sub_obj = (
                 RedisList(self._redis, new_key)
                 if is_list
                 else RedisDict(self._redis, new_key)
@@ -211,7 +217,7 @@ class RedisList(list):
         self._redis.set(self._length_key, length + 1)
         self.__setitem__(length, item)
 
-    def __getitem__(self, index: int):
+    def __getitem__(self, index):
         length = len(self)
         if index < 0:
             index = length + index
@@ -227,7 +233,7 @@ class RedisList(list):
             parsed_data = RedisList(self._redis, parsed_data[0])
         return parsed_data
 
-    def insert(self, index: int, value: Any):
+    def insert(self, index, value):
         length = len(self)
         if index < 0:
             index = max(0, length + index)
@@ -235,26 +241,26 @@ class RedisList(list):
             index = length
         # Shift subsequent entries
         for i in range(length - 1, index - 1, -1):
-            data: Any = self._redis.get(self._entry_key(i))
+            data: Any = self._redis.get(self._entry_key(i))  # type: ignore
             self._redis.set(self._entry_key(i + 1), data)
         # Insert new element
         self.__setitem__(index, value)
         # Update length
         self._redis.set(self._length_key, length + 1)
 
-    def pop(self, index: int = -1):
+    def pop(self, index=-1):
         length = len(self)
         if index < 0:
             index = length + index
         if index < 0 or index >= length:
             raise IndexError("pop index out of range")
         # Get value to return
-        value: Any = self.__getitem__(index)
+        value = self.__getitem__(index)
         # Remove the element
         self._redis.delete(self._entry_key(index))
         # Shift subsequent entries
         for i in range(index + 1, length):
-            data: Any = self._redis.get(self._entry_key(i))
+            data: Any = self._redis.get(self._entry_key(i))  # type: ignore
             self._redis.set(self._entry_key(i - 1), data)
         # Decrement length
         self._redis.set(self._length_key, length - 1)
