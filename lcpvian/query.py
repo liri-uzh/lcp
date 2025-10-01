@@ -117,20 +117,20 @@ async def do_segment_and_meta(
         script, meta_labels = get_segment_meta_script(
             qi.config, qi.languages, batch_name
         )
-        qi.meta_labels = meta_labels
-        qi.update({"meta_labels": meta_labels})
+        qi.qi["meta_labels"] = meta_labels
         squery_id = str(uuid4())
         print(f"Running new segment query for {batch_name} -- {squery_id}")
         await qi.query(squery_id, script, params={"sids": [sid for sid in needed_sids]})
-        segments_this_batch = {squery_id: needed_sids, **segments_this_batch}
-        qi.segments_for_batch[batch_name] = segments_this_batch
+        if batch_name not in qi.segments_for_batch:
+            qi.segments_for_batch[batch_name] = {}
+        qi.segments_for_batch[batch_name][squery_id] = needed_sids
     # Calculate which lines from res should be sent to each request
     reqs_offsets = {r.id: r.lines_for_batch(qi, batch_name) for r in qi.requests}
     reqs_sids: dict[str, dict[str, int]] = {
         req_id: qi.segment_ids_in_results(batch_results, qi.kwic_keys, o, o + l)
         for req_id, (o, l) in reqs_offsets.items()
     }
-    for sqid in segments_this_batch:
+    for sqid in qi.segments_for_batch[batch_name]:
         reqs_nlines: dict[str, dict[str, int]] = {req_id: {} for req_id in reqs_sids}
         for nline, (_, (sid, *_)) in enumerate(qi.get_from_cache(sqid)):
             sids_of_line = sid if isinstance(sid, list) else [sid]
@@ -163,6 +163,7 @@ async def do_batch(qhash: str, batch: list):
     # Now this is the running batch
     qi.running_batch = batch_name
     try:
+        assert batch_name in qi.query_batches
         batch_hash, _ = qi.query_batches[batch_name]
         qi.get_from_cache(batch_hash)
         print(f"Retrieved query from cache: {batch_name} -- {batch_hash}")
@@ -198,7 +199,7 @@ def schedule_next_batch(
         qi.running_batch = ""
         return None
     min_offset = min(r.offset for r in qi.requests)
-    while min_offset > 0 and list(next_batch) in qi.done_batches:
+    while min_offset > 0 and next_batch[0] in qi.done_batches:
         lines_before_batch, lines_next_batch = qi.get_lines_batch(next_batch[0])
         if min_offset <= lines_before_batch + lines_next_batch:
             break
@@ -254,8 +255,8 @@ def process_query(
         config,
         local_queries,
     )
-    if local_kind and local_kind not in qi.local_queries:
-        qi.update({"local_queries": {**qi.local_queries, local_kind: local_query}})
+    # if local_kind and local_kind not in qi.local_queries:
+    #     qi.update({"local_queries": {**qi.local_queries, local_kind: local_query}})
     job: Job | None = None
     should_run: bool = True
     if request.to_export and request.user:

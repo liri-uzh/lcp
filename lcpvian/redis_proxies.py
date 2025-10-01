@@ -34,6 +34,8 @@ class RedisDict(dict):
             existing: Any = self.__getattr__(name)
             if existing and isinstance(existing, (RedisDict, RedisList)):
                 existing.__delete__(pointer_key=self._redis_key)
+            if isinstance(value, tuple):
+                value = [x for x in value]
             if isinstance(value, (RedisDict, RedisList)):
                 value = (
                     [value._prefix]
@@ -67,6 +69,9 @@ class RedisDict(dict):
             data = json.dumps(value)
             self._redis.hset(self._redis_key, name, data)
 
+    def __len__(self):
+        return len(self.keys())
+
     def __bool__(self):
         return len(self.keys()) > 0
 
@@ -74,7 +79,7 @@ class RedisDict(dict):
         return key in self.keys()
 
     def __iter__(self):
-        return iter((k, v) for k, v in self.items())
+        return iter(k for k in self.keys())
 
     def __delete__(self, pointer_key: str = ""):
         pointers = RedisDict(self._redis, f"{self._redis_key}::pointers")
@@ -105,6 +110,11 @@ class RedisDict(dict):
 
     def __delitem__(self, key: str):
         self.__delattr__(key)
+
+    def setdefault(self, key, value):
+        if key not in self:
+            self.__setattr__(key, value)
+        return self.__getattr__(key)
 
     def keys(self):
         return [x.decode() for x in self._redis.hkeys(self._redis_key)]
@@ -179,6 +189,8 @@ class RedisList(list):
         existing = self.__getitem__(index)
         if existing and isinstance(existing, (RedisDict, RedisList)):
             existing.__delete__(pointer_key=self._prefix)
+        if isinstance(value, tuple):
+            value = [x for x in value]
         if isinstance(value, (RedisDict, RedisList)):
             value = (
                 [value._prefix]
