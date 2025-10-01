@@ -80,7 +80,7 @@ class Request:
     def __init__(self, connection: RedisConnection, request: dict = {}):
         self._connection = connection
         request = cast(dict, request)
-        id: str = str(request.get("id") or uuid4())
+        id: str = str(request.get("id") or f"request::{uuid4()}")
         redis_request = RedisDict(connection, id)
         self._redis_request = redis_request
 
@@ -811,7 +811,7 @@ class QueryInfo:
     # Pseudo-attributes (no need to keep in sync)
     @property
     def qi(self) -> dict:
-        qi = cast(dict, RedisDict(self._connection, self.hash))
+        qi = cast(dict, RedisDict(self._connection, f"query_info::{self.hash}"))
         return qi
 
     @property
