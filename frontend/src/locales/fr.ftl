@@ -95,8 +95,8 @@ common-go-to-time = Aller au temps
 common-loading-video-duration = Chargement de la durée de la vidéo
 common-frame = Frame
 common-time = Temps
-common-add-group = Ajouter nouveau groupe
-common-group-settings = Réglages du groupe
+common-add-group = Ajouter nouvelle collection
+common-group-settings = Réglages de la collection
 common-start-date = Début
 common-finish-date = Fin
 common-institution = Institution
@@ -161,7 +161,7 @@ modal-details-user-license = Personnalisée
 modal-meta-metadata = Metadonnées
 modal-meta-structure = Structure
 modal-meta-swissubase = SWISSUbase
-modal-meta-group = Group
+modal-meta-group = Collection
 modal-meta-name = Nom
 modal-meta-url = URL
 modal-meta-authors = Auteur·ice·s
@@ -217,18 +217,18 @@ modal-swissubase-valid-project = Le jeton d'accès API et le projet sont valides
 
 # Modal nouveau projet/éditer
 
-modal-project-new = Nouveau Groupe
+modal-project-new = Nouvelle collection
 modal-project-title = Titre
 modal-project-title-error =
  Le titre est obligatoire (sept lettres minimum).
  Le titre sera vérifié manuellement : il doit être concis et informatif.
-modal-project-title-unique-error = Un groupe portant le même titre existe déjà. Veuillez choisir un autre titre.
+modal-project-title-unique-error = Une collection portant le même titre existe déjà. Veuillez choisir un autre titre.
 modal-project-start-date = Début
 modal-project-start-date-error = La Début est obligatoire.
 modal-project-end-date = Fin
 modal-project-end-date-error = La Fin est obligatoire.
 modal-project-description = Description
-modal-project-description-placeholder = Donnez une description pour votre groupe.
+modal-project-description-placeholder = Donnez une description pour votre collection.
 modal-project-tab-metadata = Metadonnées
 modal-project-tab-permissions = Permissions
 modal-project-tab-api = API

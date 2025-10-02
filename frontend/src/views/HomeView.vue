@@ -148,6 +148,14 @@
                     <!-- <p class="author mb-0">
                       <span v-if="corpus.meta.author">by {{ corpus.meta.author }}</span>
                     </p> -->
+                    <button
+                      v-if="project.isAdmin"
+                      class="tooltips icon-x btn btn-sm btn-light"
+                      :title="$t('platform-general-corpus-edit')"
+                      @click.stop="openCorpusEdit(corpus)"
+                    >
+                      <FontAwesomeIcon :icon="['fas', 'gear']" />
+                    </button>
                   </div>
                   <div class="px-4">
                     <p class="description mt-3">
@@ -203,14 +211,6 @@
                   </div>
 
                   <div class="details-button icon-2">
-                    <span
-                      v-if="project.isAdmin"
-                      class="tooltips icon-x"
-                      :title="$t('platform-general-corpus-edit')"
-                      @click.stop="openCorpusEdit(corpus)"
-                    >
-                      <FontAwesomeIcon :icon="['fas', 'gear']" />
-                    </span>
                     <span
                       :href="corpusStore.getLicenseByTag(corpus.meta.license)"
                       class="tooltips icon-x"
@@ -816,6 +816,13 @@ export default {
   width: 100%;
   background-color: #d1e7dd;
   transition: all 0.3s;
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+}
+
+.corpus-block-header .icon-x:hover {
+  background-color: white;
 }
 
 .corpus-block:hover .corpus-block-header {
