@@ -86,7 +86,7 @@
               :style="`opacity: ${isVisible(layer, annotation._id) ? 1 : 0.5};`"
             >
               <div class="annotation-box" @click="switchVisible(layer, annotation._id)">
-                <div class="annotation-idx">{{ layer }} {{ n+1 }}</div>
+                <div class="annotation-idx">{{ layer }} {{ annotations.length > 1 ? n+1 : '' }}</div>
                 <div
                   class="annotation-attribute"
                   v-for="(value,attribute) in filterAttributes(layer, annotation)"
@@ -95,7 +95,7 @@
                   {{ attribute }} : {{ value }}
                 </div>
               </div>
-              <div class="annotation-idx">{{ getAnnotationName(layer, n, annotation) }}</div>
+              <div class="annotation-idx">{{ getAnnotationName(layer, annotations.length > 1 ? n : null, annotation) }}</div>
             </div>
           </div>
         </div>
@@ -171,7 +171,9 @@ export default {
   methods: {
     getAnnotationName(layer, n, attributes) {
       if (attributes.form) return attributes.form;
-      else return layer + " " + String(n + 1);
+      let name = layer;
+      if (n!==null) name += " " + String(n + 1);
+      return name;
     },
     onImageLoad() {
       this.adjustImage();
@@ -282,9 +284,23 @@ export default {
     switchVisible(layer, annotationId) {
       this.annotationVisibility[layer] = this.annotationVisibility[layer] || {show: true, annotations: {}};
       const av = this.annotationVisibility[layer];
-      if (annotationId === undefined)
+      if (annotationId === undefined) {
         av.show = !av.show;
+        if (!av.show || Object.values(av.annotations||{}).includes(true)) return;
+        // Show all the annotations if they were all hidden
+        for (let aid in (av.annotations||{}))
+          av.annotations[aid] = true;
+      }
       else {
+        if (!av.show) {
+          // Hide all the annotations
+          for (let aid in av.annotations)
+            av.annotations[aid] = false;
+          // And show only this one
+          av.annotations[annotationId] = true;
+          av.show = true;
+          return;
+        }
         if (!(annotationId in av.annotations))
           av.annotations[annotationId] = true;
         av.annotations[annotationId] = !av.annotations[annotationId];
