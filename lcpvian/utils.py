@@ -1136,9 +1136,7 @@ def get_aligned_annotations(
             to_select = ""
             is_meta = attr_name in meta_attrs
             if pointer_global_attributes and attr_props.get("ref"):
-                layer_selects[attr_name] = sql_str(
-                    "{}.{}", layer, attr_name.lower() + "_id"
-                )
+                layer_selects[attr_name] = sql_str("{}.{}", layer, f"{attr_name}_id")
                 continue
             if is_meta:
                 attr_ref = sqlc.attribute(layer, layer, "meta")
