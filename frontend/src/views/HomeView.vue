@@ -314,6 +314,7 @@
               :key="modalIndexKey"
               @submitSWISSUbase="submitModalSWISSUbase"
               :allProjects="getUniqueProjects"
+              ref="metadataedit"
              />
           </div>
           <div class="modal-footer">
@@ -373,7 +374,6 @@ import Utils from "@/utils";
 import config from "@/config";
 import { setTooltips, removeTooltips } from "@/tooltips";
 import { Modal } from "bootstrap";
-
 
 export default {
   name: "HomeView",
@@ -596,14 +596,21 @@ export default {
       if (isSuperAdmin)
         meta.projects = this.corpusModal.projects;
       let retval = await useCorpusStore().updateMeta(meta);
-      if (retval) {
-        if (retval.status == false) {
-          useNotificationStore().add({
-            type: "error",
-            text: retval.msg,
-          });
-        }
-      }
+      if (retval && retval.status == false)
+        useNotificationStore().add({
+          type: "error",
+          text: retval.msg,
+        });
+      const metadataedit = this.$refs.metadataedit;
+      const overwriteCorpus = metadataedit.overwriteCorpus;
+      if ([null, undefined].includes(overwriteCorpus))
+        return;
+      retval = await useCorpusStore().overwriteCorpus(this.corpusModal.corpus_id, overwriteCorpus.id);
+      if (retval && retval.status == false)
+        useNotificationStore().add({
+          type: "error",
+          text: retval.msg,
+        });
     },
     async submitModalSWISSUbase() {
       await this.saveModalCorpus();

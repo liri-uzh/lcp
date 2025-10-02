@@ -619,6 +619,29 @@ class QueryService:
         )
         return job
 
+    def overwrite_corpus(
+        self, corpus_id: int, to_be_overwritten: int, queue: str = "internal"
+    ) -> Job:
+        """
+        Overwrite corpus id to_be_overwritten with corpus id corpus_id in the DB
+        """
+        kwargs = {
+            "store": True,
+            "is_main": True,  # query on main.*
+            "has_return": False,
+            "refresh_config": True,
+        }
+        args = {"corpus_id": corpus_id, "overwrite": to_be_overwritten}
+        query = f"""CALL main.update_corpus(:overwrite, :corpus_id);"""
+        job: Job = self.app[queue].enqueue(
+            _db_query,
+            result_ttl=self.query_ttl,
+            job_timeout=self.timeout,
+            args=(query, args),
+            kwargs=kwargs,
+        )
+        return job
+
     def upload(
         self,
         user: str,
