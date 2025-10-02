@@ -123,7 +123,7 @@ class Exporter(ExporterXML):
             )
             qi.delete_request(request)
             cls.finish_export_db(
-                qi._connection, qi.hash, offset, requested, delivered, full, "swissdox"
+                job.connection, qhash, offset, requested, delivered, full, "swissdox"
             )
         except Exception as e:
             shutil.rmtree(cls.get_dl_path_from_hash(qhash, offset, requested, full))

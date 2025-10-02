@@ -50,7 +50,9 @@ def batch_callback(job: Job, connection: RedisConnection, batch_name: str):
     min_offset = min(r.offset for r in qi.requests) if qi.requests else 0
     # Send only if this batch exceeds the offset and this batch starts before what's required
     need_segments_this_batch = (
-        lines_now > 0 and lines_so_far >= min_offset and qi.required > lines_before
+        lines_now > 0
+        and lines_so_far >= min_offset
+        and (qi.full or qi.required > lines_before)
     )
     print(
         f"need segments for {batch_name}?",
@@ -132,6 +134,7 @@ async def do_segment_and_meta(
     }
     for sqid in qi.segments_for_batch[batch_name]:
         reqs_nlines: dict[str, dict[str, int]] = {req_id: {} for req_id in reqs_sids}
+        # TODO: re-run sqid if absent from cache?
         for nline, (_, (sid, *_)) in enumerate(qi.get_from_cache(sqid)):
             sids_of_line = sid if isinstance(sid, list) else [sid]
             for req_id, sids_in_req in reqs_sids.items():
@@ -189,7 +192,7 @@ def schedule_next_batch(
     qi = QueryInfo(qhash, connection=connection)
     if not qi.requests:
         return None
-    if previous_batch_name:
+    if previous_batch_name and not qi.full:
         lines_before, lines_batch = qi.get_lines_batch(previous_batch_name)
         if lines_before + lines_batch >= qi.required:
             qi.running_batch = ""
@@ -198,7 +201,7 @@ def schedule_next_batch(
     if not next_batch:
         qi.running_batch = ""
         return None
-    min_offset = min(r.offset for r in qi.requests)
+    min_offset = min(r.offset for r in qi.requests) if qi.requests else 0
     while min_offset > 0 and next_batch[0] in qi.done_batches:
         lines_before_batch, lines_next_batch = qi.get_lines_batch(next_batch[0])
         if min_offset <= lines_before_batch + lines_next_batch:

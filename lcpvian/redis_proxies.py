@@ -10,6 +10,11 @@ class RedisDict(dict):
         self._redis = redis_client
         self._redis_key = redis_key
 
+    def __eq__(self, other):
+        if not isinstance(other, RedisDict):
+            return False
+        return self._redis_key == other._redis_key
+
     def __getattr__(self, name: str):
         # Fetch the entire hash and get the sub-value
         data = self._redis.hget(self._redis_key, name)
@@ -32,7 +37,11 @@ class RedisDict(dict):
             super().__setattr__(name, value)
         else:
             existing: Any = self.__getattr__(name)
-            if existing and isinstance(existing, (RedisDict, RedisList)):
+            if (
+                existing
+                and isinstance(existing, (RedisDict, RedisList))
+                and existing != value
+            ):
                 existing.__delete__(pointer_key=self._redis_key)
             if isinstance(value, tuple):
                 value = [x for x in value]
@@ -111,6 +120,16 @@ class RedisDict(dict):
     def __delitem__(self, key: str):
         self.__delattr__(key)
 
+    def to_dict(self) -> dict:
+        ret = {}
+        for k, v in self.items():
+            ret[k] = v
+            if isinstance(v, RedisDict):
+                ret[k] = v.to_dict()
+            if isinstance(v, RedisList):
+                ret[k] = v.to_list()
+        return ret
+
     def setdefault(self, key, value):
         if key not in self:
             self.__setattr__(key, value)
@@ -144,6 +163,11 @@ class RedisList(list):
         # Initialize length if not exists
         if not self._redis.exists(self._length_key):
             self._redis.set(self._length_key, 0)
+
+    def __eq__(self, other):
+        if not isinstance(other, RedisList):
+            return False
+        return self._prefix == other._prefix
 
     def __len__(self):
         return int(self._redis.get(self._length_key) or 0)
@@ -187,7 +211,11 @@ class RedisList(list):
             raise IndexError("list assignment index out of range")
         key = self._entry_key(index)
         existing = self.__getitem__(index)
-        if existing and isinstance(existing, (RedisDict, RedisList)):
+        if (
+            existing
+            and isinstance(existing, (RedisDict, RedisList))
+            and existing != value
+        ):
             existing.__delete__(pointer_key=self._prefix)
         if isinstance(value, tuple):
             value = [x for x in value]
@@ -219,6 +247,17 @@ class RedisList(list):
             pointers[self._prefix] = 1
 
         self._redis.set(key, json.dumps(value))
+
+    def to_list(self) -> list:
+        ret = []
+        for x in self:
+            v = x
+            if isinstance(x, RedisDict):
+                v = x.to_dict()
+            if isinstance(x, RedisList):
+                v = x.to_list()
+            ret.append(v)
+        return ret
 
     def append(self, item: Any):
         # Get current length

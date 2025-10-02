@@ -175,10 +175,10 @@ class Exporter:
     def __init__(self, request: Request, qi: QueryInfo) -> None:
         self._request: Request = request
         self._qi: QueryInfo = qi
-        self._config: dict = qi.config
+        self._config: dict = qi.config.to_dict()
         seg_layer: str = self._config["segment"]
         seg_mapping: dict[str, Any] = _get_mapping(
-            seg_layer, qi.config, "", qi.languages[0]
+            seg_layer, self._config, "", qi.languages[0]
         )
         self._column_headers: list[str] = seg_mapping["prepared"]["columnHeaders"]
         self._form_index = self._column_headers.index("form")
@@ -444,18 +444,15 @@ class Exporter:
         )
         res = payload.get("result", [])
         all_stats = []
+        result_sets = self._qi.result_sets.to_list()
         for k in self._qi.stats_keys:
             if k not in res:
                 continue
             k_in_rs = int(k) - 1
-            stats_name = self._qi.result_sets[k_in_rs]["name"]
-            stats_type = self._qi.result_sets[k_in_rs]["type"]
-            stats_attrs = [
-                x["name"] for x in self._qi.result_sets[k_in_rs]["attributes"]
-            ]
-            total_stats = [
-                x["name"] for x in self._qi.result_sets[k_in_rs].get("total", {})
-            ]
+            stats_name = result_sets[k_in_rs]["name"]
+            stats_type = result_sets[k_in_rs]["type"]
+            stats_attrs = [x["name"] for x in result_sets[k_in_rs]["attributes"]]
+            total_stats = [x["name"] for x in result_sets[k_in_rs].get("total", {})]
             all_stats.append(
                 getattr(E, stats_type)(
                     *[
@@ -492,10 +489,10 @@ class Exporter:
                 continue
             # Prepare all the info before looping over the results
             k_in_rs = int(k) - 1
-            kwic_name = self._qi.result_sets[k_in_rs]["name"]
+            kwic_name = result_sets[k_in_rs]["name"]
             matches_info = next(
                 a["data"]
-                for a in self._qi.result_sets[k_in_rs]["attributes"]
+                for a in result_sets[k_in_rs]["attributes"]
                 if a["name"] == "entities"
             )
             for sid, matches, *_ in res[k]:
@@ -765,9 +762,14 @@ class Exporter:
                 E.full(str(req.full)),
                 E.delivered(str(req.lines_sent_so_far)),
                 E.coverage(str(percentage_words_done)),
-                E.json("\n" + json.dumps(self._qi.json_query, indent=2) + "\n  "),
+                E.json(
+                    "\n" + json.dumps(self._qi.json_query.to_dict(), indent=2) + "\n  "
+                ),
                 E.locals(
-                    *[getattr(E, k)(v) for k, v in self._qi.local_queries.items()]
+                    *[
+                        getattr(E, k)(v)
+                        for k, v in self._qi.local_queries.to_dict().items()
+                    ]
                 ),
             )
             output.write(_node_to_string(query_node, prefix="  "))

@@ -132,7 +132,7 @@ export default {
   name: "ResultsTableView",
   props: ["data", "languages", "attributes", "total", "corpora", "resultsPerPage", "loading", "type"],
   data() {
-    let attributes = this.getImpovedAttibutes(this.attributes)
+    let attributes = this.getImprovedAttibutes(this.attributes)
     let data = this.calculateAdditionalData(this.data)
     return {
       popoverY: 0,
@@ -199,7 +199,7 @@ export default {
       }
       return data
     },
-    getImpovedAttibutes(attributes) {
+    getImprovedAttibutes(attributes) {
       if (this.attributes) {
         attributes = JSON.parse(JSON.stringify(this.attributes));
         if (this.type == "analysis") {
@@ -336,7 +336,7 @@ export default {
       this.calcData = this.calculateAdditionalData(newValue)
     },
     attributes(newValue) {
-      let attributes = this.getImpovedAttibutes(newValue)
+      let attributes = this.getImprovedAttibutes(newValue)
       this.calcAttributes = attributes
       this.sortBy = [{ index: attributes.length - 1, direction: 1 }];
       this.filters = attributes.map(() => '')

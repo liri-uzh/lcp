@@ -103,10 +103,11 @@ class Request:
         self.corpus: int = cast(int, redis_request.get("corpus", 1))
         self.user: str = cast(str, redis_request.get("user", ""))
         self.room: str = cast(str, redis_request.get("room", ""))
-        self.languages: RedisList = cast(
+        languages: RedisList = cast(
             RedisList,
             redis_request.get("languages", RedisList(connection, f"{id}:languages")),
         )
+        self.languages: RedisList = languages
         self.query: str = cast(str, redis_request.get("query", ""))
         self.to_export = cast(None | RedisDict, redis_request.get("to_export", None))
         if not isinstance(self.to_export, RedisDict):
@@ -182,7 +183,7 @@ class Request:
 
     def all_queries_done(self, qi: "QueryInfo") -> bool:
         so_far = int(self.lines_sent_so_far or 0)
-        if so_far >= self.requested:
+        if not self.full and so_far >= self.requested:
             return True
         if qi.status != "complete":
             return False
@@ -224,6 +225,10 @@ class Request:
         """
         Return the offset and number of lines required in the current job
         """
+        if self.full:
+            return next(
+                ((0, int(n)) for b, n in qi.all_batches if b == batch_name), (0, 9999)
+            )
         offset_and_lines_for_req = (0, 0)
         lines_before_job, lines_job = qi.get_lines_batch(batch_name)
         if self.offset > lines_before_job + lines_job:
@@ -292,11 +297,10 @@ class Request:
         for seg_hash in seg_hashes:
             if seg_hash in self.sent_hashes:
                 continue
-            seg_lines: dict[int, int] = self.segment_lines_for_hash[seg_hash]  # type: ignore
+            seg_lines: dict[int, int] = self.segment_lines_for_hash[seg_hash].to_dict()  # type: ignore
+            all_lines = qi.get_from_cache(seg_hash)
             seg_res: list = [
-                line
-                for nline, line in enumerate(qi.get_from_cache(seg_hash))
-                if str(nline) in seg_lines
+                line for nline, line in enumerate(all_lines) if str(nline) in seg_lines
             ]
             # prep_seg_lines = [line for rtype, *line in seg_res if rtype == -1]
             prep_seg_lines = {
@@ -313,6 +317,11 @@ class Request:
             self.sent_hashes[seg_hash] = len(prep_seg_lines)
         # print("after updaing sent_hashes", self.sent_hashes)
         results["0"] = {"result_sets": qi.result_sets, "meta_labels": qi.meta_labels}
+        for k in results["0"]:
+            if isinstance(results["0"][k], RedisList):
+                results["0"][k] = results["0"][k].to_list()
+            if isinstance(results["0"][k], RedisDict):
+                results["0"][k] = results["0"][k].to_dict()
         nsegs = len(results["-1"])
         payload = self.get_payload(qi, batch_name)
         payload.update({"action": "segments", "result": results, "n_results": nsegs})
@@ -376,13 +385,21 @@ class Request:
             if sk not in results:
                 results[sk] = []
             lines_so_far += 1
-            if lines_so_far < offset_this_batch:
+            if not self.full and lines_so_far < offset_this_batch:
                 continue
-            if lines_so_far >= offset_this_batch + lines_this_batch:
+            if not self.full and lines_so_far >= offset_this_batch + lines_this_batch:
                 continue
             results[sk].append(v)
         self.sent_hashes[batch_hash] = len(results)
-        results["0"] = {"result_sets": qi.result_sets, "meta_labels": qi.meta_labels}
+        results["0"] = {
+            "result_sets": qi.result_sets,
+            "meta_labels": qi.meta_labels,
+        }
+        for k in results["0"]:
+            if isinstance(results["0"][k], RedisList):
+                results["0"][k] = results["0"][k].to_list()
+            if isinstance(results["0"][k], RedisDict):
+                results["0"][k] = results["0"][k].to_dict()
         try:
             stats_key = f"{qi.hash}::stats"
             _, stats_res = qi.get_from_cache(stats_key)
@@ -400,8 +417,9 @@ class Request:
             if self.synchronous
             else f"to user '{self.user}' room '{self.room}'"
         )
+        actual_nlines = lines_so_far + 1 - offset_this_batch
         print(
-            f"[{self.id}] Sending {lines_this_batch} results lines for batch {batch_name} ({batch_hash}; QI {qi.hash}) {to_msg}"
+            f"[{self.id}] Sending {actual_nlines} results lines for batch {batch_name} ({batch_hash}; QI {qi.hash}) {to_msg}"
         )
         if self.to_export:
             xp_format = self.to_export.get("format", "xml") or "xml"
@@ -475,8 +493,9 @@ class Request:
                 await self.send_query(app, qi, batch_name)
             elif typ == "segments":
                 await self.send_segments(app, qi, batch_name)
-            if not self.to_export:
-                self.delete_if_done(qi)
+            # if not self.to_export:
+            #     self.delete_if_done(qi)
+            self.delete_if_done(qi)
         except Exception as e:
             tb = traceback.format_exc()
             qi.publish("\n".join([str(e), tb]), "failure")
