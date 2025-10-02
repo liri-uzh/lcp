@@ -532,7 +532,7 @@
     >
       <div class="row">
         <div class="col-6">
-          <span>Group:</span>
+          <span>{{ $t('modal-meta-group') }}:</span>
           <multiselect
             v-model="projects"
             :options="allProjects"
