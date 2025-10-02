@@ -231,11 +231,11 @@ class DDL:
 
 
 class Column(DDL):
-    _not_null_constr = "ALTER COLUMN {} SET NOT NULL;"
-    _pk_constr = "ADD PRIMARY KEY ({});"
-    _fk_constr = 'ADD FOREIGN KEY ({}) REFERENCES "{}".{}({});'
-    _uniq_constr = "ADD UNIQUE ({});"
-    _idx_constr = "{} ({});"
+    _not_null_constr = 'ALTER COLUMN "{}" SET NOT NULL;'
+    _pk_constr = 'ADD PRIMARY KEY ("{}");'
+    _fk_constr = 'ADD FOREIGN KEY ("{}") REFERENCES "{}".{}("{}");'
+    _uniq_constr = 'ADD UNIQUE ("{}");'
+    _idx_constr = '{} ("{}");'
 
     def __init__(
         self, name: str, typ: str, **constrs: bool | None | str | dict[str, str]
@@ -253,7 +253,7 @@ class Column(DDL):
 
         """
         return (
-            self.name
+            f'"{self.name}"'
             + self.t * math.ceil((maxi - len(self.name)) / self.tabwidth)
             + self.type
         )
@@ -602,7 +602,7 @@ class CTProcessor:
                     norm_type = self.global_attributes[ref].get("type", "text")
                     parent = "global_attribute"
 
-                ref_or_attr = (ref or attr).lower()
+                ref_or_attr = ref or attr
 
                 norm_col = f"{ref_or_attr}_id"
                 norm_table: Table
@@ -633,7 +633,7 @@ class CTProcessor:
 
                 table_cols.append(
                     Column(
-                        attr.lower() + "_id",
+                        attr + "_id",
                         "text",
                         foreign_key={"table": norm_table.name, "column": norm_col},
                         nullable=nullable,
@@ -714,7 +714,7 @@ class CTProcessor:
                 )
                 table_cols.append(Column(attr, f"bit({nbit})", nullable=nullable))
                 # Create lookup table if needed
-                label_lookup_table_name = f"{entity_name.lower()}_{attr.lower()}"
+                label_lookup_table_name = f"{entity_name.lower()}_{attr}"
                 map_attr[attr] = {"name": label_lookup_table_name, "type": "relation"}
                 if label_lookup_table_name not in [t.name for t in tables]:
                     inttype = "int2"
