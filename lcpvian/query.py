@@ -234,6 +234,7 @@ def process_query(
         json_query = json.loads(request.query)
     except json.JSONDecodeError:
         json_query = convert(request.query, config)
+    json_query_str = json.dumps(json_query)
     lang = cast(str | None, request.languages[0] if request.languages else None)
     all_batches = _get_query_batches(config, request.languages)
     sql_query, meta_json, post_processes = json_to_sql(
@@ -251,7 +252,7 @@ def process_query(
     qi = QueryInfo(
         shash,
         app["redis"],
-        json_query,
+        json.loads(json_query_str),  # discard any modifications made to json_query
         meta_json,
         post_processes,
         request.languages,

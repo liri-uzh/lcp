@@ -541,7 +541,7 @@ class QueryInfo:
         self._connection = connection
         self.hash = qhash
         qi = self.qi
-        self.json_query = qi.setdefault("json_query", json_query or {})
+        self._json_query = qi.setdefault("json_query", json.dumps(json_query) or "")
         if config:
             config["batches"] = config.get("_batches", {})
         self.config = qi.setdefault("config", config or {})
@@ -656,6 +656,10 @@ class QueryInfo:
             self.qi["enqueued_jobs"] = {}
         for k, v in value.items():
             self.qi["enqueued_jobs"][k] = v
+
+    @property
+    def json_query(self) -> dict:
+        return json.loads(self._json_query)
 
     @property
     def running_batch(self) -> str:
