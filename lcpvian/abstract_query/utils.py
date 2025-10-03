@@ -125,7 +125,9 @@ class SQLCorpus:
         )
         if rel_table:
             rel_ent_label = unique_label(f"{entity_alias}_aligned", layer, used_refs)
-            table = RichStr(sql_str("{}.{} {}", self.schema, rel_table, rel_ent_label))
+            table = RichStr(
+                sql_str("{}.{} {}", self.schema, rel_table.lower(), rel_ent_label)
+            )
             table.meta["entity"] = entity
             condition = sql_str(
                 f"{entity_label}.{LR} = {LR}.{LR}",
@@ -173,7 +175,8 @@ class SQLCorpus:
             ref = entity_alias
             rel_key += "_id"
         else:
-            table = RichStr(sql_str("{}.{} {}", self.schema, rel_tab, ref))
+            # for now we lower all table names, but maybe we should allows uppercase too?
+            table = RichStr(sql_str("{}.{} {}", self.schema, rel_tab.lower(), ref))
             table.meta["entity"] = entity
             # rel_alias.rel_key_id = entity.attribute_id
             # e.g. Document_speaker_L.speaker_id = Document.speaker_l_id
@@ -181,7 +184,7 @@ class SQLCorpus:
                 f"{LR}.{LR} = {entity_label}.{LR}",
                 ref,
                 f"{rel_key}_id",
-                f"{attribute.lower()}_id",
+                f"{attribute}_id",
             )
             joins[table] = {**joins.get(table, {}), condition: 1}
         ref = sql_str("{}.{}", ref, rel_key)

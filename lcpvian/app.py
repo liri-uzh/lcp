@@ -48,6 +48,7 @@ from .configure import CorpusConfig
 from .corpora import (
     corpora,
     corpora_meta_update,
+    corpora_overwrite,
     check_corpus,
     discard_invites,
     request_invite,
@@ -253,6 +254,7 @@ async def create_app(test: bool = False) -> web.Application:
         ("/corpora/{corpus_id}/request", "POST", request_invite),
         ("/corpora/{corpus_id}/request/discard", "DELETE", discard_invites),
         ("/corpora/{corpora_id}/meta/update", "PUT", corpora_meta_update),
+        ("/corpora/{corpora_id}/overwrite", "PUT", corpora_overwrite),
         ("/create", "POST", make_schema),
         ("/document/{doc_id}", "POST", document),
         ("/document_ids/{corpus_id}", "POST", document_ids),

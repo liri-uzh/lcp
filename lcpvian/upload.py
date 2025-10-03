@@ -192,6 +192,7 @@ async def upload(request: web.Request) -> web.Response:
     """
     Handle upload of data (save files, insert into db)
     """
+
     authenticator: Authentication = request.app["auth_class"](request.app)
 
     url = request.url
@@ -206,7 +207,37 @@ async def upload(request: web.Request) -> web.Response:
 
     gui_mode = request.rel_url.query.get("gui", False)
 
-    job = Job.fetch(job_id, connection=request.app["redis"])
+    job: Job
+    corpus_super: dict = cast(dict, request.rel_url.query.get("corpus_super", {}))
+    is_super_admin = cast(dict, user_data["user"]).get("superAdmin")
+    if corpus_super:
+        if not is_super_admin:
+            return web.json_response(
+                {
+                    "status": "failed",
+                    "error": "This user is not authorized to add new files to the corpus",
+                }
+            )
+        corpus = request.app["config"][str(corpus_super)]
+        project_id = corpus.get("project", corpus.get("projects", [])[0])
+        schema = corpus.get("schema_path", "")
+        cpath = os.path.join(project_id, schema)
+        os.makedirs(cpath, exist_ok=True)
+        job = Job.create(
+            "",
+            args=[],
+            kwargs={
+                "project": project_id,
+                "path": cpath,
+                "corpus_name": "",
+                "project_name": "",
+                "user": "",
+                "room": "",
+            },
+            connection=request.app["redis"],
+        )
+    else:
+        job = Job.fetch(job_id, connection=request.app["redis"])
     # schema_name: str = cast(str, job.args[1])
     kwargs: dict = cast(dict, job.kwargs)
     project_id = kwargs["project"]
@@ -264,10 +295,14 @@ async def upload(request: web.Request) -> web.Response:
             "corpus_name": corpus_name,
         }
         try:
-            upload_job = Job.fetch(
-                job.meta["upload_job"], connection=request.app["redis"]
-            )
-            corpus_entry = _row_to_value(upload_job.result)
+            corpus = {}
+            if corpus_super and is_super_admin:
+                corpus = request.app["config"][str(corpus_super)]
+            else:
+                upload_job = Job.fetch(
+                    job.meta["upload_job"], connection=request.app["redis"]
+                )
+                corpus = _row_to_value(upload_job.result)
             # Need a better method than that - move to authenticate
             # ud = cast(dict, user_data)
             # user_projects: set = {p.get("id") for p in ud["publicProfiles"]}
@@ -277,7 +312,7 @@ async def upload(request: web.Request) -> web.Response:
             # assert corpus_entry.get("project") in user_projects, PermissionError(
             #     "User is not authorized to upload files to this project"
             # )
-            _move_media_files(cpath, corpus_entry.get("schema_path", ""))
+            _move_media_files(cpath, corpus.get("schema_path", ""))
             # shutil.rmtree(cpath)  # todo: should we do this?
         except Exception as err:
             ret["status"] = "failed"

@@ -285,3 +285,39 @@ async def corpora_meta_update(request: web.Request) -> web.Response:
         "jobs": [str(job_meta.id), str(job_desc.id)],
     }
     return web.json_response(info)
+
+
+async def corpora_overwrite(request: web.Request) -> web.Response:
+    """
+    Updates metadata for a given corpus
+    """
+    authenticator = request.app["auth_class"](request.app)
+    user_data: dict = await authenticator.user_details(request)
+
+    corpora_id: int = int(request.match_info["corpora_id"])
+    request_data: JSONObject = await request.json()
+    overwrite_id: int = int(cast(int, request_data.get("overwrite", -1)) or -1)
+
+    if any(
+        not authenticator.check_corpus_allowed(
+            str(cid),
+            user_data,
+            "lcp",
+        )
+        for cid in (corpora_id, overwrite_id)
+    ):
+        raise PermissionError(
+            f"This user is not authorized to modify this pair of corpora ({corpora_id}, {overwrite_id})"
+        )
+
+    corpora = request.app["config"]
+    corpus = corpora.get(str(corpora_id))
+    assert corpus, ReferenceError(f"Could not find corpus id {corpora_id}")
+    to_be_overwritten = corpora.get(str(overwrite_id))
+    assert to_be_overwritten, ReferenceError(f"Could not find corpus id {overwrite_id}")
+
+    args_overwrite = (corpora_id, overwrite_id)
+    job_overwrite: Job = request.app["query_service"].overwrite_corpus(*args_overwrite)
+
+    info: dict[str, str | list[str]] = {"status": "1", "job": str(job_overwrite.id)}
+    return web.json_response(info)

@@ -148,6 +148,14 @@
                     <!-- <p class="author mb-0">
                       <span v-if="corpus.meta.author">by {{ corpus.meta.author }}</span>
                     </p> -->
+                    <button
+                      v-if="project.isAdmin"
+                      class="tooltips icon-x btn btn-sm btn-light"
+                      :title="$t('platform-general-corpus-edit')"
+                      @click.stop="openCorpusEdit(corpus)"
+                    >
+                      <FontAwesomeIcon :icon="['fas', 'gear']" />
+                    </button>
                   </div>
                   <div class="px-4">
                     <p class="description mt-3">
@@ -203,14 +211,6 @@
                   </div>
 
                   <div class="details-button icon-2">
-                    <span
-                      v-if="project.isAdmin"
-                      class="tooltips icon-x"
-                      :title="$t('platform-general-corpus-edit')"
-                      @click.stop="openCorpusEdit(corpus)"
-                    >
-                      <FontAwesomeIcon :icon="['fas', 'gear']" />
-                    </span>
                     <span
                       :href="corpusStore.getLicenseByTag(corpus.meta.license)"
                       class="tooltips icon-x"
@@ -314,6 +314,7 @@
               :key="modalIndexKey"
               @submitSWISSUbase="submitModalSWISSUbase"
               :allProjects="getUniqueProjects"
+              ref="metadataedit"
              />
           </div>
           <div class="modal-footer">
@@ -373,7 +374,6 @@ import Utils from "@/utils";
 import config from "@/config";
 import { setTooltips, removeTooltips } from "@/tooltips";
 import { Modal } from "bootstrap";
-
 
 export default {
   name: "HomeView",
@@ -596,14 +596,21 @@ export default {
       if (isSuperAdmin)
         meta.projects = this.corpusModal.projects;
       let retval = await useCorpusStore().updateMeta(meta);
-      if (retval) {
-        if (retval.status == false) {
-          useNotificationStore().add({
-            type: "error",
-            text: retval.msg,
-          });
-        }
-      }
+      if (retval && retval.status == false)
+        useNotificationStore().add({
+          type: "error",
+          text: retval.msg,
+        });
+      const metadataedit = this.$refs.metadataedit;
+      const overwriteCorpus = metadataedit.overwriteCorpus;
+      if ([null, undefined].includes(overwriteCorpus))
+        return;
+      retval = await useCorpusStore().overwriteCorpus(this.corpusModal.corpus_id, overwriteCorpus.id);
+      if (retval && retval.status == false)
+        useNotificationStore().add({
+          type: "error",
+          text: retval.msg,
+        });
     },
     async submitModalSWISSUbase() {
       await this.saveModalCorpus();
@@ -816,6 +823,13 @@ export default {
   width: 100%;
   background-color: #d1e7dd;
   transition: all 0.3s;
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+}
+
+.corpus-block-header .icon-x:hover {
+  background-color: white;
 }
 
 .corpus-block:hover .corpus-block-header {

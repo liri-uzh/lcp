@@ -147,7 +147,12 @@ class Lama(Authentication):
     ## JSON responses to GET requests
 
     async def user_details(self, request: web.Request) -> JSONObject:
-        user_details_lama = await _lama_user_details(request.headers)
+        user_details_lama: JSONObject
+        if "X-API-Key" in request.headers and "X-API-Secret" in request.headers:
+            user_details_lama = await _lama_check_api_key(request.headers)
+            user_details_lama["user"] = user_details_lama.get("account", {})
+        else:
+            user_details_lama = await _lama_user_details(request.headers)
         # TODO: move this to LAMA directly
         user_id = cast(dict, user_details_lama.get("user", {})).get("id", "")
         if user_id and SUPER_ADMINS and user_id in SUPER_ADMINS:
@@ -166,9 +171,7 @@ class Lama(Authentication):
 
     ## Handle creation, update and removal of projects and users
 
-    async def project_check_title(
-        self, request: web.Request, title: str
-    ) -> JSONObject:
+    async def project_check_title(self, request: web.Request, title: str) -> JSONObject:
         res = await _lama_project_check_title(request.headers, {"title": title})
         return res
 

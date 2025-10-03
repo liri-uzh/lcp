@@ -17,14 +17,11 @@ from .abstract_query.typed import QueryJSON
 from .callbacks import _general_failure
 from .convert import _aggregate_results
 from .jobfuncs import _db_query, _export_db
-from .typed import JSONObject, ObservableDict, ObservableList
+from .redis_proxies import RedisDict, RedisList
+from .typed import JSONObject, Batch
 from .utils import (
     _get_query_batches,
     _publish_msg,
-    _get_query_info,
-    _update_query_info,
-    _get_request,
-    _update_request,
     hasher,
     push_msg,
     CustomEncoder,
@@ -83,67 +80,62 @@ class Request:
     def __init__(self, connection: RedisConnection, request: dict = {}):
         self._connection = connection
         request = cast(dict, request)
-        try:
-            request = _get_request(connection, request["id"])
-        except:
-            request["id"] = str(request.setdefault("id", uuid4()))
-            # The attributes below are immutable
-            self.id: str = request["id"]
-            self.synchronous: bool = request.get("synchronous", False)
-            self.requested: int = request.get("requested", 0)
-            self.full: bool = request.get("full", False)
-            self.offset: int = request.get("offset", 0)
-            self.corpus: int = request.get("corpus", 1)
-            self.user: str = request.get("user", "")
-            self.room: str = request.get("room", "")
-            self.languages: list[str] = request.get("languages", [])
-            self.query: str = request.get("query", "")
-            to_export = request.get("to_export", None)
-            if not isinstance(to_export, dict):
-                to_export = {"format": "xml"} if to_export else {}
-            self.to_export: dict | None = to_export
-            # The attributes below are dynamic and need to update redis
-            # job1: [200,400,30] --> sent lines 200 through 400, need 30 segments
-            self.lines_batch: dict[str, tuple[int, int, int]] = request.get(
-                "lines_batch", {}
-            )
-            # keep track of which hashes were already sent
-            self.sent_hashes: dict[str, int] = request.get("sent_hashes", {})
-            self.segment_lines_for_hash: dict[str, dict[int, int]] = request.get(
-                "segment_lines_for_hash", {}
-            )
-            if "hash" in request:
-                self.hash: str = request["hash"]
-        self._full = request.get("full", False)
-        self._id = request["id"]
+        id: str = str(request.get("id") or f"request::{uuid4()}")
+        redis_request = RedisDict(connection, id)
+        self._redis_request = redis_request
 
-    def update(self, name: str | None = None, value: Any = None):
-        """
-        Update the associated redis entry
-        """
-        try:
-            redis = self._connection
-            id = self.id
-        except:
-            return
-        if name == "query_batches":
-            return
-        if name:
-            _update_request(redis, id, info={"id": id, name: value})
-        else:
-            self_serialized = self.serialize()
-            self_serialized.pop("query_batches", None)
-            self_serialized["id"] = id
-            _update_request(redis, id, info=self_serialized)
+        if "hash" in redis_request:
+            self.hash: str = cast(str, redis_request["hash"])
+        self._full = cast(bool, request.get("full", False))
+        self._id = cast(str, id)
 
-    def update_dict(self, attribute_name: str, update_dict: dict):
-        """
-        Update a dict attribute and make sure redis is synced.
-        This is necessary because setting a key would not call setattr
-        """
-        attribute: dict = cast(dict, self.__getattribute__(attribute_name))
-        attribute.update(update_dict)
-        self.update(attribute_name, attribute)
+        if "id" in redis_request:
+            return
+
+        for k, v in request.items():
+            redis_request[k] = v
+        # The attributes below are immutable
+        self.id: str = cast(str, redis_request["id"] or id)
+        self.synchronous: bool = cast(bool, redis_request.get("synchronous", False))
+        self.requested: int = cast(int, redis_request.get("requested", 0))
+        self.full: bool = cast(bool, redis_request.get("full", False))
+        self.offset: int = cast(int, redis_request.get("offset", 0))
+        self.corpus: int = cast(int, redis_request.get("corpus", 1))
+        self.user: str = cast(str, redis_request.get("user", ""))
+        self.room: str = cast(str, redis_request.get("room", ""))
+        languages: RedisList = cast(
+            RedisList,
+            redis_request.get("languages", RedisList(connection, f"{id}:languages")),
+        )
+        self.languages: RedisList = languages
+        self.query: str = cast(str, redis_request.get("query", ""))
+        self.to_export = cast(None | RedisDict, redis_request.get("to_export", None))
+        if not isinstance(self.to_export, RedisDict):
+            redis_request["to_export"] = {"format": "xml"} if self.to_export else {}
+            self.to_export = redis_request["to_export"]
+        # The attributes below are dynamic and need to update redis
+        # job1: [200,400,30] --> sent lines 200 through 400, need 30 segments
+        self.lines_batch: RedisDict = cast(
+            RedisDict,
+            redis_request.get(
+                "lines_batch", RedisDict(connection, f"{id}:lines_batch")
+            ),
+        )
+        # keep track of which hashes were already sent ({hash: 1, hash: 0})
+        self.sent_hashes: RedisDict = cast(
+            RedisDict,
+            redis_request.get(
+                "sent_hashes", RedisDict(connection, f"{id}:sent_hashes")
+            ),
+        )
+        # {hash: {N: M}}
+        self.segment_lines_for_hash: RedisDict = cast(
+            RedisDict,
+            redis_request.get(
+                "segment_lines_for_hash",
+                RedisDict(connection, f"{id}:segment_lines_for_hash"),
+            ),
+        )
 
     def __getattribute__(self, name: str):
         if name.startswith("_"):
@@ -160,18 +152,19 @@ class Request:
             return 0 if name == "offset" else MAX_KWIC_LINES
         try:
             # Try to retrieve the value from redis first
-            connection = super().__getattribute__("_connection")
-            request = _get_request(connection, self._id)
-            assert name in request, Exception()
-            value = request[name]
+            assert name in self._redis_request, ReferenceError(
+                f"Could not fint attribute {name} on request {self._id}"
+            )
+            value = self._redis_request[name]
         except:
             # Retrieve the internal value instead
             value = super().__getattribute__(name)
         return value
 
     def __setattr__(self, name, value):
-        self.update(name, value)  # make sure to update redis first
         super().__setattr__(name, value)
+        if not name.startswith("_"):
+            self._redis_request[name] = value
 
     def serialize(self) -> dict:
         """
@@ -189,7 +182,8 @@ class Request:
         return obj
 
     def all_queries_done(self, qi: "QueryInfo") -> bool:
-        if self.lines_sent_so_far >= self.requested:
+        so_far = int(self.lines_sent_so_far or 0)
+        if not self.full and so_far >= self.requested:
             return True
         if qi.status != "complete":
             return False
@@ -211,11 +205,11 @@ class Request:
         if not qi.kwic_keys:
             return True
         all_segs_sent = True
-        for batch_hash, (_, _, req_segs) in self.lines_batch.items():
+        for batch_hash, (_, _, req_segs) in self.lines_batch.items():  # type: ignore
             batch_name = qi.get_batch_from_hash(batch_hash)
             batch_seg_hashes = qi.segments_for_batch.get(batch_name, {})
             batch_segs_sent = (
-                sum(n for (sh, n) in self.sent_hashes.items() if sh in batch_seg_hashes)
+                sum(n for (sh, n) in self.sent_hashes.items() if sh in batch_seg_hashes)  # type: ignore
                 >= req_segs
             )
             all_segs_sent = all_segs_sent and batch_segs_sent
@@ -231,6 +225,10 @@ class Request:
         """
         Return the offset and number of lines required in the current job
         """
+        if self.full:
+            return next(
+                ((0, int(n)) for b, n in qi.all_batches if b == batch_name), (0, 9999)
+            )
         offset_and_lines_for_req = (0, 0)
         lines_before_job, lines_job = qi.get_lines_batch(batch_name)
         if self.offset > lines_before_job + lines_job:
@@ -264,11 +262,11 @@ class Request:
         ):
             ret["status"] = "finished"
         if not batch_name:
-            batch_name = qi.done_batches[-1][0]
+            batch_name = next(reversed(qi.done_batches))
         lines_before_batch, lines_this_batch = qi.get_lines_batch(batch_name)
         ret["total_results_so_far"] = lines_before_batch + lines_this_batch
-        done_batches = []
-        for name, n in qi.done_batches:
+        done_batches: list = []
+        for name, n in qi.done_batches.items():
             done_batches.append([name, n])
             if name == batch_name:
                 break
@@ -296,15 +294,13 @@ class Request:
         if all(x in self.sent_hashes for x in seg_hashes):
             return
         results: dict[str, Any] = {}
-        sent_hashes = {}
         for seg_hash in seg_hashes:
             if seg_hash in self.sent_hashes:
                 continue
-            seg_lines: dict[int, int] = self.segment_lines_for_hash[seg_hash]
+            seg_lines: dict[int, int] = self.segment_lines_for_hash[seg_hash].to_dict()  # type: ignore
+            all_lines = qi.get_from_cache(seg_hash)
             seg_res: list = [
-                line
-                for nline, line in enumerate(qi.get_from_cache(seg_hash))
-                if str(nline) in seg_lines
+                line for nline, line in enumerate(all_lines) if str(nline) in seg_lines
             ]
             # prep_seg_lines = [line for rtype, *line in seg_res if rtype == -1]
             prep_seg_lines = {
@@ -318,10 +314,14 @@ class Request:
                     "-2": meta_lines,
                 },
             )
-            sent_hashes[seg_hash] = len(prep_seg_lines)
-        self.update_dict("sent_hashes", sent_hashes)
+            self.sent_hashes[seg_hash] = len(prep_seg_lines)
         # print("after updaing sent_hashes", self.sent_hashes)
         results["0"] = {"result_sets": qi.result_sets, "meta_labels": qi.meta_labels}
+        for k in results["0"]:
+            if isinstance(results["0"][k], RedisList):
+                results["0"][k] = results["0"][k].to_list()
+            if isinstance(results["0"][k], RedisDict):
+                results["0"][k] = results["0"][k].to_dict()
         nsegs = len(results["-1"])
         payload = self.get_payload(qi, batch_name)
         payload.update({"action": "segments", "result": results, "n_results": nsegs})
@@ -375,10 +375,7 @@ class Request:
                     offset_this_batch + lines_this_batch,
                 )
             )
-        self.update_dict(
-            "lines_batch",
-            {batch_hash: (offset_this_batch, lines_this_batch, n_seg_ids)},
-        )
+        self.lines_batch[batch_hash] = [offset_this_batch, lines_this_batch, n_seg_ids]
         _, results = qi.get_stats_results()  # fetch any stats results first
         lines_so_far = -1
         for k, v in batch_res:
@@ -388,13 +385,21 @@ class Request:
             if sk not in results:
                 results[sk] = []
             lines_so_far += 1
-            if lines_so_far < offset_this_batch:
+            if not self.full and lines_so_far < offset_this_batch:
                 continue
-            if lines_so_far >= offset_this_batch + lines_this_batch:
+            if not self.full and lines_so_far >= offset_this_batch + lines_this_batch:
                 continue
             results[sk].append(v)
-        self.update_dict("sent_hashes", {batch_hash: len(results)})
-        results["0"] = {"result_sets": qi.result_sets, "meta_labels": qi.meta_labels}
+        self.sent_hashes[batch_hash] = len(results)
+        results["0"] = {
+            "result_sets": qi.result_sets,
+            "meta_labels": qi.meta_labels,
+        }
+        for k in results["0"]:
+            if isinstance(results["0"][k], RedisList):
+                results["0"][k] = results["0"][k].to_list()
+            if isinstance(results["0"][k], RedisDict):
+                results["0"][k] = results["0"][k].to_dict()
         try:
             stats_key = f"{qi.hash}::stats"
             _, stats_res = qi.get_from_cache(stats_key)
@@ -412,8 +417,9 @@ class Request:
             if self.synchronous
             else f"to user '{self.user}' room '{self.room}'"
         )
+        actual_nlines = lines_so_far + 1 - offset_this_batch
         print(
-            f"[{self.id}] Sending {lines_this_batch} results lines for batch {batch_name} ({batch_hash}; QI {qi.hash}) {to_msg}"
+            f"[{self.id}] Sending {actual_nlines} results lines for batch {batch_name} ({batch_hash}; QI {qi.hash}) {to_msg}"
         )
         if self.to_export:
             xp_format = self.to_export.get("format", "xml") or "xml"
@@ -487,8 +493,9 @@ class Request:
                 await self.send_query(app, qi, batch_name)
             elif typ == "segments":
                 await self.send_segments(app, qi, batch_name)
-            if not self.to_export:
-                self.delete_if_done(qi)
+            # if not self.to_export:
+            #     self.delete_if_done(qi)
+            self.delete_if_done(qi)
         except Exception as e:
             tb = traceback.format_exc()
             qi.publish("\n".join([str(e), tb]), "failure")
@@ -534,33 +541,16 @@ class QueryInfo:
         self._connection = connection
         self.hash = qhash
         qi = self.qi
-        self.json_query: dict = json_query or qi.get("json_query", {})
-        self.config: dict = config or qi.get("config", {})
-        self.meta_json: dict = meta_json or qi.get("meta_json", {})
-        self.post_processes: dict = post_processes or qi.get("post_processes", {})
-        self.result_sets: list = self.meta_json.get("result_sets", [])
-        self.meta_labels: list[str] = qi.get("meta_labels", [])
-        self.languages: list[str] = languages or qi.get("languages", [])
-        self.local_queries: dict = local_queries or qi.get("local_queries", {})
-        if not qi:
-            self.update()
-
-    def update(self, obj: dict = {}):
-        """
-        Update the attributes of this instance and the entry in Redis
-        """
-        if obj:
-            _update_query_info(self._connection, self.hash, info=obj)
-            return
-        qi = _get_query_info(self._connection, self.hash)
-        for aname in dir(self):
-            if aname.startswith("_") or aname == "requests":
-                continue
-            attr = getattr(self, aname)
-            if not isinstance(attr, SERIALIZABLES):
-                continue
-            qi[aname] = attr
-        _update_query_info(self._connection, self.hash, info=qi)
+        self.json_query = qi.setdefault("json_query", json_query or {})
+        if config:
+            config["batches"] = config.get("_batches", {})
+        self.config = qi.setdefault("config", config or {})
+        self.meta_json = qi.setdefault("meta_json", meta_json or {})
+        self.post_processes = qi.setdefault("post_processes", post_processes or {})
+        self.meta_labels = qi.setdefault("meta_labels", [])
+        self.languages = qi.setdefault("languages", languages or [])
+        self.local_queries = qi.setdefault("local_queries", local_queries or {})
+        self.result_sets = cast(dict, self.meta_json).get("result_sets", [])
 
     def enqueue(
         self,
@@ -644,12 +634,6 @@ class QueryInfo:
             msg_id=msg_id,
         )
 
-    def get_observer(self, attribute_name: str) -> Callable:
-        """
-        Trigger an update in redis whenever the observable is modified
-        """
-        return lambda event, value, *_: self.update({attribute_name: value})
-
     def get_batch_from_hash(self, batch_hash: str) -> str:
         """
         Return the batch name correpsonding to a batch query hash
@@ -662,17 +646,16 @@ class QueryInfo:
     # Getters and setters to keep in sync with redis
     @property
     def enqueued_jobs(self) -> dict[str, int]:
-        enqueued_jobs = self.qi.get("enqueued_jobs", {})
-        return cast(
-            dict[str, int],
-            ObservableDict(
-                **enqueued_jobs, observer=self.get_observer("enqueued_jobs")
-            ),
-        )
+        if "enqueued_jobs" not in self.qi:
+            self.qi["enqueued_jobs"] = {}
+        return cast(dict[str, int], self.qi["enqueued_jobs"])
 
     @enqueued_jobs.setter
     def enqueued_jobs(self, value: dict[str, int]):
-        self.update({"enqueued_jobs": value})
+        if "enqueued_jobs" not in self.qi:
+            self.qi["enqueued_jobs"] = {}
+        for k, v in value.items():
+            self.qi["enqueued_jobs"][k] = v
 
     @property
     def running_batch(self) -> str:
@@ -680,94 +663,72 @@ class QueryInfo:
 
     @running_batch.setter
     def running_batch(self, value: str):
-        self.update({"running_batch": value})
+        self.qi["running_batch"] = value
 
     @property
-    def done_batches(self) -> list:
-        done_batches = self.qi.get("done_batches", [])
-        return cast(
-            list,
-            ObservableList(*done_batches, observer=self.get_observer("done_batches")),
-        )
+    def done_batches(self) -> dict[str, int]:
+        if "done_batches" not in self.qi:
+            self.qi["done_batches"] = {}
+        done_batches = cast(dict[str, int], self.qi["done_batches"])
+        return done_batches
 
     @done_batches.setter
-    def done_batches(self, value: list):
-        self.update({"done_batches": value})
+    def done_batches(self, value: dict[str, int]):
+        if "done_batches" not in self.qi:
+            self.qi["done_batches"] = {}
+        for k, v in value.items():
+            self.qi["done_batches"][k] = v
 
     @property
     def query_batches(self) -> dict:
         """
         Map batch names with (batch_hash, n_kwic_lines)
         """
-        query_batches: dict = {}
-        for k in self.qi.get("query_batches", {}):
-            try:
-                batch_key: str = f"{self.hash}::query_batch::{k}"
-                value = (self._connection.get(batch_key) or b"").decode("utf-8")
-                query_batches[k] = json.loads(value)
-            except:
-                print(f"Could not find batch {k} in Redis memory for qi {self.hash}")
-        observer = lambda event, value, *_: self.__setattr__("query_batches", value)
-        return cast(dict, ObservableDict(observer=observer, **query_batches))
+        if "query_batches" not in self.qi:
+            self.qi["query_batches"] = {}
+        return cast(dict, self.qi["query_batches"])
 
     @query_batches.setter
     def query_batches(self, value: dict):
-        query_batches = self.qi.get("query_batches", {})
+        if "query_batches" not in self.qi:
+            self.qi["query_batches"] = {}
         for k, v in value.items():
-            if k not in query_batches:
-                query_batches[k] = False
-            redis_key: str = f"{self.hash}::query_batch::{k}"
-            self._connection.set(redis_key, json.dumps(v, cls=CustomEncoder))
-            self._connection.expire(redis_key, MESSAGE_TTL)
-        self.update({"query_batches": query_batches})
+            self.qi["query_batches"][k] = v
 
     @property
     def segments_for_batch(self) -> dict[str, dict[str, dict[str, int]]]:
         """
         batch_hash->{segment_hash->segment_ids, segment_hash->segment_ids}
         """
-        segments_for_batch: dict = {}
-        prefix: str = f"{self.hash}::segments_for_batch::*"
-        for redis_key in self._connection.scan_iter(prefix):
-            rk = redis_key.decode("utf-8")
-            batch_name = str(rk).split("::segments_for_batch::")[-1]
-            try:
-                value = (self._connection.get(rk) or b"").decode("utf-8")
-                segments_for_batch[batch_name] = json.loads(value)
-            except:
-                pass
-        observer = lambda event, value, *_: self.__setattr__(
-            "segments_for_batch", value
-        )
-        return cast(dict, ObservableDict(observer=observer, **segments_for_batch))
+        if "segments_for_batch" not in self.qi:
+            self.qi["segments_for_batch"] = {}
+        return cast(dict[str, dict[str, dict[str, int]]], self.qi["segments_for_batch"])
 
     @segments_for_batch.setter
     def segments_for_batch(self, value: dict):
+        if "segments_for_batch" not in self.qi:
+            self.qi["segments_for_batch"] = {}
         for k, v in value.items():
-            redis_key: str = f"{self.hash}::segments_for_batch::{k}"
-            self._connection.set(redis_key, json.dumps(v, cls=CustomEncoder))
-            self._connection.expire(redis_key, MESSAGE_TTL)
+            self.qi["segments_for_batch"][k] = v
 
     def has_request(self, request: Request):
         return any(r.id == request.id for r in self.requests)
 
     def add_request(self, request: Request):
         request.hash = self.hash
-        requests = self.requests
-        if request in self.requests:
+        if "requests" not in self.qi:
+            self.qi["requests"] = []
+        if request.id in self.qi["requests"]:
             return
-        rids = [r.id for r in requests]
-        rids.append(request.id)
-        _update_query_info(self._connection, self.hash, info={"requests": rids})
+        self.qi["requests"].append(request.id)
 
     def delete_request(self, request: Request):
-        rids = [r.id for r in self.requests if r.id != request.id]
-        _update_query_info(self._connection, self.hash, info={"requests": rids})
-        rkey = f"request::{request.id}"
-        try:
-            self._connection.delete(rkey)
-        except:
-            pass
+        idx = next(
+            (n for n, rid in enumerate(self.qi["requests"]) if rid == request.id), -1
+        )
+        if idx < 0:
+            return
+        self.qi["requests"].pop(idx)
 
     def stop_request(self, request: Request):
         """
@@ -831,11 +792,12 @@ class QueryInfo:
         """
         if not previous_batch or not len(self.done_batches):
             return self.all_batches[0]
+        list_done_batches = [[b, n] for b, n in self.done_batches.items()]
         next_batch: list = next(
             (
                 b
-                for n, b in enumerate(self.done_batches)
-                if n > 0 and self.done_batches[n - 1][0] == previous_batch
+                for n, b in enumerate(list_done_batches)
+                if n > 0 and list_done_batches[n - 1][0] == previous_batch
             ),
             [],
         )
@@ -846,11 +808,13 @@ class QueryInfo:
         while len(self.done_batches) < len(self.all_batches):
             so_far = self.total_results_so_far
             # set here ensures we don't double count, even though it should not happen
-            total_words_processed_so_far = sum([x[-1] for x in self.done_batches]) or 1
+            total_words_processed_so_far = (
+                sum([int(x) for x in self.done_batches.values()]) or 1
+            )
             proportion_that_matches = so_far / total_words_processed_so_far
             first_not_done: list[str | int] | None = None
             for batch in self.all_batches:
-                if batch in self.done_batches:
+                if batch[0] in self.done_batches:
                     continue
                 if self.full:
                     return batch
@@ -866,7 +830,8 @@ class QueryInfo:
     # Pseudo-attributes (no need to keep in sync)
     @property
     def qi(self) -> dict:
-        return _get_query_info(self._connection, hash=self.hash)
+        qi = cast(dict, RedisDict(self._connection, f"query_info::{self.hash}"))
+        return qi
 
     @property
     def requests(self) -> list[Request]:
@@ -874,11 +839,9 @@ class QueryInfo:
         Return the associated requests
         The class Request already implements utmost recency
         """
-        qi = _get_query_info(self._connection, self.hash)
-        reqs = []
-        for rid in qi.get("requests", []):
+        reqs: list[Request] = []
+        for rid in self.qi["requests"]:
             try:
-                _get_request(self._connection, f"request::{rid}")
                 reqs.append(Request(self._connection, {"id": rid}))
             except:
                 # Do no create a Request object if the ID isn't in redis
@@ -961,13 +924,20 @@ class QueryInfo:
         #     # Indicate we have processed this batch
         #     self.set_cache(stats_key, [new_stats_batches, stats_results])
         #     return
+        done_batches = cast(
+            list[Batch],
+            [
+                (1, self.config.get("schema_path", ""), b, n)  # dummy corpus id
+                for b, n in self.done_batches.items()
+            ],
+        )
         (_, to_send, _, _, _) = _aggregate_results(
             res,
             stats_results,
             meta_json,
             post_processes,
             batch,
-            self.done_batches,
+            done_batches,
         )
         new_stats_results = {
             k: v for k, v in to_send.items() if str(k) in self.stats_keys
@@ -981,7 +951,7 @@ class QueryInfo:
         then update the QueryInfo and Request's accordingly
         and launch any required sentence/meta queries
         """
-        batch_name, _ = batch
+        batch_name, batch_n = batch
         sql_query, _, _ = json_to_sql(
             cast(QueryJSON, self.json_query),
             schema=self.config.get("schema_path", ""),
@@ -994,6 +964,6 @@ class QueryInfo:
         res = res if res else []
         n_res = sum(1 if str(r) in self.kwic_keys else 0 for r, *_ in res)
         self.query_batches[batch_name] = (batch_hash, n_res)
-        if batch not in self.done_batches:
-            self.done_batches.append(batch)
+        if batch_name not in self.done_batches:
+            self.done_batches[batch_name] = batch_n
         return batch_hash

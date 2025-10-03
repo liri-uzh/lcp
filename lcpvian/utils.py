@@ -373,33 +373,6 @@ def _get_query_info(
     return _get_redis_obj(connection, qi_key)
 
 
-def _update_query_info(
-    connection: RedisConnection,
-    hash: str = "",
-    job: Job | None = None,
-    info: dict[str, Any] = {},
-) -> dict[str, Any]:
-    qi_key = f"query_info::{hash}"
-    return _update_redis_obj(connection, qi_key, info)
-
-
-def _get_request(
-    connection: RedisConnection, hash: str = "", job: Job | None = None
-) -> dict[str, Any]:
-    qi_key = f"request::{hash}"
-    return _get_redis_obj(connection, qi_key)
-
-
-def _update_request(
-    connection: RedisConnection,
-    hash: str = "",
-    job: Job | None = None,
-    info: dict[str, Any] = {},
-) -> dict[str, Any]:
-    qi_key = f"request::{hash}"
-    return _update_redis_obj(connection, qi_key, info)
-
-
 async def sem_coro(
     semaphore: asyncio.Semaphore, coro: Awaitable[list[tuple[int | str | bool]]]
 ) -> list[tuple[int | str | bool]]:
@@ -1052,7 +1025,7 @@ def _get_query_batches(
     all_languages = ["en", "de", "fr", "ca", "it", "rm"]
     all_langs = tuple([f"_{la}" for la in all_languages])
     langs = tuple([f"_{la}" for la in languages])
-    batches = config["_batches"]
+    batches = config.get("_batches", config.get("batches", {}))
     for name, size in batches.items():
         stripped = name.rstrip("0123456789")
         if stripped.endswith("rest"):
@@ -1163,9 +1136,7 @@ def get_aligned_annotations(
             to_select = ""
             is_meta = attr_name in meta_attrs
             if pointer_global_attributes and attr_props.get("ref"):
-                layer_selects[attr_name] = sql_str(
-                    "{}.{}", layer, attr_name.lower() + "_id"
-                )
+                layer_selects[attr_name] = sql_str("{}.{}", layer, f"{attr_name}_id")
                 continue
             if is_meta:
                 attr_ref = sqlc.attribute(layer, layer, "meta")

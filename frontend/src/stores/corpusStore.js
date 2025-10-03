@@ -87,6 +87,11 @@ export const useCorpusStore = defineStore("corpusData", {
         return response.data;
       });
     },
+    overwriteCorpus(corpusId, toBeOverwritten) {
+      httpApi.put(`/corpora/${corpusId}/overwrite`, {overwrite: toBeOverwritten}).then((response) => {
+        return response.data;
+      });
+    },
     async getCorpus(corpusId) {
       const userStore = useUserStore()
       await userStore.checkLoaded()

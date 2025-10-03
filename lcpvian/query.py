@@ -47,10 +47,12 @@ def batch_callback(job: Job, connection: RedisConnection, batch_name: str):
     if not qi.kwic_keys:
         return
 
-    min_offset = min(r.offset for r in qi.requests)
+    min_offset = min(r.offset for r in qi.requests) if qi.requests else 0
     # Send only if this batch exceeds the offset and this batch starts before what's required
     need_segments_this_batch = (
-        lines_now > 0 and lines_so_far >= min_offset and qi.required > lines_before
+        lines_now > 0
+        and lines_so_far >= min_offset
+        and (qi.full or qi.required > lines_before)
     )
     print(
         f"need segments for {batch_name}?",
@@ -117,31 +119,32 @@ async def do_segment_and_meta(
         script, meta_labels = get_segment_meta_script(
             qi.config, qi.languages, batch_name
         )
-        qi.meta_labels = meta_labels
-        qi.update({"meta_labels": meta_labels})
+        qi.qi["meta_labels"] = meta_labels
         squery_id = str(uuid4())
         print(f"Running new segment query for {batch_name} -- {squery_id}")
         await qi.query(squery_id, script, params={"sids": [sid for sid in needed_sids]})
-        segments_this_batch = {squery_id: needed_sids, **segments_this_batch}
-        qi.segments_for_batch[batch_name] = segments_this_batch
+        if batch_name not in qi.segments_for_batch:
+            qi.segments_for_batch[batch_name] = {}
+        qi.segments_for_batch[batch_name][squery_id] = needed_sids
     # Calculate which lines from res should be sent to each request
     reqs_offsets = {r.id: r.lines_for_batch(qi, batch_name) for r in qi.requests}
     reqs_sids: dict[str, dict[str, int]] = {
         req_id: qi.segment_ids_in_results(batch_results, qi.kwic_keys, o, o + l)
         for req_id, (o, l) in reqs_offsets.items()
     }
-    for sqid in segments_this_batch:
-        reqs_nlines: dict[str, dict[int, int]] = {req_id: {} for req_id in reqs_sids}
+    for sqid in qi.segments_for_batch[batch_name]:
+        reqs_nlines: dict[str, dict[str, int]] = {req_id: {} for req_id in reqs_sids}
+        # TODO: re-run sqid if absent from cache?
         for nline, (_, (sid, *_)) in enumerate(qi.get_from_cache(sqid)):
             sids_of_line = sid if isinstance(sid, list) else [sid]
             for req_id, sids_in_req in reqs_sids.items():
                 if not any(s in sids_in_req for s in sids_of_line):
                     continue
-                reqs_nlines[req_id][nline] = 1
+                reqs_nlines[req_id][str(nline)] = 1
         for r in qi.requests:
             if sqid in r.segment_lines_for_hash:
                 continue
-            r.update_dict("segment_lines_for_hash", {sqid: reqs_nlines[r.id]})
+            r.segment_lines_for_hash[sqid] = reqs_nlines[r.id]
     qi.publish(batch_name, "segments")
 
 
@@ -163,6 +166,7 @@ async def do_batch(qhash: str, batch: list):
     # Now this is the running batch
     qi.running_batch = batch_name
     try:
+        assert batch_name in qi.query_batches
         batch_hash, _ = qi.query_batches[batch_name]
         qi.get_from_cache(batch_hash)
         print(f"Retrieved query from cache: {batch_name} -- {batch_hash}")
@@ -170,7 +174,7 @@ async def do_batch(qhash: str, batch: list):
         print(f"No job in cache for {batch_name}, running it now")
         await qi.run_query_on_batch(batch)
         batch_hash, _ = qi.query_batches.get(batch_name, ("", 0))
-    min_offset = min(r.offset for r in qi.requests)
+    min_offset = min(r.offset for r in qi.requests) if qi.requests else 0
     await qi.run_aggregate(min_offset, batch)
     qi.publish(batch_name, "main")
     return batch_name
@@ -188,7 +192,7 @@ def schedule_next_batch(
     qi = QueryInfo(qhash, connection=connection)
     if not qi.requests:
         return None
-    if previous_batch_name:
+    if previous_batch_name and not qi.full:
         lines_before, lines_batch = qi.get_lines_batch(previous_batch_name)
         if lines_before + lines_batch >= qi.required:
             qi.running_batch = ""
@@ -197,8 +201,8 @@ def schedule_next_batch(
     if not next_batch:
         qi.running_batch = ""
         return None
-    min_offset = min(r.offset for r in qi.requests)
-    while min_offset > 0 and list(next_batch) in qi.done_batches:
+    min_offset = min(r.offset for r in qi.requests) if qi.requests else 0
+    while min_offset > 0 and next_batch[0] in qi.done_batches:
         lines_before_batch, lines_next_batch = qi.get_lines_batch(next_batch[0])
         if min_offset <= lines_before_batch + lines_next_batch:
             break
@@ -230,13 +234,14 @@ def process_query(
         json_query = json.loads(request.query)
     except json.JSONDecodeError:
         json_query = convert(request.query, config)
+    lang = cast(str | None, request.languages[0] if request.languages else None)
     all_batches = _get_query_batches(config, request.languages)
     sql_query, meta_json, post_processes = json_to_sql(
         cast(QueryJSON, json_query),
         schema=config.get("schema_path", ""),
         batch=cast(str, all_batches[0][0]),
         config=config,
-        lang=request.languages[0] if request.languages else None,
+        lang=lang,
     )
     print("SQL query:", sql_query)
     shash = hasher(sql_query)
@@ -253,8 +258,8 @@ def process_query(
         config,
         local_queries,
     )
-    if local_kind and local_kind not in qi.local_queries:
-        qi.update({"local_queries": {**qi.local_queries, local_kind: local_query}})
+    # if local_kind and local_kind not in qi.local_queries:
+    #     qi.update({"local_queries": {**qi.local_queries, local_kind: local_query}})
     job: Job | None = None
     should_run: bool = True
     if request.to_export and request.user:

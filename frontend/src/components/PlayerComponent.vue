@@ -1274,6 +1274,9 @@ div.active>video {
 #timelineSettings .modal-content {
   margin-left: 1em;
 }
+#timelineSettings .modal-content div:nth-child(n+2) {
+  margin: 0.2em 1.5em;
+}
 
 #timelinePopin {
   position: absolute;

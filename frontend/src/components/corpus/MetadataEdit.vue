@@ -524,6 +524,7 @@
       </div>
     </div>
     <div
+      style="min-height: 100vh;"
       class="tab-pane fade pt-3"
       :class="{ active: activeMainTab === 'group', show: activeMainTab === 'group' }"
       id="nav-group"
@@ -532,13 +533,26 @@
     >
       <div class="row">
         <div class="col-6">
-          <span>Group:</span>
+          <span>{{ $t('modal-meta-group') }}:</span>
           <multiselect
             v-model="projects"
             :options="allProjects"
             :multiple="true"
             label="title"
-            placeholder="Choose a project"
+            placeholder="Choose a collection"
+            track-by="id"
+          ></multiselect>
+        </div>
+      </div>
+      <div class="row overwrite-corpus" v-if="isSuperAdmin">
+        <div class="col-6">
+          <span>Overwrite corpus:</span>
+          <multiselect
+            :options="allCorpora"
+            v-model="overwriteCorpus"
+            :multiple="false"
+            label="name"
+            placeholder="Choose a corpus"
             track-by="id"
           ></multiselect>
         </div>
@@ -576,6 +590,9 @@ a:hover {
 #nav-group {
   margin-bottom: 5em;
 }
+#nav-group > div {
+  margin-bottom: 2em;
+}
 </style>
 
 <script>
@@ -589,6 +606,7 @@ import { useUserStore } from "@/stores/userStore";
 export default {
   name: "CorpusMetdataEdit",
   props: ["corpus", "allProjects"],
+  emits: ["submitSWISSUbase"],
   data() {
     let corpusData = { ...this.corpus } || {};
     if (corpusData.meta && !corpusData.meta.language) {
@@ -634,6 +652,7 @@ export default {
       corpusData: corpusData,
       isSuperAdmin: useUserStore().isSuperAdmin,
       projects: ownProjects,
+      overwriteCorpus: null,
       SWISSUbaseSubmissionCheck: false,
       currentTitleLang: 'en', // Default language for dataset title
     }
@@ -642,6 +661,7 @@ export default {
     ...mapState(useCorpusStore, {
       corpusLicenses: "licenses",
       corpusLanguages: "languages",
+      corpora: "corpora"
     }),
     ...mapState(useSWISSUbaseStore, {
       swissUBaseLicenses: "licenses",
@@ -656,6 +676,18 @@ export default {
       set(val) {
         this.corpusData.meta.language = val.value
       }
+    },
+    allCorpora() {
+      const corpora = this.corpora.map(c=>Object({
+        name: `${c.meta.name} (#${c.meta.id}; ${
+          (
+            this.allProjects.find(p=>c.project==p.id || c.project_id==p.id || c.projects.includes(p.id))
+            || {title: "Public"}
+          ).title
+        })`,
+        id: c.meta.id
+      }));
+      return corpora.sort((a,b)=>a.name > b.name).filter(c=>c.id != this.corpusData.corpus_id);
     },
     SWISSUbaseSubmissionFieldsCheck() {
       return this.corpusData.meta.swissubase.apiAccessToken &&
@@ -718,7 +750,6 @@ export default {
       }
       for (let [k,v] of Object.entries(meta))
         ret[k] = {isMeta: 1, sub: this.subAttributes(v), global: false};
-      console.log("return getAttributes", JSON.parse(JSON.stringify(ret)));
       return ret;
     }
   },
@@ -726,6 +757,11 @@ export default {
     useSWISSUbaseStore().clearCheckReponse()
   },
   watch: {
+    overwriteCorpus(newValue) {
+      if (newValue && confirm(`You are about to overwrite corpus #${newValue.id} with corpus #${this.corpusData.corpus_id}. This operation can have important consequences. Are you sure you want to proceed?`))
+        return;
+      this.overwriteCorpus = null;
+    },
     userLicense() {
       this.corpusData.meta.userLicense = btoa(this.userLicense);
     },
