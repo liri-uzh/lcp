@@ -379,7 +379,7 @@ class Exporter:
             )  # each payload needs corresponding *_query/*_segments subfolders
             qb_hashes = [bh for bh, _ in qi.query_batches.values()]
             for h, nlines in request.sent_hashes.items():
-                if h not in qb_hashes or nlines <= 0:
+                if h not in qb_hashes or cast(int, nlines) <= 0:
                     continue
                 hpath = os.path.join(wpath, h)
                 if not os.path.exists(f"{hpath}_query"):
@@ -387,7 +387,7 @@ class Exporter:
                 seg_exists = os.path.exists(f"{hpath}_segments")
                 if qi.kwic_keys and not seg_exists:
                     return
-            delivered = request.lines_sent_so_far
+            delivered: int = cast(int, request.lines_sent_so_far)
             await exporter.finalize()
             shutil.rmtree(exporter.get_working_path())
             for h in request.sent_hashes:
@@ -756,15 +756,13 @@ class Exporter:
             )
             query_node = E.query(
                 E.date(str(datetime.datetime.now(datetime.UTC))),
-                E.languages(*[E.language(lg) for lg in req.languages]),
+                E.languages(*[E.language(str(lg)) for lg in req.languages]),
                 E.offset(str(req.offset)),
                 E.requested(str(req.requested)),
                 E.full(str(req.full)),
                 E.delivered(str(req.lines_sent_so_far)),
                 E.coverage(str(percentage_words_done)),
-                E.json(
-                    "\n" + json.dumps(self._qi.json_query.to_dict(), indent=2) + "\n  "
-                ),
+                E.json("\n" + json.dumps(self._qi.json_query, indent=2) + "\n  "),
                 E.locals(
                     *[
                         getattr(E, k)(v)
