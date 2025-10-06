@@ -377,17 +377,19 @@ class Request:
             )
         self.lines_batch[batch_hash] = [offset_this_batch, lines_this_batch, n_seg_ids]
         _, results = qi.get_stats_results()  # fetch any stats results first
+        is_full = True if self.full else False
         lines_so_far = -1
+        kwic_keys = [str(k) for k in qi.kwic_keys]
         for k, v in batch_res:
             sk = str(k)
-            if sk not in qi.kwic_keys:
+            if sk not in kwic_keys:
                 continue
             if sk not in results:
                 results[sk] = []
             lines_so_far += 1
-            if not self.full and lines_so_far < offset_this_batch:
+            if not is_full and lines_so_far < offset_this_batch:
                 continue
-            if not self.full and lines_so_far >= offset_this_batch + lines_this_batch:
+            if not is_full and lines_so_far >= offset_this_batch + lines_this_batch:
                 continue
             results[sk].append(v)
         self.sent_hashes[batch_hash] = len(results)
@@ -436,6 +438,7 @@ class Request:
                 skip=None,
                 just=(self.room, self.user),
             )
+        print(f"[{self.id}] sent {actual_nlines} results lines for batch {batch_name}")
 
     async def error(
         self, app: web.Application, qi: "QueryInfo", error: str = "unknown"
@@ -541,7 +544,7 @@ class QueryInfo:
         self._connection = connection
         self.hash = qhash
         qi = self.qi
-        self.json_query = qi.setdefault("json_query", json_query or {})
+        self._json_query = qi.setdefault("json_query", json.dumps(json_query) or "")
         if config:
             config["batches"] = config.get("_batches", {})
         self.config = qi.setdefault("config", config or {})
@@ -551,6 +554,8 @@ class QueryInfo:
         self.languages = qi.setdefault("languages", languages or [])
         self.local_queries = qi.setdefault("local_queries", local_queries or {})
         self.result_sets = cast(dict, self.meta_json).get("result_sets", [])
+        if isinstance(self.result_sets, RedisList):
+            self.result_sets = self.result_sets.to_list()
 
     def enqueue(
         self,
@@ -656,6 +661,10 @@ class QueryInfo:
             self.qi["enqueued_jobs"] = {}
         for k, v in value.items():
             self.qi["enqueued_jobs"][k] = v
+
+    @property
+    def json_query(self) -> dict:
+        return json.loads(self._json_query)
 
     @property
     def running_batch(self) -> str:
@@ -952,17 +961,24 @@ class QueryInfo:
         and launch any required sentence/meta queries
         """
         batch_name, batch_n = batch
+        config = self.config
+        if isinstance(config, RedisDict):
+            config = config.to_dict()
+        json_query = self.json_query
+        if isinstance(json_query, RedisDict):
+            json_query = json_query.to_dict()
         sql_query, _, _ = json_to_sql(
-            cast(QueryJSON, self.json_query),
-            schema=self.config.get("schema_path", ""),
+            cast(QueryJSON, json_query),
+            schema=config.get("schema_path", ""),
             batch=batch_name,
-            config=self.config,
+            config=config,
             lang=self.languages[0] if self.languages else None,
         )
         batch_hash = hasher(sql_query)
         res = await self.query(batch_hash, sql_query)
         res = res if res else []
-        n_res = sum(1 if str(r) in self.kwic_keys else 0 for r, *_ in res)
+        kwic_keys = [str(k) for k in self.kwic_keys]
+        n_res = sum(1 if str(r) in kwic_keys else 0 for r, *_ in res)
         self.query_batches[batch_name] = (batch_hash, n_res)
         if batch_name not in self.done_batches:
             self.done_batches[batch_name] = batch_n
