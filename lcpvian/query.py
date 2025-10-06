@@ -14,6 +14,7 @@ from .abstract_query.typed import QueryJSON
 from .authenticate import Authentication
 from .dqd_parser import convert
 from .query_classes import QueryInfo, Request
+from .redis_proxies import RedisDict
 from .utils import (
     _get_query_batches,
     get_segment_meta_script,
@@ -96,6 +97,8 @@ async def do_segment_and_meta(
     batch_hash, _ = qi.query_batches[batch_name]
     batch_results: list = qi.get_from_cache(batch_hash)
 
+    script, meta_labels = get_segment_meta_script(qi.config, qi.languages, batch_name)
+
     all_segment_ids: dict[str, int] = qi.segment_ids_in_results(
         batch_results,
         qi.kwic_keys,
@@ -103,6 +106,8 @@ async def do_segment_and_meta(
         offset_this_batch + lines_this_batch,
     )
     segments_this_batch = qi.segments_for_batch.get(batch_name, {})
+    if isinstance(segments_this_batch, RedisDict):
+        segments_this_batch = segments_this_batch.to_dict()
     existing_sids: dict[str, int] = {
         sid: 1 for _, sids in segments_this_batch.items() for sid in sids
     }
@@ -116,9 +121,6 @@ async def do_segment_and_meta(
     if not needed_sids:
         print(f"No new segment query needed for {batch_name}")
     else:
-        script, meta_labels = get_segment_meta_script(
-            qi.config, qi.languages, batch_name
-        )
         qi.qi["meta_labels"] = meta_labels
         squery_id = str(uuid4())
         print(f"Running new segment query for {batch_name} -- {squery_id}")
@@ -132,10 +134,17 @@ async def do_segment_and_meta(
         req_id: qi.segment_ids_in_results(batch_results, qi.kwic_keys, o, o + l)
         for req_id, (o, l) in reqs_offsets.items()
     }
-    for sqid in qi.segments_for_batch[batch_name]:
+    segments_this_batch = cast(RedisDict, qi.segments_for_batch[batch_name]).to_dict()
+    for sqid in segments_this_batch:
         reqs_nlines: dict[str, dict[str, int]] = {req_id: {} for req_id in reqs_sids}
         # TODO: re-run sqid if absent from cache?
-        for nline, (_, (sid, *_)) in enumerate(qi.get_from_cache(sqid)):
+        lines: list
+        try:
+            lines = qi.get_from_cache(sqid)
+        except:
+            sids = [si for si in segments_this_batch[sqid]]
+            lines = await qi.query(sqid, script, params={"sids": sids})
+        for nline, (_, (sid, *_)) in enumerate(lines):
             sids_of_line = sid if isinstance(sid, list) else [sid]
             for req_id, sids_in_req in reqs_sids.items():
                 if not any(s in sids_in_req for s in sids_of_line):

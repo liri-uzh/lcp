@@ -444,7 +444,7 @@ class Exporter:
         )
         res = payload.get("result", [])
         all_stats = []
-        result_sets = self._qi.result_sets.to_list()
+        result_sets = self._qi.result_sets
         for k in self._qi.stats_keys:
             if k not in res:
                 continue
@@ -510,7 +510,7 @@ class Exporter:
 
     def build_token(self, tok_lab: str, n: int, token: list) -> Any:
         tok = getattr(E, tok_lab)(
-            token[self._form_index],
+            token[self._form_index] or "",
             id=str(n),
             **{
                 _xml_attr(k): _token_value(v)
