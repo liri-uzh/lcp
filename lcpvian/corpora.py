@@ -11,15 +11,9 @@ import json
 import logging
 import os
 
-import smtplib
-
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
-
-from json.decoder import JSONDecodeError
-
 from aiohttp import web
 from aiohttp.client_exceptions import ClientOSError
+from json.decoder import JSONDecodeError
 from rq.job import Job
 from typing import cast
 
