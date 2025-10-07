@@ -1222,15 +1222,18 @@ def get_aligned_annotations(
             sql_str("{}", layer)
             + f" AS (SELECT {select_in_with} FROM {from_in_with}{formed_joins} GROUP BY {formed_group_by})"
         )
-        formed_build_object = ",".join(
-            [
+        build_objects: list[list[str]] = []
+        for n, aname in enumerate(seljoi["selects"]):
+            if n % 50 == 0:
+                build_objects.append([])
+            build_object = build_objects[-1]
+            build_object.append(
                 literal_sql(aname) + "," + sql_str("{}.{}", layer, aname)
-                for aname in seljoi["selects"]
-            ]
+            )
+        formed_build_objects = " || ".join(
+            f"jsonb_build_object({','.join(x)})" for x in build_objects
         )
-        array_to_select = (
-            f"{literal_sql(layer)},{layer_id},jsonb_build_object({formed_build_object})"
-        )
+        array_to_select = f"{literal_sql(layer)},{layer_id},{formed_build_objects}"
         if add:
             array_to_select = f"{sql_str('{}',add[1])},{array_to_select}"
         unions.append(
