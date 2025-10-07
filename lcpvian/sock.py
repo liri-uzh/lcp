@@ -20,10 +20,13 @@ import asyncio
 import json
 import logging
 import os
+import smtplib
 import traceback
 
 from collections.abc import Coroutine
-from typing import Any, Sized, cast
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from typing import Any, cast
 
 try:
     from aiohttp import WSCloseCode, WSMsgType, web
@@ -55,6 +58,10 @@ from .utils import (
 
 MESSAGE_TTL = os.getenv("REDIS_WS_MESSSAGE_TTL", 5000)
 QUERY_TTL = os.getenv("QUERY_TTL", 5000)
+MAIL_SERVER = os.getenv("MAIL_SERVER", "")
+MAIL_PORT = os.getenv("MAIL_PORT", "50")
+MAIL_SUBJECT_PREFIX = os.getenv("MAIL_SUBJECT_PREFIX", "")
+MAIL_FROM_EMAIL = os.getenv("MMAIL_FROM_EMAIL", "")
 
 
 async def _process_message(
@@ -209,6 +216,8 @@ async def _handle_message(
     """
     Build a message, do any extra needed actions and send on to the right websocket(s)
     """
+    authenticator = app["auth_class"](app)
+
     user = cast(str, payload.get("user", ""))
     room = cast(str, payload.get("room", ""))
     action = payload.get("action", "")
@@ -247,6 +256,31 @@ async def _handle_message(
 
     if action == "export_complete":
         await app["query_service"].get_export_notifs(hash=payload.get("hash", ""))
+        if email := payload.get("email"):
+            fn = payload.get("filename", "")
+            message_html = f"""Hello,<br><br>
+                Your SwissdoxViz export named {fn} is complete. You can now visit SwissdoxViz to open it.<br><br>
+
+                Kind Regards<br><br>
+                LCP"""
+            message_plain = f"""Hello,\nYour SwissdoxViz export named {fn} is complete. You can now visit SwissdoxViz to open it.\nKind Regards\nLCP"""
+
+            try:
+                msg = MIMEMultipart("alternative")
+                msg["Subject"] = (
+                    f"{MAIL_SUBJECT_PREFIX}SwissdoxViz export complete for {fn} [LCP]"
+                )
+                msg["From"] = MAIL_FROM_EMAIL
+                msg["To"] = cast(str, email)
+                msg.attach(MIMEText(message_html, "html", "utf-8"))
+                msg.attach(MIMEText(message_plain, "plain"))
+
+                s = smtplib.SMTP(MAIL_SERVER, int(MAIL_PORT))
+                s.sendmail(MAIL_FROM_EMAIL, [cast(str, email)], msg.as_string())
+                s.quit()
+            except Exception as e:
+                print("Could not send an email.", e)
+                print(f"HTML email: {message_html}")
         return
 
     # for document ids request, we also add this information to config
@@ -315,7 +349,6 @@ async def _handle_message(
             app["config"].pop(sid, {})
         app["config"][id_str] = conf
         if payload.get("gui"):
-            authenticator = app["auth_class"](app)
             filt = _filter_corpora(authenticator, app["config"], app_type, user_data)
             payload["config"] = cast(JSONObject, filt)
             await push_msg(app["websockets"], "", payload)

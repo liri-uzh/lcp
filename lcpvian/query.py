@@ -338,6 +338,10 @@ async def post_query(request: web.Request) -> web.Response:
 
     if req.to_export and req.user:
         xpformat = req.to_export.get("format", "xml") or "xml"
+        if xpformat == "swissdox":
+            user_account = cast(dict, user_data.get("user", user_data.get("account")))
+            email = (user_account or {}).get("email", "")
+            req.to_export["email"] = email or ""
         await push_msg(
             app["websockets"],
             req.room,
