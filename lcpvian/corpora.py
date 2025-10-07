@@ -11,31 +11,22 @@ import json
 import logging
 import os
 
-import smtplib
-
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
-
+from aiohttp import web
+from aiohttp.client_exceptions import ClientOSError
 from json.decoder import JSONDecodeError
+from rq.job import Job
+from typing import cast
 
+from .email import send_email
+from .typed import JSONObject
 from .utils import (
     _filter_corpora,
     _remove_sensitive_fields_from_corpora,
     _structure_descriptions,
     get_pending_invites,
 )
-from .typed import JSONObject
-
-from aiohttp import web
-from aiohttp.client_exceptions import ClientOSError
-from rq.job import Job
-from typing import cast
 
 MESSAGE_TTL = int(os.getenv("REDIS_WS_MESSSAGE_TTL", 5000))
-MAIL_SERVER = os.getenv("MAIL_SERVER", "")
-MAIL_PORT = os.getenv("MAIL_PORT", "50")
-MAIL_SUBJECT_PREFIX = os.getenv("MAIL_SUBJECT_PREFIX", "")
-MAIL_FROM_EMAIL = os.getenv("MMAIL_FROM_EMAIL", "")
 
 
 async def corpora(request: web.Request) -> web.Response:
@@ -164,34 +155,17 @@ async def request_invite(request: web.Request) -> web.Response:
     admin_name = admin_user.get("displayName", "")
     admin_email = admin_user.get("email", "")
 
-    message_html = f"""Hello {admin_name},<br><br>
-        The LCP user named "{user_name}" ({user_email}) wants to access the corpus named "{corpus_name}" (ID: {corpus_id}).
-        This corpus belongs to a group of corpora of which you are an administrator.
-        You can decide to invite {user_name} to the group: they would then have access to all the corpora in this group.
-        Should you decide to grant {user_name} access to the group that contains the corpus {corpus_name},
-        you can visit LCP and paste the email address {user_email} in the "Permissions" tab of the group's settings,
-        and click "Invite".<br><br>
+    message = f"""Hello {admin_name},<br><br>
+The LCP user named "{user_name}" ({user_email}) wants to access the corpus named "{corpus_name}" (ID: {corpus_id}).
+This corpus belongs to a group of corpora of which you are an administrator.
+You can decide to invite {user_name} to the group: they would then have access to all the corpora in this group.
+Should you decide to grant {user_name} access to the group that contains the corpus {corpus_name},
+you can visit LCP and paste the email address {user_email} in the "Permissions" tab of the group's settings,
+and click "Invite".<br><br>
 
-        Kind Regards<br><br>
-        LCP"""
-    message_plain = f"""Hello {admin_name},\nThe LCP user named "{user_name}" ({user_email}) wants to access the corpus named "{corpus_name}" (ID: {corpus_id}). This corpus belongs to a group of corpora of which you are an administrator. You can decide to invite {user_name} to the group: they would then have access to all the corpora in this group. Should you decide to grant {user_name} access to the group that contains the corpus {corpus_name}, you can visit LCP and paste the email address {user_email} in the "Permissions" tab of the group's settings, and click "Invite".\nKind Regards\nLCP"""
-
-    try:
-        msg = MIMEMultipart("alternative")
-        msg["Subject"] = (
-            f"{MAIL_SUBJECT_PREFIX}Invitation request for corpus {corpus_name} [LCP]"
-        )
-        msg["From"] = MAIL_FROM_EMAIL
-        msg["To"] = admin_email
-        msg.attach(MIMEText(message_html, "html", "utf-8"))
-        msg.attach(MIMEText(message_plain, "plain"))
-
-        s = smtplib.SMTP(MAIL_SERVER, int(MAIL_PORT))
-        s.sendmail(MAIL_FROM_EMAIL, [admin_email], msg.as_string())
-        s.quit()
-    except Exception as e:
-        print("Could not send an email.", e)
-        print(f"HTML email: {message_html}")
+Kind Regards<br><br>
+LCP"""
+    send_email(admin_email, f"Invitation request for corpus {corpus_name}", message)
 
     existing_invites = json.loads(request.app["redis"].get(request_id) or "[]")
     if user_email not in existing_invites:

@@ -107,7 +107,7 @@ class Exporter(ExporterXML):
             # each payload needs corresponding *_query/*_segments subfolders
             qb_hashes = [bh for bh, _ in qi.query_batches.values()]
             for h, nlines in request.sent_hashes.items():
-                if h not in qb_hashes or nlines <= 0:
+                if h not in qb_hashes or cast(int, nlines) <= 0:
                     continue
                 if not os.path.exists(os.path.join(wpath, f"{h}_segments")):
                     return
@@ -123,7 +123,13 @@ class Exporter(ExporterXML):
             )
             qi.delete_request(request)
             cls.finish_export_db(
-                job.connection, qhash, offset, requested, delivered, full, "swissdox"
+                job.connection,
+                qhash,
+                offset,
+                requested,
+                cast(int, delivered),
+                full,
+                "swissdox",
             )
         except Exception as e:
             shutil.rmtree(cls.get_dl_path_from_hash(qhash, offset, requested, full))
@@ -217,10 +223,13 @@ class Exporter(ExporterXML):
         )
         if not os.path.exists(class_fn) and not os.path.islink(class_fn):
             os.symlink(os.path.abspath(dest), class_fn)
+        to_export = cast(dict, self._request.to_export or {})
         jso: dict[str, Any] = {
             "action": "export_complete",
             "format": "swissdox",
             "hash": self._qi.hash,
+            "email": to_export.get("email", ""),
+            "filename": fn,
             "offset": 0,
             "total_results_requested": 200,
             "callback_query": None,

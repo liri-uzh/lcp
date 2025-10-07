@@ -23,7 +23,7 @@ import os
 import traceback
 
 from collections.abc import Coroutine
-from typing import Any, Sized, cast
+from typing import Any, cast
 
 try:
     from aiohttp import WSCloseCode, WSMsgType, web
@@ -39,6 +39,7 @@ from redis.exceptions import ConnectionError
 
 
 from .configure import _get_batches, CorpusConfig
+from .email import send_email
 from .query_service import QueryService
 from .query_classes import QueryInfo, Request
 from .utils import push_msg
@@ -209,6 +210,8 @@ async def _handle_message(
     """
     Build a message, do any extra needed actions and send on to the right websocket(s)
     """
+    authenticator = app["auth_class"](app)
+
     user = cast(str, payload.get("user", ""))
     room = cast(str, payload.get("room", ""))
     action = payload.get("action", "")
@@ -247,6 +250,15 @@ async def _handle_message(
 
     if action == "export_complete":
         await app["query_service"].get_export_notifs(hash=payload.get("hash", ""))
+        if email := payload.get("email"):
+            fn = payload.get("filename", "")
+            message = f"""Hello,<br><br>
+Your SwissdoxViz export named {fn} is complete. You can now visit SwissdoxViz to open it.<br><br>
+
+Kind Regards<br><br>
+LCP"""
+            send_email(str(email), f"SwissdoxViz export complete for {fn}", message)
+
         return
 
     # for document ids request, we also add this information to config
@@ -315,7 +327,6 @@ async def _handle_message(
             app["config"].pop(sid, {})
         app["config"][id_str] = conf
         if payload.get("gui"):
-            authenticator = app["auth_class"](app)
             filt = _filter_corpora(authenticator, app["config"], app_type, user_data)
             payload["config"] = cast(JSONObject, filt)
             await push_msg(app["websockets"], "", payload)
