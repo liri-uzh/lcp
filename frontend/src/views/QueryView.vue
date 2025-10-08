@@ -1512,6 +1512,11 @@ export default {
           return;
         }
 
+        if (data["action"] === "clip_media") {
+          useCorpusStore().getClipMedia({file: data["file"]});
+          return;
+        }
+
         if (data["action"] == "image_annotations") {
           const meta = [], ids = [];
           this.WSDataSentences = this.WSDataSentences || {};

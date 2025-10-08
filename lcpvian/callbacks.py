@@ -188,16 +188,14 @@ def _clip_media(
         if layer == "_prepared":
             prepared[id] = {"offset": more[0], "tokens": more[1]}
             continue
+        fr_str: str = cast(dict, more[0]).get("frame_range", "")
+        if fr_str is None:
+            continue
         data = contained if layer in contain_seg else uncontained
         data[layer] = data.get(layer, {})
         data[layer][id] = more[0]
         fr_low, fr_up = [
-            int(x)
-            for x in cast(dict, more[0])
-            .get("frame_range", "")
-            .replace("[", "")
-            .replace(")", "")
-            .split(",")
+            int(x) for x in fr_str.replace("[", "").replace(")", "").split(",")
         ]
         for k, v in more[0].items():
             attr = layers[layer].get("attributes", {}).get(k)
@@ -342,11 +340,12 @@ def _clip_media(
         dir=user_dir,
     )
     tmp.write(string_formed.decode())
+    # TODO: clip the media file and pack it with the XML into a zip file
 
     action = "clip_media"
     msg_id = str(uuid4())
     jso: dict[str, Any] = {
-        "file": tmp.name,
+        "file": os.path.basename(tmp.name),
         "action": action,
         "user": user,
         "room": room,

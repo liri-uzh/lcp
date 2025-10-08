@@ -2,12 +2,15 @@
 Endpoints for multimodal document/document ids fetching
 """
 
-from typing import Sequence, Any, cast
+import os
 
 from aiohttp import web
+from typing import Sequence, Any, cast
 
 from .typed import Config, JSONObject
 from .utils import push_msg
+
+RESULTS_USERS = os.environ.get("RESULTS_USERS", os.path.join("results", "users"))
 
 
 async def document(request: web.Request) -> web.Response:
@@ -136,6 +139,33 @@ async def clip_media(request: web.Request) -> web.Response:
     job = request.app["query_service"].clip_media(corpus_conf, span, doc_id, user, room)
     info: dict[str, str] = {"status": "started", "job": job.id}
     return web.json_response(info)
+
+
+async def get_clip_media(request: web.Request) -> web.FileResponse:
+    """
+    Start a job fetching image annotations.
+
+    The job's callback will send the document to the user/room via websocket
+    """
+    authenticator = request.app["auth_class"](request.app)
+    user_data: dict = await authenticator.user_details(request)
+    user_id = (user_data or {}).get("user", user_data.get("account", {})).get("id")
+
+    if not user_id:
+        raise PermissionError("Unauthenticated users cannot clip media")
+
+    file: str = str(request.match_info["file"])
+    filepath = os.path.join(RESULTS_USERS, user_id, file)
+
+    # TODO: schedule deletion of the file after serving it
+    # see https://stackoverflow.com/a/73313042
+
+    content_disposition = 'attachment; filename="clip.xml"'
+    headers = {
+        "content-disposition": content_disposition,
+        "content-length": f"{os.stat(filepath).st_size}",
+    }
+    return web.FileResponse(filepath, headers=headers)
 
 
 async def document_ids(request: web.Request) -> web.Response:

@@ -129,6 +129,8 @@ common-zoom-in = Aumenta zoom
 common-zoom-reset-default = Reimposta predefinito
 common-zoom-fit-content = Adatta al contenuto
 
+common-clip-media = Clip media
+
 common-yes = Sì
 common-no = No
 common-mandatory-fields = Campi obbligatori

@@ -256,6 +256,8 @@
         :playerIsPlaying="playerIsPlaying"
         :playerCurrentTime="playerCurrentTime"
         :hoveredResult="hoveredResult"
+        :corpusId="selectedCorpora.value"
+        :docId="currentDocument[0]"
         @updateTime="_playerSetTime"
         @annotationEnter="_annotationEnter"
         @annotationLeave="_annotationLeave"

@@ -130,6 +130,8 @@ common-zoom-in = Zoom In
 common-zoom-reset-default = Reset default
 common-zoom-fit-content = Fit content
 
+common-clip-media = Clip media
+
 common-yes = Yes
 common-no = No
 common-mandatory-fields = Mandatory fields
