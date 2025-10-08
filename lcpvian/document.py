@@ -97,6 +97,47 @@ async def image_annotations(request: web.Request) -> web.Response:
     return web.json_response(info)
 
 
+async def clip_media(request: web.Request) -> web.Response:
+    """
+    Start a job fetching image annotations.
+
+    The job's callback will send the document to the user/room via websocket
+    """
+    authenticator = request.app["auth_class"](request.app)
+    user_data: dict = await authenticator.user_details(request)
+
+    if not user_data:
+        raise PermissionError("Unauthenticated users cannot clip media")
+
+    request_data: dict[str, str] = await request.json()
+    assert "corpus" in request_data, KeyError(
+        f"Corpus is missing from the request for image annotations"
+    )
+    corpus = request_data["corpus"]
+    span = request_data["span"]
+    assert isinstance(span, list) and len(span) == 2, TypeError(
+        "Span should be a list of 2 numbers"
+    )
+    doc_id: int = int(request.match_info["doc_id"])
+    assert doc_id, ReferenceError("Need a document id to export a media clip")
+
+    room: str | None = request_data.get("room")
+    user: str = request_data.get("user", "")
+
+    if not authenticator.check_corpus_allowed(
+        str(corpus),
+        user_data,
+        "lcp",
+    ):
+        raise PermissionError("This user is not authorized to access this corpus")
+
+    corpus_conf = request.app["config"][str(corpus)]
+
+    job = request.app["query_service"].clip_media(corpus_conf, span, doc_id, user, room)
+    info: dict[str, str] = {"status": "started", "job": job.id}
+    return web.json_response(info)
+
+
 async def document_ids(request: web.Request) -> web.Response:
     """
     Get a dict of doc_id: doc_name

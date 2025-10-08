@@ -41,6 +41,7 @@ from .callbacks import (
     _document,
     _document_ids,
     _general_failure,
+    _clip_media,
     _image_annotations,
     _upload_failure,
     _queries,
@@ -298,6 +299,68 @@ class QueryService:
         job = self.app[queue].enqueue(
             _db_query,
             on_success=Callback(_image_annotations, self.timeout),
+            on_failure=Callback(_general_failure, self.callback_timeout),
+            result_ttl=self.query_ttl,
+            job_timeout=self.timeout,
+            args=(query, {}),
+            kwargs=kwargs,
+        )
+        return job
+
+    def clip_media(
+        self,
+        config: CorpusConfig,
+        span: list,
+        doc_id: str,
+        user: str,
+        room: str | None,
+        queue: str = "background",
+    ) -> Job:
+        """
+        Clip the media and export the correponding annotations
+        """
+        schema = config["schema_path"]
+
+        tok = config["token"]
+        seg = config["segment"]
+        doc = config["document"]
+        doc_l = doc.lower()
+        sp_from, sp_to = [round(float(x) * 25.0) for x in span]
+
+        from_cte = f"SELECT int4range(lower(d.frame_range) + {sp_from}, lower(d.frame_range) + {sp_to}) AS frame_range"
+        from_cte += sql_str(
+            " FROM {}.{} d WHERE d.{} = ", schema, doc_l, f"{doc_l}_id"
+        ) + str(doc_id)
+
+        aligned = get_aligned_annotations(
+            cast(dict, config),
+            "",
+            "",
+            from_cte,
+            anchor="time",
+            contains=True,
+            exclude={tok: {}},
+        )
+
+        seg_id = seg + "_id"
+        query = aligned + sql_str(
+            "\nUNION ALL SELECT jsonb_build_array('_prepared', {}.{}, prep.id_offset, prep.content) AS res FROM {} JOIN {}.{} prep ON prep.{} = {}.{};",
+            seg,
+            seg_id,
+            seg,
+            schema,
+            f"prepared_{seg.lower()}",
+            f"{seg.lower()}_id",  # prep.segment_id
+            seg,
+            seg_id,
+        )
+        # print("document query", query)
+
+        job: Job
+        kwargs = {"user": user, "room": room, "config": config, "span": span}
+        job = self.app[queue].enqueue(
+            _db_query,
+            on_success=Callback(_clip_media, self.timeout),
             on_failure=Callback(_general_failure, self.callback_timeout),
             result_ttl=self.query_ttl,
             job_timeout=self.timeout,

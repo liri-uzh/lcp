@@ -53,7 +53,7 @@ from .corpora import (
     discard_invites,
     request_invite,
 )
-from .document import document, document_ids, image_annotations
+from .document import clip_media, document, document_ids, image_annotations
 from .export import download_export
 from .fcs import get_fcs
 
@@ -257,6 +257,7 @@ async def create_app(test: bool = False) -> web.Application:
         ("/corpora/{corpora_id}/overwrite", "PUT", corpora_overwrite),
         ("/create", "POST", make_schema),
         ("/document/{doc_id}", "POST", document),
+        ("/document/{doc_id}/clip", "POST", clip_media),
         ("/document_ids/{corpus_id}", "POST", document_ids),
         ("/download_export", "GET", download_export),
         ("/fcs-endpoint", "GET", get_fcs),
