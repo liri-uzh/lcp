@@ -170,12 +170,11 @@ export const useCorpusStore = defineStore("corpusData", {
     },
     async getClipMedia(data) {
       const {file} = data;
-      const res = await httpApi.get(`/document/get/clip/${file}`);
-      const url = window.URL.createObjectURL(new Blob([res.data]));
+      const res = await httpApi.get(`/document/get/clip/${file}`, {responseType: 'blob'});
+      const url = window.URL.createObjectURL(res.data);
       const link = document.createElement('a');
       link.href = url;
-      console.log("url", url, "res", res);
-      link.setAttribute('download', 'clip.xml');
+      link.setAttribute('download', 'clip.zip');
       document.body.appendChild(link);
       link.click();
     },

@@ -18,6 +18,8 @@ import pandas
 import shutil
 import tempfile
 import traceback
+import zipfile
+
 
 from datetime import datetime
 from types import TracebackType
@@ -51,6 +53,7 @@ PUBSUB_LIMIT = int(os.getenv("PUBSUB_LIMIT", 31999999))
 MESSAGE_TTL = int(os.getenv("REDIS_WS_MESSSAGE_TTL", 5000))
 RESULTS_SWISSDOX = os.environ.get("RESULTS_SWISSDOX", "results/swissdox")
 RESULTS_USERS = os.environ.get("RESULTS_USERS", os.path.join("results", "users"))
+UPLOAD_MEDIA_PATH = os.environ.get("UPLOAD_MEDIA_PATH", "media")
 
 
 def _document(
@@ -216,8 +219,14 @@ def _clip_media(
         whens[fr_up] = whens.get(fr_up, {})
         whens[fr_up][layer] = whens[fr_up].get(layer, [])
 
-    assert doc in data, AssertionError(f"Could not find {doc} in payload")
-    doc_data = next(v for v in data[doc].values())
+    assert doc in contained, AssertionError(f"Could not find {doc} in payload")
+    doc_data = next(v for v in contained[doc].values())
+
+    span_dur = float(span[1]) - float(span[0])
+    doc_dur = doc_data["frame_range"][1] / 25.0 - doc_data["frame_range"][0] / 25.0
+    assert span_dur < 10.0 or span_dur / doc_dur < 0.5, PermissionError(
+        "Clipped media can only have a duration of up to 10 seconds or 50 percent of the original document"
+    )
 
     whens_sorted = sorted(whens.keys())
     whens_sorted_idx = {w: n for n, w in enumerate(whens_sorted, start=1)}
@@ -251,7 +260,9 @@ def _clip_media(
                 start, end = [whens_sorted_idx[x] for x in f["frame_range"]]
                 built_contains += f'\n{indent}<{c} start="#T{start}" end="#T{end}" '
                 built_contains += " ".join(
-                    f"{escape(k)}={quoteattr(str(v))}" for k, v in f.items()
+                    f"{escape(k)}={quoteattr(str(v))}"
+                    for k, v in f.items()
+                    if k not in ("start", "end")
                 )
                 built_contains += ">"
                 if c == seg:
@@ -276,7 +287,7 @@ def _clip_media(
         E.note(
             id=f"G{n}",
             type="global",
-            **{x: y for x, y in globs[k].items()},
+            **{str(x): str(y) for x, y in globs[k].items()},
         )
         for n, k in enumerate(globs, start=1)
     ]
@@ -315,7 +326,11 @@ def _clip_media(
             E.body(
                 *[
                     getattr(E, l)(
-                        **{str(k): str(v) for k, v in x.items()},
+                        **{
+                            str(k): str(v)
+                            for k, v in x.items()
+                            if k not in ("start", "end")
+                        },
                         start="#T" + str(whens_sorted_idx[x["frame_range"][0]]),
                         end="#T" + str(whens_sorted_idx[x["frame_range"][1]]),
                     )
@@ -331,21 +346,45 @@ def _clip_media(
     user_dir = os.path.join(RESULTS_USERS, user)
     if not os.path.exists(user_dir):
         os.makedirs(user_dir)
+    xml_path = os.path.join(user_dir, "clip.xml")
     string_formed = lxml.etree.tostring(main_node, encoding="UTF-8", pretty_print="True", xml_declaration=True)  # type: ignore
-    tmp = tempfile.NamedTemporaryFile(
-        "w+",
-        encoding="utf-8",
-        newline="\n",
-        delete=False,
-        dir=user_dir,
+    with open(xml_path, "w+", encoding="utf-8") as xml_out:
+        xml_out.write(string_formed.decode())
+
+    zip_fn = os.path.join(user_dir, "clip.zip")
+    zf = zipfile.ZipFile(zip_fn, "w")
+    zf.write(xml_path, "clip.xml")
+
+    media_col, media_props = next(
+        (x for x in config["meta"].get("mediaSlots", {}).items()), ("", "")
     )
-    tmp.write(string_formed.decode())
-    # TODO: clip the media file and pack it with the XML into a zip file
+    if media_fn := doc_data.get("media", {}).get(media_col):
+        ext = media_fn[-3:]
+        start, end = [float(x) for x in span]  # type: ignore
+        fullpath = os.path.join(UPLOAD_MEDIA_PATH, config["schema_path"], media_fn)
+        out_clip = os.path.join(user_dir, f"clip.{ext}")
+        import ffmpeg
+
+        stream = ffmpeg.input(fullpath)
+        aud = stream.filter_("atrim", start=start, end=end).filter_(
+            "asetpts", "PTS-STARTPTS"
+        )
+        if cast(dict, media_props).get("mediaType") == "video":
+            vid = stream.trim(start=start, end=end).setpts("PTS-STARTPTS")
+            joined = ffmpeg.concat(vid, aud, v=1, a=1).node
+            output = ffmpeg.output(joined[0], joined[1], out_clip)
+            output.run(overwrite_output=True)
+        else:
+            output = ffmpeg.output(aud, out_clip)
+            output.run(overwrite_output=True)
+        zf.write(out_clip, f"clip.{ext}")
+
+    zf.close()
 
     action = "clip_media"
     msg_id = str(uuid4())
     jso: dict[str, Any] = {
-        "file": os.path.basename(tmp.name),
+        "file": os.path.basename(zip_fn),
         "action": action,
         "user": user,
         "room": room,

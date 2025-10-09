@@ -264,6 +264,7 @@
         @annotationClick="_annotationClick"
         @mouseleave="_annotationLeave"
         :key="documentIndexKey"
+        ref="timelineview"
       />
       <div v-else-if="loadingDocument == true">
         {{ $t('common-loading-data') }}...
@@ -511,6 +512,14 @@ export default {
         const player = this.$refs['videoPlayer' + n];
         if (!player)
           continue
+        const tv = this.$refs.timelineview;
+        let [tvstart,tvend] = [tv.selectionStart,tv.selectionEnd]
+        if (tvstart > tvend) [tvstart,tvend] = [tvend, tvstart];
+        if (tvend - tvstart > 0.1 && tvend > 0) {
+          this.currentTime = tvstart;
+          player.currentTime = tvstart;
+          end = tvend;
+        }
         if (end && end >= 0) {
           end = Math.min(end, player.duration);
           const handler = () => {

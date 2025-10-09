@@ -327,7 +327,10 @@ class QueryService:
         doc_l = doc.lower()
         sp_from, sp_to = [round(float(x) * 25.0) for x in span]
 
-        from_cte = f"SELECT int4range(lower(d.frame_range) + {sp_from}, lower(d.frame_range) + {sp_to}) AS frame_range"
+        doc_fr = "d.frame_range"
+        doc_low = f"lower({doc_fr})"
+        doc_up = f"upper({doc_fr})"
+        from_cte = f"SELECT int4range(least({doc_low} + {sp_from}, {doc_up}), least({doc_low} + {sp_to}, {doc_up})) AS frame_range"
         from_cte += sql_str(
             " FROM {}.{} d WHERE d.{} = ", schema, doc_l, f"{doc_l}_id"
         ) + str(doc_id)

@@ -45,7 +45,11 @@
         />
         {{ $t("common-zoom-fit-content") }}
       </button>
-      <button class="btn btn-primary btn-sm me-1" @click="clipMedia" v-if="Math.abs(selectionStart - selectionEnd) > 0.1">
+      <button
+        class="btn btn-primary btn-sm me-1"
+        @click="clipMedia"
+        v-if="userData && userData.user && userData.user.id && Math.abs(selectionStart - selectionEnd) > 0.1"
+      >
         <FontAwesomeIcon
           :icon="['fas', 'file-export']"
           class="me-1"
@@ -477,7 +481,7 @@ export default {
       barAndTextGroups.append("clipPath")
         .attr("id", (d, i) => `barClip${i}`)
         .append("rect")
-        .attr("x", (d) => { const x = linearScale(d.x1); console.log("x", d.x1, x); return x; } )
+        .attr("x", (d) => linearScale(d.x1) )
         .attr("y", (d) => heightStart[d.l])
         .attr("width", (d) => linearScale(d.x2) - linearScale(d.x1))
         .attr("height", 20);
@@ -503,7 +507,6 @@ export default {
             return Math.max(that.selectionStart, that.selectionEnd);
         }
       });
-      console.log("selectionProxy", selectionProxy, this.selectionStart, this.selectionEnd);
       // Selection box
       selectRect = svg
         .append("rect")
@@ -549,7 +552,6 @@ export default {
         // if (event.sourceEvent && event.sourceEvent.type === "wheel") {
         //   return true;
         // }
-        console.log("zoomed")
         const { transform } = event;
         const newXScale = transform.rescaleX(linearScale);
         xAxis.scale(newXScale);
@@ -672,7 +674,6 @@ export default {
           this.selectionStart = originalValue;
           this.selectionEnd = originalValue;
           this.selecting = true;
-          console.log("mousedown", this.selectionStart);
         })
         .on('mouseout', function () {
           // on mouse out hide line, circles and text
@@ -700,7 +701,6 @@ export default {
           if (this.selectionStart && this.selecting) {
             this.selectionEnd = originalValue;
             const newXScale = d3.zoomTransform(svg.node()).rescaleX(linearScale);
-            console.log("start", this.selectionStart, this.selectionEnd, newXScale(this.selectionStart));
             selectRect
               .attr("x", (d) => newXScale(d.x1))
               .attr("width", (d) => newXScale(d.x2) - newXScale(d.x1));
@@ -762,13 +762,12 @@ export default {
       this._resizeTimeout = setTimeout(() => this.checkMobile(e), 200)
     }
     document.addEventListener("mouseup", ()=>{
-      console.log("mouseup", this.selectionStart, this.selectionEnd);
+      if (!this.selecting) return;
       this.selecting = false;
       if (this.selectionStart && this.selectionEnd && Math.abs(this.selectionEnd - this.selectionStart) > 0.1)
         return;
       this.selectionStart = 0;
       this.selectionEnd = 0;
-      selectRect.attr("width", 0);
     });
     // Initialize the timeline
     this.initializeTimeline();

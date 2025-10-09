@@ -155,16 +155,21 @@ async def get_clip_media(request: web.Request) -> web.FileResponse:
         raise PermissionError("Unauthenticated users cannot clip media")
 
     file: str = str(request.match_info["file"])
+    assert "/" not in file, ValueError("The filename cannot contain the character '/'")
+    file = os.path.basename(file)
+
     filepath = os.path.join(RESULTS_USERS, user_id, file)
 
     # TODO: schedule deletion of the file after serving it
     # see https://stackoverflow.com/a/73313042
 
-    content_disposition = 'attachment; filename="clip.xml"'
+    content_disposition = f'attachment; filename="{file}"'
     headers = {
         "content-disposition": content_disposition,
         "content-length": f"{os.stat(filepath).st_size}",
     }
+    if file.endswith(".zip"):
+        headers["content-type"] = "application/zip"
     return web.FileResponse(filepath, headers=headers)
 
 
