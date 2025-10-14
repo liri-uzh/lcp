@@ -278,6 +278,7 @@
                 <PlayerComponent
                   v-if="showExploreTab()"
                   :key="selectedCorpora"
+                  :meta="WSDataMeta"
                   :selectedCorpora="selectedCorpora"
                   :selectedMediaForPlay="selectedMediaForPlay"
                   :hoveredResult="hoveredResult"
@@ -1506,21 +1507,18 @@ export default {
           return;
         }
 
-        if (data["action"] === "document") {
-          // console.log("DOC", data)
-          useWsStore().addMessageForPlayer(data);
-          return;
-        }
-
         if (data["action"] === "clip_media") {
           useCorpusStore().getClipMedia({file: data["file"]});
           return;
         }
 
-        if (data["action"] == "image_annotations") {
+        const is_doc = data["action"] == "document";
+
+        if (data["action"] == "image_annotations" || is_doc) {
+          const annotations = is_doc ? data.document : data.annotations;
           const meta = [], ids = [];
           this.WSDataSentences = this.WSDataSentences || {};
-          for (let [row] of data.annotations) {
+          for (let [row] of annotations) {
             if (row[0] == "_prepared") {
               const [seg_id, seg_offset, seg_content] = row.slice(1,)
               if (seg_id in this.WSDataSentences) continue;
@@ -1528,14 +1526,20 @@ export default {
             }
             else
               meta.push([[], ...row]);
-            if (row[0] == data.layer) ids.push(row[1]);
+            if (!is_doc && row[0] == data.layer) ids.push(row[1]);
           }
           this.WSDataSentences = {...this.WSDataSentences};
           for (let id of ids)
             this.imageAnnotations[id] = 1;
           if (meta.length)
             this.processMeta(meta);
-          }
+        }
+
+        if (is_doc) {
+          // console.log("DOC", data)
+          useWsStore().addMessageForPlayer(data);
+          return;
+        }
 
         if (data["action"] === "update_config") {
           // todo: when a new corpus is added, all connected websockets

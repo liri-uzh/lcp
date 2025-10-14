@@ -15,6 +15,9 @@
             ></multiselect>
           </div>
         </div>
+        <div v-if="currentDocumentInfo" class="doc-info">
+          <div v-html="dictToStr(currentDocumentInfo, {addTitles: true})"></div>
+        </div>
         <div class="col-12 col-md-4">
           <div class="mb-3 mt-3 text-center text-md-start">
             <button type="button" class="btn btn-primary" @click="$emit('switchToQueryTab')">{{ $t('common-query-corpus') }}</button>
@@ -335,7 +338,7 @@ class Track {
     this._groups = groups || {};
   }
   push(v, info, layer_attrs) {
-    const [startFrame, endFrame] = JSON.parse(info.frame_range.replace(")","]"));
+    const [startFrame, endFrame] = info.frame_range; //JSON.parse(info.frame_range.replace(")","]"));
     const shift = v.currentDocument[3][0];
     let startTime = (parseFloat(startFrame - shift) / v.frameRate);
     let endTime = (parseFloat(endFrame - shift) / v.frameRate);
@@ -357,13 +360,14 @@ class Track {
 const urlRegex = /(https?:\/\/(www\.)?[-a-zA-Z0-9@:%._+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_+.~#?&//=]*))/g;
 
 export default {
-  props: ["selectedCorpora", "documentIds", "selectedMediaForPlay", "hoveredResult", "dataType"],
+  props: ["meta", "selectedCorpora", "documentIds", "selectedMediaForPlay", "hoveredResult", "dataType"],
   emits: ["switchToQueryTab"],
   data() {
     return {
       currentDocumentSelected: null,
       currentDocument: null,
       currentDocumentData: null,
+      currentDocumentInfo: null,
       dataToShow: [],
       currentMediaDuration: 0,
       documentIndexKey: 0,
@@ -439,7 +443,7 @@ export default {
             value: document[0],
             document: document
           }
-        }) :
+        }).sort((x,y)=>x.name.toLowerCase() > y.name.toLowerCase()) :
         []
     },
     baseMediaUrl() {
@@ -451,6 +455,9 @@ export default {
     },
   },
   methods: {
+    dictToStr(...args) {
+      return Utils.dictToStr(...args);
+    },
     updateConf() {
       if (this._updateConfTimeout) clearTimeout(this._updateConfTimeout);
       this._updateConfTimeout = setTimeout(()=>this.toTimeline(), 500);
@@ -854,6 +861,8 @@ export default {
           this.loadingDocument = false;
           this.documentIndexKey++;
           this._setVolume();
+          const doc_layer = this.selectedCorpora.corpus.document;
+          this.currentDocumentInfo = ((((this.meta||{}).layer||{})[doc_layer]||{}).byId||{})[this.currentDocumentSelected.value];
           return;
         }
         else if (data["action"] === "document_ids") {
@@ -870,7 +879,7 @@ export default {
                 name: document[1],
                 value: document[0],
                 document: document
-              }
+              };
             }
           }
           return;
@@ -1032,6 +1041,7 @@ export default {
       if (this.currentDocument == this.currentDocumentSelected.document)
         return this.videoPlayer1CanPlay();
       this.currentDocument = this.currentDocumentSelected.document;
+      this.currentDocumentInfo = null;
       this.loadDocument();
     },
     volume() {
@@ -1046,6 +1056,37 @@ export default {
   height: 5em;
   display: flex;
   overflow: scroll;
+}
+
+.doc-info {
+  position: relative;
+  z-index: 99;
+  width: 20vw;
+  height: 4em;
+  overflow: hidden;
+  margin-top: 0.5em;
+  padding: 0em;
+  box-shadow: 0px 0px 10px lightgray;
+  border-radius: 0.5em;
+}
+.doc-info::before {
+  content: "info";
+  position: absolute;
+  right: 0;
+  top: -0.25em;
+  font-size: 0.75em;
+  font-weight: bold;
+}
+.doc-info:hover {
+  overflow: visible;
+  box-shadow: unset;
+  border-radius: 0em;
+}
+.doc-info > div {
+  background-color: ivory;
+  padding: 0.25em;
+  box-shadow: 0px 0px 10px black;
+  border-radius: 0.5em;
 }
 
 video {
