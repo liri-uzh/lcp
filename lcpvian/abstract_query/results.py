@@ -239,11 +239,24 @@ class ResultsMaker:
 
         for result in results:
             if "resultsPlain" in cast(JSONObject, result):
+                legal_layers_plain_entities = {
+                    y.lower()
+                    for x, y in cast(dict, self.config["firstClass"]).items()
+                    if x in ("token", "segment")
+                }
                 plain = cast(JSONObject, result["resultsPlain"])
                 ents = cast(list[str], plain["entities"])
                 for e in ents:
                     assert e in legal_refs, ReferenceError(
                         f"Label {e} cannot be referenced (is not declared or scope-bound)"
+                    )
+                    ll = self.r.label_layer.get(e, ("", {}))
+                    assert (
+                        e == "*"
+                        or ll[0].lower() in legal_layers_plain_entities
+                        or "members" in ll[1]
+                    ), ReferenceError(
+                        f"Invalid entity reference '{e}': only {' and '.join(legal_layers_plain_entities)} entities are currently supported as entities of plain results."
                     )
                     self.r.entities.add(e)
                     lay, met = self.r.label_layer.get(e, (None, None))
@@ -260,19 +273,6 @@ class ResultsMaker:
                         f"Label {c} cannot be referenced (is not declared or scope-bound)"
                     )
                     self.r.entities.add(cast(str, c).lower())
-                # for s in cast(list[str], coll.get("space", [])):
-                #    self.r.entities.add(s)
-            # elif "resultsAnalysis" in cast(JSONObject, result):
-            #     stat = cast(JSONObject, result["resultsAnalysis"])
-            #     attr = cast(list[str | dict], stat.get("attributes", []))
-            #     for a in attr:
-            #         if not isinstance(a, dict) or "attribute" not in a:
-            #             continue
-            #         lab: str = cast(dict, a)["attribute"].split(".", 1)[0].lower()
-            #         assert lab in legal_refs, ReferenceError(
-            #             f"Label {lab} cannot be referenced (is not declared or scope-bound)"
-            #         )
-            #         self.r.entities.add(lab)
 
         kind: str
         r: JSON
@@ -362,8 +362,11 @@ class ResultsMaker:
         lay: str
         lay, _ = self.r.label_layer[context]
         first_class: dict[str, str] = cast(dict[str, str], self.config["firstClass"])
-        keys = {first_class[f].lower() for f in {"token", "segment", "document"}}
-        err = f"Context not allowed: {lay.lower()} not in {keys}"
+        # keys = {first_class[f].lower() for f in {"token", "segment", "document"}}
+        keys = set({first_class["segment"].lower()})
+        err = (
+            f"Context not allowed: {lay.lower()} not in {' or '.join(k for k in keys)}"
+        )
         assert lay.lower() in keys, err
         context_ref = self.r.sql.layer(context, lay, pointer=True)
         select = sql_str(f"{context_ref} AS {LR}", context_ref.alias)

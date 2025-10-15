@@ -11,7 +11,7 @@ from automathon import NFA  # type: ignore
 from .constraint import _get_constraints, _get_table
 from .prefilter import Prefilter
 from .sequence_members import Member, Disjunction, Sequence, Unit
-from .typed import JSONObject, LabelLayer, SQLRef
+from .typed import JSONObject, LabelLayer
 from .utils import Config, SQLCorpus, _is_anchored, _to_leftjoins, sql_str
 
 LR = "{}"
