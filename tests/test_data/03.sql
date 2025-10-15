@@ -138,7 +138,7 @@ SET ordercol ,
    FROM gather),
     res1 AS
   (SELECT DISTINCT 1::int2 AS rstype,
-                   jsonb_build_array(s, jsonb_build_array(seq))
+                   jsonb_build_array("s", jsonb_build_array("seq"))
    FROM match_list) ,
     res0 AS
   (SELECT 0::int2 AS rstype,

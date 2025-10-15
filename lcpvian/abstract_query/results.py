@@ -607,7 +607,7 @@ WHERE {ent_stream_ref} && {cont_tok_stream_ref}
                 entout += entities_list
             tokens += attributes
 
-        ents_form: str = ", ".join(entout)
+        ents_form: str = ", ".join(sql_str("{}", x) for x in entout)
         doc_join = ""
         extras: list[str] = []
         frame_ranges: list[dict[str, Any]] = []
@@ -649,7 +649,7 @@ WHERE {ent_stream_ref} && {cont_tok_stream_ref}
         out = f"""
             res{i} AS ( SELECT DISTINCT
             {i}::int2 AS rstype,
-            jsonb_build_array({context}, jsonb_build_array({ents_form}) {select_extra})
+            jsonb_build_array({sql_str('{}', context)}, jsonb_build_array({ents_form}) {select_extra})
         FROM
             match_list
             {doc_join}
