@@ -32,6 +32,7 @@ import {
   faGlobe,
   faHouse,
   faImage,
+  faLanguage,
   faLink,
   faMagnifyingGlass,
   faMagnifyingGlassChart,
@@ -92,6 +93,7 @@ library.add(faGear);
 library.add(faGlobe);
 library.add(faHouse);
 library.add(faImage);
+library.add(faLanguage);
 library.add(faLink);
 library.add(faMagnifyingGlass);
 library.add(faMagnifyingGlassChart);

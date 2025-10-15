@@ -21,38 +21,59 @@
       <div class="row mt-3">
         <div class="col">
           <div class="input-group mb-3">
-            <span class="input-group-text" id="basic-addon1">
+            <!-- <span class="input-group-text" id="basic-addon1">
               <FontAwesomeIcon :icon="['fas', 'magnifying-glass']" />
-            </span>
+            </span> -->
+            <!-- Include: Text | Sound | Video (once we have a single instance) -->
             <input type="text" class="form-control" v-model="corporaFilter" :placeholder="$t('platform-general-find-corpora')" />
-            <span class="input-group-text" id="basic-addon1" @click="switchLanguageFilter">
+            <!-- <span class="input-group-text" id="basic-addon1" @click="switchLanguageFilter">
               <FontAwesomeIcon :icon="['fas', 'filter']" />
-            </span>
-            <div id="languagesFilter" v-if="languageFilter instanceof Array && showLanguageFilters">
-              <div
-                class="title"
-                @click="languageFilter = allLanguages.some(l=>!languageFilter.includes(l.langCode)) ? allLanguages.map(l=>l.langCode) : []"
-              >
-                <input
-                  type="checkbox"
-                  :id="`language-filter-allLanguages`"
-                  :checked="allLanguages.every(l=>this.languageFilter.includes(l.langCode))"
-                />
-                <label :for="`language-filter-allLanguages`">Languages</label>
-              </div>
-              <span v-for="language in allLanguages" :key="language.langCode">
-                <input
-                  type="checkbox"
-                  :id="`language-filter-${language.langCode}`"
-                  :value="language.langCode"
-                  v-model="languageFilter"
-                />
-                <label :for="`language-filter-${language.langCode}`">{{ language.langName }} ({{ language.langCode }})</label>
-              </span>
-            </div>
+            </span> -->
           </div>
           <div v-if="corporaFilter && filterError && filterError.message" class="alert notification alert-danger">
             {{ filterError.message }}
+          </div>
+          <div id="languages-filter" v-if="allLanguages">
+            <span>Languages:</span>
+            <span
+              v-for="language in allLanguages"
+              :key="language.langCode"
+              class="language-filter"
+            >
+              <input
+                type="checkbox"
+                :id="`language-filter-${language.langCode}`"
+                :value="language.langCode"
+                v-model="languageFilter"
+              />
+              <label
+                :for="`language-filter-${language.langCode}`"
+                :title="language.langName"
+                class="tooltips"
+              >
+                {{ language.langCode }}
+              </label>
+            </span>
+            <!-- <div
+              class="title"
+              @click="languageFilter = allLanguages.some(l=>!languageFilter.includes(l.langCode)) ? allLanguages.map(l=>l.langCode) : []"
+            >
+              <input
+                type="checkbox"
+                :id="`language-filter-allLanguages`"
+                :checked="allLanguages.every(l=>this.languageFilter.includes(l.langCode))"
+              />
+              <label :for="`language-filter-allLanguages`">Languages</label>
+            </div>
+            <span v-for="language in allLanguages" :key="language.langCode">
+              <input
+                type="checkbox"
+                :id="`language-filter-${language.langCode}`"
+                :value="language.langCode"
+                v-model="languageFilter"
+              />
+              <label :for="`language-filter-${language.langCode}`">{{ language.langName }} ({{ language.langCode }})</label>
+            </span> -->
           </div>
         </div>
       </div>
@@ -116,7 +137,7 @@
                         Visibility: <b>{{ project.additionalData && project.additionalData.visibility ? project.additionalData.visibility : "private" }}</b>
                       </div> -->
                     </div>
-                    <div class="row">
+                    <div class="row" v-if="project.description">
                       <div class="col-12">
                         {{ $t('common-description') }}: <b>{{ project.description }}</b>
                       </div>
@@ -144,7 +165,14 @@
               >
                 <div class="corpus-block" :class="`data-type-${corpusDataType(corpus)}`">
                   <div class="corpus-block-header px-4 py-3">
-                    <p class="title mb-0">{{ corpus.meta.name }}</p>
+                    <p class="title mb-0">
+                      {{ corpus.meta.name }}
+                      <span
+                        class="badge revision text-bg-primary me-1 tooltips"
+                        :title="`${$t('common-revision')}: ${corpus.meta.revision}`"
+                        v-if="corpus.meta.revision"
+                      >r.{{ corpus.meta.revision }}</span>
+                    </p>
                     <!-- <p class="author mb-0">
                       <span v-if="corpus.meta.author">by {{ corpus.meta.author }}</span>
                     </p> -->
@@ -162,32 +190,28 @@
                       {{ corpus.meta.corpusDescription }}
                     </p>
                     <p class="word-count">
-                      <template v-if="corpus.partitions">
-                        <span
-                          class="badge text-bg-primary me-1 tooltips" :title="this.getLanguage(language)"
-                          v-for="language in corpus.partitions.values"
-                          v-html="language.toUpperCase()" :key="`${corpus.id}-${language}`"
-                        ></span>
-                      </template>
-                      <span
-                        class="badge text-bg-primary me-1 tooltips" :title="this.getLanguage(corpus.meta.language)"
-                        v-if="!(corpus.partitions) && corpus.meta.language"
-                        v-html="corpus.meta.language.toUpperCase()"
-                      ></span>
+                      <!-- These are listed in reverse (flex-direction: row-reverse) -->
                       <span class="badge text-bg-primary me-1 tooltips" :title="$t('common-word-count')"
                       >{{
                         nFormatter(
                           calculateSum(Object.entries(corpus.token_counts).filter(kv=>kv[0].endsWith("0")).map(kv=>kv[1]))
                         )
                       }}</span>
+                      <template v-if="corpus.partitions">
+                        <span
+                          class="badge text-bg-primary me-1 tooltips language" :title="corpus.partitions.values.map(l=>this.getLanguage(l)).reverse().join(', ')"
+                          v-for="language in corpus.partitions.values"
+                          v-html="language.toUpperCase()" :key="`${corpus.id}-${language}`"
+                        ></span>
+                      </template>
                       <span
-                        class="badge text-bg-primary me-1 tooltips"
-                        :title="`${$t('common-revision')}: ${corpus.meta.revision}`"
-                        v-if="corpus.meta.revision"
-                      >{{ corpus.meta.revision }}</span>
+                        class="badge text-bg-primary me-1 tooltips language" :title="this.getLanguage(corpus.meta.language)"
+                        v-else-if="corpus.meta.language"
+                        v-html="corpus.meta.language.toUpperCase()"
+                      ></span>
                     </p>
                   </div>
-                  <div
+                  <!-- <div
                     class="details-button icon-1 tooltips"
                     :title="$t('common-query-corpus')"
                     v-if="hasAccessToCorpus(corpus, userData)"
@@ -208,7 +232,7 @@
                     v-else
                   >
                     <FontAwesomeIcon :icon="['fas', 'magnifying-glass-chart']" />
-                  </div>
+                  </div> -->
 
                   <div class="details-button icon-2">
                     <span
@@ -233,10 +257,10 @@
                     <span class="tooltips icon-x" :title="$t('platform-general-corpus-details')" @click.stop="openCorpusDetailsModal(corpus)">
                       <FontAwesomeIcon :icon="['fas', 'circle-info']" />
                     </span>
-                    <a class="tooltips icon-x" :href="getURLWithProtocol(corpus.meta.url)" :title="$t('platform-general-corpus-origin')"
+                    <!-- <a class="tooltips icon-x" :href="getURLWithProtocol(corpus.meta.url)" :title="$t('platform-general-corpus-origin')"
                       :disabled="!corpus.meta.url" target="_blank" @click.stop>
                       <FontAwesomeIcon :icon="['fas', 'link']" />
-                    </a>
+                    </a> -->
                   </div>
                   <div class="details-data-type icon-3 tooltips" :title="$t('platform-general-data-type')" v-if="appType == 'lcp'">
                     <FontAwesomeIcon :icon="['fas', 'music']" v-if="corpusDataType(corpus) == 'audio'" />
@@ -731,6 +755,9 @@ export default {
     projects() {
       this.updateTabsCarets();
     },
+    allLanguages() {
+      this.languageFilter = this.languageFilter || this.allLanguages.map(l=>l.langCode);
+    }
   },
   updated() {
     // this.setTooltips();
@@ -811,6 +838,30 @@ export default {
   box-shadow: 0 5px 7px -8px #777;
 }
 
+.row.mt-3 {
+  max-width: 80%;
+  margin: auto;
+}
+
+.language-filter input {
+  display: none;
+}
+
+.language-filter label {
+  width: 2.75em;
+  text-align: center;
+  margin: 0em 0.25em;
+  border-radius: 20px;
+  border: solid 1px gray;
+  font-variant: petite-caps;
+  font-size: 1.2em;
+}
+
+.language-filter input:checked + label {
+  background-color: burlywood;
+  color: white;
+}
+
 .corpus-block {
   border: 1px solid #d4d4d4;
   border-radius: 5px;
@@ -869,6 +920,12 @@ export default {
   text-overflow: ellipsis;
 }
 
+.badge.revision {
+  transform: translate(-0.25em, -0.5em) scale(0.75);
+  background-color: #5599be !important;
+  padding: 0.2em;
+}
+
 .description {
   font-size: 90%;
   height: 108px;
@@ -877,6 +934,27 @@ export default {
 
 .word-count {
   font-size: 80%;
+}
+
+.corpus-block .word-count {
+  display: inline-flex;
+  flex-direction: row-reverse;
+  transform: translateY(-50%);
+}
+
+.corpus-block .badge {
+  box-shadow: 0px 0px 2px black;
+}
+
+.badge.language:not(:last-child):not(:first-child) {
+  margin-left: -1.25em;
+  width: 2.2em;
+}
+
+.badge.language:last-child::before {
+  content: '🚩';
+  position: absolute;
+  transform: translate(-100%, -100%);
 }
 
 .project-box {
@@ -984,7 +1062,7 @@ export default {
 }
 
 .details-button.icon-2 {
-  right: 55px;
+  right: 5px;
 }
 
 .icon-x {
@@ -993,11 +1071,15 @@ export default {
   padding-right: 7px;
 }
 
+.details-button .icon-x {
+  scale: 1.33;
+}
+
 .horizontal-space {
   margin: 0em 1em;
 }
 
-#languagesFilter {
+/* #languages-filter {
   position: absolute;
   right: 0;
   max-width: 300px;
@@ -1007,5 +1089,5 @@ export default {
   z-index: 99;
   display: flex;
   flex-direction: column;
-}
+} */
 </style>

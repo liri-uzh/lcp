@@ -1,5 +1,6 @@
 <template>
-  <div :style="`width: ${width}px; height: ${height}px; overflow: hidden;`">
+  <div style="text-align: center; font-size: 1.1em;">Corpus Data Structure</div>
+  <div :style="`width: ${width-10}px; height: ${height}px; overflow: hidden; border: solid 1px gray; border-radius: 10px;`">
     <svg id="corpusDiagram"></svg>
     <div id="zoomControls">
       <div id="zoomPlus" @click="zoom = Math.max(zoomMin, zoom - 0.1)">+</div>

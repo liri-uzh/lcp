@@ -63,11 +63,11 @@
           Either there is no corpus at this address, or it is not publicly accessible. Please log in and check again.
         </div>
       </div>
-      <div class="row mt-5" v-else-if="selectedCorpora">
+      <div class="row mt-5" style="margin-top: 0em !important;" v-else-if="selectedCorpora">
         <div class="col-12 mt-3">
           <div class="form-floating mb-3">
             <nav>
-              <div class="nav nav-tabs" id="nav-main-tab" role="tablist"
+              <div class="nav" id="nav-main-tab" role="tablist"
                 :class="{ 'reverse-items': ['soundscript', 'videoscope'].includes(appType) }">
                 <button class="nav-link" :class="{ active: activeMainTab === 'query' }" id="nav-query-tab"
                   data-bs-toggle="tab" data-bs-target="#nav-query" type="button" role="tab" aria-controls="nav-query"
@@ -838,6 +838,42 @@
 </template>
 
 <style scoped>
+#nav-main-tab {
+  width: 20em;
+  margin: auto;
+}
+
+#nav-main-tab::before {
+  content: "Views:";
+  padding: 0.15rem;
+  margin-right: 0.25em;
+}
+
+#nav-main-tab button {
+  background-color: whitesmoke;
+  height: 2em;
+  padding: 0px 2em;
+}
+
+#nav-main-tab button.active {
+  color: white;
+  background-color: gray;
+}
+
+#nav-main-tab button:first-child {
+  border-radius: 15px 0px 0px 15px;
+}
+#nav-main-tab button:last-child {
+  border-radius: 0px 15px 15px 0px;
+}
+#nav-main-tab button.reverse-items:first-child {
+  border-radius: 0px 15px 15px 0px;
+}
+#nav-main-tab button.reverse-items:last-child {
+  border-radius: 15px 0px 0px 15px;
+}
+
+
 .modal-full .modal-body {
   max-height: calc(100vh - 200px);
   overflow-y: scroll;
