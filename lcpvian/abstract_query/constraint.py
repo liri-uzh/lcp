@@ -1070,6 +1070,12 @@ def _get_constraints(
                 "partOfTime": "time",
                 "partOfLocation": "location",
             }.get(part_type, "stream")
+            assert _is_anchored(conf.config, layer, anchor_name), TypeError(
+                f"Attempted to check the {anchor_name} anchoring of '{label}' but it is not aligned on this anchor."
+            )
+            assert _is_anchored(conf.config, part_of_layer, anchor_name), TypeError(
+                f"Attempted to check the {anchor_name} anchoring of '{part_label}' but it is not aligned on this anchor."
+            )
             references[part_label] = references.get(part_label, []) + [anchor_name]
             references[label] = references.get(label, []) + [anchor_name]
             part_ref = sql_corpus.anchor(part_label, part_of_layer, anchor_name)
