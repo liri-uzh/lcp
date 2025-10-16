@@ -202,22 +202,20 @@
               :class="mainAudio == 4 ? 'active btn-primary' : 'btn-secondary'" @click="playerMainAudio(4)">
               A4
             </button>
+
+            <div>
+              &nbsp;
+              <input type="number" ref="pickerHours" min="0" placeholder="HH" style="width: 60px;" @keyup="(e)=>e.target.value.length >= 2 && $refs.pickerMinutes.focus()"/>
+              <span>:</span>
+              <input type="number" ref="pickerMinutes" min="0" max="59" placeholder="MM" style="width: 60px;" @keyup="(e)=>e.target.value.length >= 2 && $refs.pickerSeconds.focus()" />
+              <span>:</span>
+              <input type="number" ref="pickerSeconds" min="0" max="59" placeholder="SS" style="width: 60px;" />
+              <button @click="handleDatePickerChange">{{ $t('common-go-to-time') }}</button>
+            </div>
           </div>
         </div>
       </div>
       <div class="container-fluid mt-4">
-        <div class="row mt-2 mb-4">
-          <div class="col col-md-3">
-            <label for="timePicker">{{ $t('common-go-to-time') }}:</label>
-            <div v-if="currentMediaDuration > 0">
-              <VueDatePicker id="timePicker" v-model="selectedTime" time-picker enable-seconds format="HH:mm:ss" :min-time="minTime"
-                :start-time="startTime" @update:model-value="handleDatePickerChange"></VueDatePicker>
-            </div>
-            <div v-else>
-              <input id="timePicker" type="text" disabled :placeholder="`${$t('common-loading-video-duration')}...`" />
-            </div>
-          </div>
-        </div>
         <div class="row">
           <div class="col" @click="timelineClick">
             <div class="progress" style="height: 10px; width: 100%" ref="timeline">
@@ -319,16 +317,12 @@
 import { mapState } from "pinia";
 
 import { useCorpusStore } from "@/stores/corpusStore";
-// import { useNotificationStore } from "@/stores/notificationStore";
 import { useUserStore } from "@/stores/userStore";
 import { useWsStore } from "@/stores/wsStore";
 
 import config from "@/config";
 import Utils from "@/utils.js";
 import TimelineView from "@/components/videoscope/TimelineView.vue";
-
-import VueDatePicker from '@vuepic/vue-datepicker';
-import '@vuepic/vue-datepicker/dist/main.css';
 
 class Track {
   constructor(name, splits, groups) {
@@ -414,10 +408,7 @@ export default {
     };
   },
   components: {
-    // EditorView,
-    // PaginationComponent,
     TimelineView,
-    VueDatePicker
   },
   computed: {
     ...mapState(useCorpusStore, ["queryData", "corpora"]),
@@ -613,9 +604,12 @@ export default {
       }
       this.playerSpeed = speed;
     },
-    handleDatePickerChange(newTime) {
-      if(newTime === null) {
-        return;
+    handleDatePickerChange() {
+      if (!this.currentMediaDuration) return;
+      const newTime = {
+        hours: Math.min(this.currentMediaDuration/3600, Math.max(parseInt(this.$refs.pickerHours.value) || 0, 0)),
+        minutes: Math.min(59, Math.max(parseInt(this.$refs.pickerMinutes.value) || 0, 0)),
+        seconds: Math.min(59, Math.max(parseInt(this.$refs.pickerSeconds.value) || 0, 0))
       }
 
       // Convert the selected time (HH:mm:ss) to seconds.
