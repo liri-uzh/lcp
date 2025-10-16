@@ -811,10 +811,10 @@ input:checked + label.language {
 #nav-main-tab button:last-child {
   border-radius: 0px 15px 15px 0px;
 }
-#nav-main-tab button.reverse-items:first-child {
+#nav-main-tab.reverse-items button:first-child {
   border-radius: 0px 15px 15px 0px;
 }
-#nav-main-tab button.reverse-items:last-child {
+#nav-main-tab.reverse-items button:last-child {
   border-radius: 15px 0px 0px 15px;
 }
 
