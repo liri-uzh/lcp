@@ -370,7 +370,25 @@ export default {
       }
     }
   },
-  mounted() {
+  async mounted() {
+    const svgInDOM = document.querySelector("svg#corpusDiagram");
+    svgInDOM.parentElement.addEventListener("wheel", (e)=>{
+      e.preventDefault();
+      e.stopPropagation();
+      this.zoom = Math.max(this.zoomMin, Math.min(this.zoomMax, this.zoom + e.deltaY/250));
+    });
+    setTooltips();
+
+    const getSuperParentWidth = r => {
+      const sp = svgInDOM.parentElement.parentElement;
+      if (!sp) return window.requestAnimationFrame(()=>getSuperParentWidth(r));
+      const w = sp.getBoundingClientRect().width;
+      if (w == 0) return window.requestAnimationFrame(()=>getSuperParentWidth(r));
+      console.log("superParent", sp, "width", w);
+      r(w);
+    }
+    this.width = await new Promise(r=>getSuperParentWidth(r));
+
     this.placeInit();
     this.svg = d3
       .select("svg#corpusDiagram")
@@ -386,16 +404,6 @@ export default {
     this.svg.on("pointerleave", this.onPointerUp);
     this.svg.on("pointermove", this.onPointerMove);
 
-    const svgInDOM = document.querySelector("svg#corpusDiagram");
-    svgInDOM.parentElement.addEventListener("wheel", (e)=>{
-      e.preventDefault();
-      e.stopPropagation();
-      this.zoom = Math.max(this.zoomMin, Math.min(this.zoomMax, this.zoom + e.deltaY/250));
-    });
-    setTooltips();
-
-    const superParent = svgInDOM.parentElement.parentElement;
-    this.width = superParent.getBoundingClientRect().width;
   },
   updated() {
     setTooltips();
