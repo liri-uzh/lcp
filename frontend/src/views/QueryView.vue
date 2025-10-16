@@ -755,6 +755,10 @@
   display: flex;
   margin: auto;
   width: min-content;
+  white-space: nowrap;
+  max-width: 80vw;
+  overflow-x: hidden;
+  text-overflow: ellipsis;
 }
 
 #title-view .icon-3 {

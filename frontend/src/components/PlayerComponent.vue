@@ -202,16 +202,14 @@
               :class="mainAudio == 4 ? 'active btn-primary' : 'btn-secondary'" @click="playerMainAudio(4)">
               A4
             </button>
-
-            <div>
-              &nbsp;
-              <input type="number" ref="pickerHours" min="0" placeholder="HH" style="width: 60px;" @keyup="(e)=>e.target.value.length >= 2 && $refs.pickerMinutes.focus()"/>
-              <span>:</span>
-              <input type="number" ref="pickerMinutes" min="0" max="59" placeholder="MM" style="width: 60px;" @keyup="(e)=>e.target.value.length >= 2 && $refs.pickerSeconds.focus()" />
-              <span>:</span>
-              <input type="number" ref="pickerSeconds" min="0" max="59" placeholder="SS" style="width: 60px;" />
-              <button @click="handleDatePickerChange">{{ $t('common-go-to-time') }}</button>
-            </div>
+          </div>
+          <div class="btn-group w-auto" role="group">
+            <input type="number" ref="pickerHours" min="0" placeholder="HH" style="width: 60px;" @keyup="(e)=>e.target.value.length >= 2 && $refs.pickerMinutes.focus()"/>
+            <span>:</span>
+            <input type="number" ref="pickerMinutes" min="0" max="59" placeholder="MM" style="width: 60px;" @keyup="(e)=>e.target.value.length >= 2 && $refs.pickerSeconds.focus()" />
+            <span>:</span>
+            <input type="number" ref="pickerSeconds" min="0" max="59" placeholder="SS" style="width: 60px;" />
+            <button @click="handleDatePickerChange">{{ $t('common-go-to-time') }}</button>
           </div>
         </div>
       </div>
