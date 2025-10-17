@@ -6,6 +6,7 @@ import {
   faArrowsLeftRightToLine,
   faBackward,
   faBackwardStep,
+  faBan,
   faBarcode,
   faCaretDown,
   faCaretLeft,
@@ -13,6 +14,7 @@ import {
   faCertificate,
   faChartSimple,
   faChartGantt,
+  faCheck,
   faCircle,
   faCircleInfo,
   faCircleNodes,
@@ -67,6 +69,7 @@ library.add(faArrowUp);
 library.add(faArrowsLeftRightToLine);
 library.add(faBackward);
 library.add(faBackwardStep);
+library.add(faBan);
 library.add(faBarcode);
 library.add(faCaretDown);
 library.add(faCaretLeft);
@@ -74,6 +77,7 @@ library.add(faCaretRight);
 library.add(faChartSimple);
 library.add(faChartGantt);
 library.add(faCertificate);
+library.add(faCheck);
 library.add(faCircle);
 library.add(faCircleInfo);
 library.add(faCircleNodes);

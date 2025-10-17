@@ -756,9 +756,6 @@
   margin: auto;
   width: min-content;
   white-space: nowrap;
-  max-width: 80vw;
-  overflow-x: hidden;
-  text-overflow: ellipsis;
 }
 
 #title-view .icon-3 {
@@ -917,6 +914,12 @@ textarea {
 }
 </style>
 <style>
+#title-view h2 {
+  max-width: 80vw;
+  overflow-x: hidden;
+  text-overflow: ellipsis;
+}
+
 #corpus-details-modal div:nth-child(1) {
   width: 100%;
 }
