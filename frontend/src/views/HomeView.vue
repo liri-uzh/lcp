@@ -92,7 +92,7 @@
                   class="btn btn-sm btn-light"
                   data-bs-toggle="modal"
                   data-bs-target="#editProjectModal"
-                  @click="modalIndexKey++"
+                  @click="[modalIndexKey++,currentProject=project]"
                 >
                   <FontAwesomeIcon :icon="['fas', 'gear']" />
                 </button>
