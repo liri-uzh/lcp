@@ -9,14 +9,8 @@
       <div class="row mt-3">
         <div class="col">
           <div class="input-group mb-3">
-            <!-- <span class="input-group-text" id="basic-addon1">
-              <FontAwesomeIcon :icon="['fas', 'magnifying-glass']" />
-            </span> -->
             <!-- Include: Text | Sound | Video (once we have a single instance) -->
             <input type="text" class="form-control" v-model="corporaFilter" :placeholder="$t('platform-general-find-corpora')" />
-            <!-- <span class="input-group-text" id="basic-addon1" @click="switchLanguageFilter">
-              <FontAwesomeIcon :icon="['fas', 'filter']" />
-            </span> -->
           </div>
           <div v-if="corporaFilter && filterError && filterError.message" class="alert notification alert-danger">
             {{ filterError.message }}
@@ -64,7 +58,8 @@
               >
                 <FontAwesomeIcon
                   :icon="projectIcons(project)"
-                  class="me-1"
+                  class="me-1 tooltips"
+                  :title="project.isPublic ? 'Public collection' : (project.isSemiPublic ? 'Log-in required' : 'Private collection')"
                 />
                 <strong>{{ project.title }}</strong>
                 <span class="api-badge"> ({{ project.corpora.length }})</span>
@@ -89,9 +84,6 @@
                     <FontAwesomeIcon :icon="['fas', project.api ? 'check' : 'ban']" />
                     API
                   </div>
-                  <!-- <div class="col-2">
-                    Visibility: <b>{{ project.additionalData && project.additionalData.visibility ? project.additionalData.visibility : "private" }}</b>
-                  </div> -->
                 </div>
               </div>
               <div class="project-settings" v-if="project.isAdmin">
@@ -120,11 +112,11 @@
             >
               &gt;
             </div>
-            <div class="corpora-container" :style="corporaContainer(filterCorpora(project.corpora))">
+            <div class="corpora-container" :style="corporaContainer(filterCorpora(project.corpora))" @pointerdown="e=>dragScrollProjects(e,project.id)">
               <div
                 v-for="corpus in filterCorpora(project.corpora)"
                 :key="corpus.id"
-                @click="openQueryWithCorpus(corpus)"
+                @mouseup="openQueryWithCorpus(corpus)"
               >
                 <div class="corpus-block" :class="`data-type-${corpusDataType(corpus)}`">
                   <div class="corpus-block-header px-4 py-3">
@@ -371,7 +363,14 @@ export default {
       corpusStore: useCorpusStore(),
       overflowingLeft: {},
       overflowingRight: {},
-      scrollProjectTimeout: null
+      scrollProjectTimeout: null,
+      resizeObserver: new ResizeObserver((entries) => entries.forEach(e=>{
+        const cc = e.target.querySelector(".corpora-container");
+        if (!cc) return;
+        cc.style.marginLeft = 0;
+        this.updateOverflows();
+      })),
+      dragScrolling: []
     };
   },
   components: {
@@ -401,6 +400,9 @@ export default {
       if (corpora.length == 0)
         ret = "height: 0px;"
       return ret;
+    },
+    dragScrollProjects(event, projectId) {
+      this.dragScrolling = [event.clientx, projectId];
     },
     switchLanguageFilter() {
       this.showLanguageFilters = !this.showLanguageFilters;
@@ -460,14 +462,7 @@ export default {
       });
       return itemsWidth;
     },
-    updateTabsCarets() {
-      // console.log("AE", this.widthOfTabs(), this.scrollBoxSize())
-      // if (this.widthOfTabs() > this.scrollBoxSize()) {
-        this.$refs.rightcaret.style.display = "block";
-        this.$refs.leftcaret.style.display = "block";
-      // }
-    },
-
+    
     filterCorpora(corpora) {
       if (this.corporaFilter) {
         let rgx = null;
@@ -631,7 +626,12 @@ export default {
     //   });
     //   this.tooltips = [];
     // },
-    scrollProject(projectId, direction) {
+    updateOverflows() {
+      this.overflowingLeft = {1:1, ...Object.fromEntries(this.projectsGroups.filter(p=>this.corpusOverflow(p.id, 'left')).map(p=>[p.id,1]))};
+      this.overflowingRight = {1:1, ...Object.fromEntries(this.projectsGroups.filter(p=>this.corpusOverflow(p.id, 'right')).map(p=>[p.id,1]))};
+    },
+    scrollProject(projectId, direction, delta) {
+      delta = delta || 100;
       if (this.scrollProjectTimeout)
         this.scrollProjectTimeout = clearTimeout(this.scrollProjectTimeout);
       const projectsRef = this.$refs.projects;
@@ -643,12 +643,11 @@ export default {
       const projectContainerRight = projectContainer.getBoundingClientRect().right;
       const lastChildLeft = [...corporaContainer.children].at(-1).getBoundingClientRect().left;
       const left = parseInt(window.getComputedStyle(corporaContainer).marginLeft);
-      let newMargin = left + (direction=='right'?-1:1) * 100;
+      let newMargin = left + (direction=='right'?-1:1) * delta;
       if (newMargin > 0) newMargin = 0;
       if (lastChildLeft+350 < projectContainerRight) newMargin = Math.max(newMargin, left);
       corporaContainer.style.marginLeft = `${newMargin}px`;
-      this.overflowingLeft = {1:1, ...Object.fromEntries(this.projectsGroups.filter(p=>this.corpusOverflow(p.id, 'left')).map(p=>[p.id,1]))};
-      this.overflowingRight = {1:1, ...Object.fromEntries(this.projectsGroups.filter(p=>this.corpusOverflow(p.id, 'right')).map(p=>[p.id,1]))};
+      this.updateOverflows();
       this.scrollProjectTimeout = setTimeout(()=>this.scrollProject(projectId, direction), 5);
     }
   },
@@ -740,9 +739,18 @@ export default {
   mounted() {
     // this.setTooltips();
     setTooltips();
-    // window.addEventListener('resize', this.updateTabsCarets);
-    // this.updateTabsCarets();
+    window.addEventListener("pointermove", e=>{
+      const [lastX, projectId] = this.dragScrolling;
+      if (!projectId) return;
+      const diff = lastX - e.clientX;
+      this.scrollProject(projectId, diff > 0 ? 'right' : 'left', Math.abs(diff));
+      // Don't automatically keep scrolling but keep a 500ms timeout to prevent pointerup from opening corpora 
+      if (this.scrollProjectTimeout) clearTimeout(this.scrollProjectTimeout);
+      this.scrollProjectTimeout = setTimeout(()=>this.scrollProjectTimeout = null, 500);
+      this.dragScrolling[0] = e.clientX;
+    }),
     window.addEventListener("pointerup", ()=>{
+      this.dragScrolling = [];
       if (!this.scrollProjectTimeout) return;
       clearTimeout(this.scrollProjectTimeout);
       this.scrollProjectTimeout = setTimeout(()=>this.scrollProjectTimeout = null, 500); // prevent clicks on corpora
@@ -750,7 +758,6 @@ export default {
   },
   watch: {
     projects() {
-      // this.updateTabsCarets();
     },
     allLanguages() {
       this.languageFilter = this.languageFilter || this.allLanguages.map(l=>l.langCode);
@@ -761,12 +768,13 @@ export default {
     // setTooltips();
     if (Object.keys(this.overflowingLeft).length > 0 || Object.keys(this.overflowingRight).length > 0) return;
     await new Promise(r=>setTimeout(r, 500));
-    this.overflowingLeft = {1:1, ...Object.fromEntries(this.projectsGroups.filter(p=>this.corpusOverflow(p.id, 'left')).map(p=>[p.id,1]))};
-    this.overflowingRight = {1:1, ...Object.fromEntries(this.projectsGroups.filter(p=>this.corpusOverflow(p.id, 'right')).map(p=>[p.id,1]))};
+    this.updateOverflows();
+    this.resizeObserver.disconnect();
+    for (let c of this.$refs.projects.querySelectorAll(".corpora-container"))
+      this.resizeObserver.observe(c.parentElement);
   },
   beforeUnmount() {
     // this.removeTooltips();
-    // window.removeEventListener('resize', this.updateTabsCarets);
     removeTooltips();
   },
 };
@@ -927,6 +935,7 @@ export default {
   flex-flow: column wrap;
   overflow-x: hidden;
   resize: vertical;
+  user-select: none;
 }
 
 .corpus-block {
@@ -1162,6 +1171,7 @@ export default {
   padding: 0px;
   color: gray;
   background-color: white;
+  box-shadow: 0px 0px 2px gray;
 }
 #new-collection:hover button {
   color: whitesmoke !important;
