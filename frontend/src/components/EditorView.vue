@@ -117,7 +117,14 @@ const KEYWORDS = [
   'AND\n    ',
   'OR\n    ',
   'plain\n    ',
-  'analysis\n  ',
+  'analysis\n    ',
+  'collocation\n    ',
+  'center\n    ',
+  'window\n    ',
+  'space\n    ',
+  'attribute\n    ',
+  'attributes\n    ',
+  'functions\n    ',
   'context\n    ',
   'entities\n    '
 ];
@@ -267,6 +274,11 @@ export default {
     // eslint-disable-next-line no-unused-vars
     suggestValuesCommandId = editor.addCommand( 0, (_,suggestion) => this.triggerAutocomplete(suggestion) );
 
+    editor.updateOptions({
+      quickSuggestions: true,
+      acceptSuggestionOnEnter: false, // disables accepting suggestions with Enter
+    });
+
     window.addEventListener('contextmenu', e => {
       e.stopImmediatePropagation()
     }, true);
@@ -325,7 +337,7 @@ export default {
             s.push({
               label: text,
               kind: monaco.languages.CompletionItemKind.Keyword,
-              insertText: `${text} = `,
+              insertText: `${text} ${ap.type == 'labels' ? 'contain' : '='} `,
               range: range,
               command: {
                 id: suggestValuesCommandId,
