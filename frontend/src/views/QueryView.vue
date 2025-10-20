@@ -518,7 +518,7 @@
           </div>
           <div class="modal-body text-start">
             <div class="form-floating mb-3">
-              <nav>
+              <!-- <nav>
                 <div class="nav nav-tabs justify-content-end" id="nav-export-tab" role="tablist">
                   <button
                     class="nav-link active"
@@ -548,7 +548,7 @@
                     SwissdoxViz
                   </button>
                 </div>
-              </nav>
+              </nav> -->
               <div class="tab-content" id="nav-exportxml-tabContent">
                 <div
                   class="tab-pane fade show active pt-3"
@@ -556,33 +556,58 @@
                   role="tabpanel"
                   aria-labelledby="nav-exportxml-tab"
                 >
-                  <label for="nExport">Number of hits:</label>
-                  <input
-                    type="text"
-                    class="form-control"
-                    id="nExport"
-                    name="nExport"
-                    v-model="nExport"
-                  />
-                  <label for="nameExport">Filename:</label>
-                  <input
-                    type="text"
-                    class="form-control"
-                    id="nameExport"
-                    name="nameExport"
-                    v-model="nameExport"
-                  />.{{ exportTab }}
-                  <button
-                    type="button"
-                    @click="exportResults('xml', /*download=*/true, /*preview=*/true)"
-                    class="btn btn-primary me-1"
-                    data-bs-dismiss="modal"
-                  >
-                    Download
-                  </button>
+                  <div class="row">
+                    <label class="col" for="nameExport">Filename:</label>
+                    <label class="col-2" for="extension">Export as</label>
+                  </div>
+                  <div class="row">
+                    <input
+                      type="text"
+                      class="form-control col"
+                      id="nameExport"
+                      name="nameExport"
+                      v-model="nameExport"
+                    />
+                    <select
+                      v-if="isSwissdox"
+                      class="col-2"
+                      v-model="exportTab"
+                    >
+                      <option value="xml">*.xml</option>
+                      <option value="swissdox">*.swissdox</option>
+                    </select>
+                    <span
+                      v-else
+                      class="col-2"
+                      style="margin-top: 0.33em;"
+                    >
+                      *.{{ exportTab }}
+                    </span>
+                  </div>
+                  <div class="row" style="margin-top: 1em;">
+                    <label for="nExport" v-if="!isSwissdox || exportTab == 'xml'">Number of hits:</label>
+                  </div>
+                  <div class="row">
+                    <input
+                      type="text"
+                      class="form-control col"
+                      id="nExport"
+                      name="nExport"
+                      v-model="nExport"
+                      :style="`margin-right: 1em; visibility: ${isSwissdox && exportTab == 'swissdox' ? 'hidden;' : 'visible'};`"
+                    />
+                    <button
+                      type="button"
+                      @click="exportResults(exportTab, /*download=*/true, /*preview=*/true)"
+                      class="btn btn-primary me-1 col-2"
+                      data-bs-dismiss="modal"
+                    >
+                      Download
+                    </button>
+                  </div>
                 </div>
               </div>
-              <div class="tab-content" id="nav-exportswissdox-tabContent">
+              <!-- <div class="tab-content" id="nav-exportswissdox-tabContent">
                 <div
                   class="tab-pane fade pt-3"
                   id="nav-exportswissdox"
@@ -606,7 +631,7 @@
                     Launch export
                   </button>
                 </div>
-              </div>
+              </div> -->
             </div>
           </div>
           <div class="modal-footer">
@@ -1920,6 +1945,9 @@ export default {
     ...mapState(useCorpusStore, {corpusLanguages: "languages"}),
     ...mapState(useUserStore, ["userData", "roomId", "debug"]),
     ...mapState(useWsStore, ["messages"]),
+    isSwissdox() {
+      return this.selectedCorpora && this.selectedCorpora.corpus && this.selectedCorpora.corpus.shortname.match(/swissdox/i);
+    },
     baseMediaUrl() {
       let retval = ""
       if (this.selectedCorpora && this.selectedCorpora.corpus) {

@@ -39,6 +39,7 @@
             <table class="fit-page">
               <tr>
                 <th>Last update</th>
+                <th>Name</th>
                 <th>Message</th>
                 <th>Status</th>
               </tr>
@@ -48,6 +49,7 @@
                   :key="`notif-${n}`"
               >
                   <td>{{notif.when}}</td>
+                  <td>{{(notif.name || "").split("/").at(-1)}}</td>
                   <td>{{notif.msg}}</td>
                   <td
                     v-if="notif.dl_info && notif.dl_info.status == 'ready'"
@@ -94,12 +96,12 @@ export default {
       const nowStr = new Date().toLocaleString();
       if (data["action"] == "started_export") {
         const info = {created_at: nowStr, status: data.status || "exporting", hash: data.hash};
-        this.notifs = [{when: nowStr, msg: `Started exporting to ${data.format}`, dl_info: info, warn: true}, ...this.notifs];
+        this.notifs = [{when: nowStr, name: data.filename, msg: `Started exporting to ${data.format}`, dl_info: info, warn: true}, ...this.notifs];
         this.warn = true;
       }
       if (data["action"] == "export_complete") {
         const info = {created_at: nowStr, status: data.status || "downloading", hash: data.hash};
-        this.notifs = [{when: nowStr, msg: `Downloading ${data.format} export file`, dl_info: info, warn: true}, ...this.notifs];
+        this.notifs = [{when: nowStr, name: data.filename, msg: `Downloading ${data.format} export file`, dl_info: info, warn: true}, ...this.notifs];
         this.warn = true;
       }
       if (data["action"] == "export_notifs") {
@@ -129,7 +131,7 @@ export default {
             status: status,
             created_at: created_at
           };
-          const obj = {when: d, msg: `Exported ${filename}`, dl_info: info};
+          const obj = {name: filename, when: d, msg: `Exported ${filename}`, dl_info: info};
           if (status == "failed")
             obj.msg = `Error ${filename}: ${msg}`;
           else if (status != "ready")
@@ -205,5 +207,25 @@ span.download {
 table.fit-page {
   max-height: 80vh;
   overflow-y: scroll;
+}
+
+table.fit-page tr > th, table.fit-page tr > td {
+  display: inline-block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+table.fit-page tr > th:nth-child(1), table.fit-page tr > td:nth-child(1) {
+  width: 15vw;
+}
+table.fit-page tr > th:nth-child(2), table.fit-page tr > td:nth-child(2) {
+  width: 15vw;
+}
+table.fit-page tr > th:nth-child(3), table.fit-page tr > td:nth-child(3) {
+  width: 50vw;
+}
+table.fit-page tr > th:nth-child(4), table.fit-page tr > td:nth-child(4) {
+  width: 10vw;
 }
 </style>
