@@ -116,7 +116,7 @@
               <div
                 v-for="corpus in filterCorpora(project.corpora)"
                 :key="corpus.id"
-                @mouseup="openQueryWithCorpus(corpus)"
+                @click.stop="openQueryWithCorpus(corpus)"
               >
                 <div class="corpus-block" :class="`data-type-${corpusDataType(corpus)}`">
                   <div class="corpus-block-header px-4 py-3">
