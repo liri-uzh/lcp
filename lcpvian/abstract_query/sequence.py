@@ -303,28 +303,26 @@ class Cte:
             )
             pl_ref = self.sequence.sql.layer(pl, self.tok, pointer=True) if pl else None
             nl_ref = self.sequence.sql.layer(pl, self.tok, pointer=True) if nl else None
+            pl_alias = sql_str("{}.{}", from_table, pl_ref.alias if pl_ref else "")
+            nl_alias = sql_str("{}.{}", from_table, nl_ref.alias if nl_ref else "")
 
             if pl_ref:
-                infixwheres.append(
-                    sql_str(f"{tok_ref} = {LR}.{LR} + 1", from_table, pl_ref.alias)
-                )
+                infixwheres.append(f"{tok_ref} = {pl_alias} + 1")
             elif nl_ref:
                 infixwheres.append(
-                    sql_str(f"{tok_ref} < {LR}.{LR}", from_table, nl_ref.alias)
+                    f"{tok_ref} < {nl_alias}"
                 )  # In case this is the beginning of the segment
 
             if self.optional:
                 # void_transition: str = f"transition{self.n}.dest_state = {max_n}"
                 void_transition: str = f"transition{self.n}.dest_state = -1"
                 if nl:
-                    void_transition += f" AND {tok_ref} = {from_table}.{nl} AND transition{self.n}.label = 'void'"
+                    void_transition += f" AND {tok_ref} = {nl_alias} AND transition{self.n}.label = 'void'"
                     # Make sure the previous and next fixed tokens are adjacent!
                     if pl:
-                        void_transition += (
-                            f" AND {from_table}.{nl} = {from_table}.{pl} + 1"
-                        )
+                        void_transition += f" AND {nl_alias} = {pl_alias} + 1"
                 elif pl_ref:
-                    void_transition += f" AND {tok_ref} = {pl_ref} AND transition{self.n}.label = 'void'"
+                    void_transition += f" AND {tok_ref} = {pl_alias} AND transition{self.n}.label = 'void'"
                 else:
                     raise RuntimeError(
                         f"Cannot query a fully optional sequence ({self.sequence.sequence.label})"
