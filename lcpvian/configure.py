@@ -126,7 +126,10 @@ def _get_batches(config: CorpusConfig) -> dict[str, int]:
         n_batches = mapping["batches"]
         name = mapping["relation"]
         count_key = name.replace("<batch>", "0").lower()
-        size = next(v for k, v in counts.items() if k.lower() == count_key)
+        try:
+            size = next(v for k, v in counts.items() if k.lower() == count_key)
+        except:
+            size = sum(v for v in counts.values())
         more = _generate_batches(n_batches, name, size)
         batches.update(more)
     if not batches:

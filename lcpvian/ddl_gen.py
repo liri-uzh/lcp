@@ -118,7 +118,7 @@ class DDL:
         self.update_prep_segs: Callable[[str, list[str], str, str, list[str]], str] = (
             lambda layer, attrs, seg, tok, joins: dedent(
                 f"""
-            UPDATE prepared_{seg} ps
+            UPDATE prepared_{seg.lower()} ps
             SET annotations = jsonb_set(ps.annotations, '{LB}LB{RB}{layer}{LB}RB{RB}', cte.annotations::jsonb)
             FROM (
                 SELECT
@@ -525,6 +525,7 @@ class CTProcessor:
         project_id: str,
         glos: Globs,
         corpus_version: int = 1,
+        n_batches: int = 10,
     ) -> None:
         self.corpus_temp = corpus_template
         self.project_id = project_id
@@ -534,6 +535,7 @@ class CTProcessor:
         self.globals = glos
         self.ddl = DDL()
         self.corpus_version = corpus_version
+        self.n_batches = n_batches
 
     @staticmethod
     def _order_ct_layers(
@@ -786,7 +788,11 @@ class CTProcessor:
             )
             table_cols.append(part_col)
             ptable = PartitionedTable(
-                table_name, table_cols, anchorings=anchs, column_part=part_ent_col
+                table_name,
+                table_cols,
+                anchorings=anchs,
+                column_part=part_ent_col,
+                num_part=self.n_batches,
             )
             tables.append(ptable)
         elif l_name == self.globals.base_map["segment"]:
@@ -794,7 +800,11 @@ class CTProcessor:
             part_ent_col = f"{part_ent}_id"
 
             ptable = PartitionedTable(
-                table_name, table_cols, anchorings=anchs, column_part=part_ent_col
+                table_name,
+                table_cols,
+                anchorings=anchs,
+                column_part=part_ent_col,
+                num_part=self.n_batches,
             )
             tables.append(ptable)
         else:
@@ -916,7 +926,10 @@ class CTProcessor:
         part_ent_col = f"{part_ent}_id"
 
         ptable = PartitionedTable(
-            "fts_vector", [part_col, fts_col], column_part=part_ent_col
+            "fts_vector",
+            [part_col, fts_col],
+            column_part=part_ent_col,
+            num_part=self.n_batches,
         )
 
         self.globals.tables.append(ptable)
@@ -1123,7 +1136,7 @@ class CTProcessor:
                 # layer, attrs, seg, tok, joins
                 self.ddl.update_prep_segs(layer, attrs, segname, tokname, joins)
             )
-            self.globals.prep_seg_updates.append(update)
+            self.globals.prep_seg_updates.append(f"\n\n{searchpath}\n{update}")
 
         # todo: check this again
         for i in range(1, self.globals.num_partitions):
@@ -1133,17 +1146,21 @@ class CTProcessor:
                 batch = batchname.replace("<batch>", str(i))
             self.globals.batchnames.append(batch)
 
+        if not self.globals.batchnames:
+            self.globals.batchnames.append(batchname.replace("<batch>", "0"))
+
 
 def generate_ddl(
     corpus_temp: dict[str, Any],
     project_id: str,
     corpus_version: int = 1,
     no_index: list[list[str]] = [],
+    n_batches: int = 10,
 ) -> dict[str, str | list[str] | dict[str, int]]:
     globs = Globs()
     globs.base_map = corpus_temp["firstClass"]
 
-    processor = CTProcessor(corpus_temp, project_id, globs, corpus_version)
+    processor = CTProcessor(corpus_temp, project_id, globs, corpus_version, n_batches)
 
     schema_name = processor.process_schema()
     processor.process_layers()

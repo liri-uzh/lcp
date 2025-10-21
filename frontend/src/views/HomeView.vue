@@ -49,6 +49,8 @@
             :id="`project-${project.id}`"
             class="tab-pane fade active show"
             :style="`order: ${filterCorpora(project.corpora).length == 0 ? 2 : 1}`"
+            @pointerenter="currentProject=project"
+            @wheel="e=>wheelScroll(e, project.id)"
           >
             <div class="project-header" v-if="project.description || project.isAdmin">
               <span
@@ -404,6 +406,14 @@ export default {
     dragScrollProjects(event, projectId) {
       this.dragScrolling = [event.clientx, projectId];
     },
+    wheelScroll(event, projectId) {
+      if (!event.deltaX && !event.shiftKey) return;
+      const d = event.shiftKey ? event.deltaY : event.deltaX;
+      this.scrollProject(projectId, d > 0 ? "right" : "left");
+      this.scrollProjectTimeout = clearTimeout(this.scrollProjectTimeout);
+      event.stopPropagation();
+      event.preventDefault();
+    },
     switchLanguageFilter() {
       this.showLanguageFilters = !this.showLanguageFilters;
       if (this.languageFilter instanceof Array) return;
@@ -739,6 +749,15 @@ export default {
   mounted() {
     // this.setTooltips();
     setTooltips();
+    window.addEventListener("keydown", e=>{
+      if (!this.currentProject) return;
+      if (e.key == "ArrowLeft") this.scrollProject(this.currentProject.id, 'left');
+      if (e.key == "ArrowRight") this.scrollProject(this.currentProject.id, 'right');
+    });
+    window.addEventListener("keyup", ()=>{
+      if (!this.scrollProjectTimeout) return;
+      this.scrollProjectTimeout = clearTimeout(this.scrollProjectTimeout);
+    });
     window.addEventListener("pointermove", e=>{
       const [lastX, projectId] = this.dragScrolling;
       if (!projectId) return;
@@ -748,7 +767,7 @@ export default {
       if (this.scrollProjectTimeout) clearTimeout(this.scrollProjectTimeout);
       this.scrollProjectTimeout = setTimeout(()=>this.scrollProjectTimeout = null, 500);
       this.dragScrolling[0] = e.clientX;
-    }),
+    });
     window.addEventListener("pointerup", ()=>{
       this.dragScrolling = [];
       if (!this.scrollProjectTimeout) return;

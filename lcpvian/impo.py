@@ -505,7 +505,7 @@ class Importer:
         """
         Run the prepared segment scripts, potentially concurrently
         """
-        self.update_progress("Computing prepared segments...")
+        self.update_progress(f"Computing prepared segments...\n{self.create}\n")
         await self.run_script(self.create)
         msg = f"Running {len(self.batches)} insert tasks:\n{self.insert}\n"
         self.update_progress(msg)
