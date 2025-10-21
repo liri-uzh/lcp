@@ -68,6 +68,7 @@ class Member:
                         {
                             "unit": {
                                 "label": members[0]["unit"].get("label", "anonymous"),
+                                "layer": members[0]["unit"]["layer"],
                                 "constraints": disjunction_constraints,
                             }
                         },
