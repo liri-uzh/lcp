@@ -52,7 +52,7 @@
             @pointerenter="currentProject=project"
             @wheel="e=>wheelScroll(e, project.id)"
           >
-            <div class="project-header" v-if="project.description || project.isAdmin">
+            <div class="project-header">
               <span
                 class="project-name"
                 :class="project.corpora.length == 0 ? 'no-corpora' : ''"
@@ -701,7 +701,7 @@ export default {
         }
       })
       // Rest
-      sortedProjects.push(...Object.values(projects))
+      sortedProjects.push(...Object.values(projects));
       return sortedProjects;
     },
     getUniqueProjects() {

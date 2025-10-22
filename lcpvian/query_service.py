@@ -360,7 +360,7 @@ class QueryService:
         # print("document query", query)
 
         job: Job
-        kwargs = {"user": user, "room": room, "config": config, "span": span}
+        kwargs = {"user": user, "room": room, "conf": config, "span": span}
         job = self.app[queue].enqueue(
             _db_query,
             on_success=Callback(_clip_media, self.timeout),
