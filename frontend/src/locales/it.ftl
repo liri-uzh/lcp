@@ -13,7 +13,7 @@ platform-general-description =
 platform-general-no-permission = Attualmente non hai i permessi per interrogare questo corpus. Consulta la descrizione del corpus per sapere come ottenere l'accesso.
 platform-general-access-restricted = L'accesso a questo corpus è ristretto. Devi effettuare il login per verificare i tuoi permessi.
 platform-general-fetched-results = Le prime pagine dei risultati sono state recuperate. Altri risultati verranno caricati se passi alla pagina successiva o se clicchi su Cerca in tutto il corpus.
-platform-general-find-corpora = Trova corpora
+platform-general-find-corpora = Trova corpora per nome
 platform-general-corpus-edit = Modifica corpus
 platform-general-corpus-license = Licenza del corpus
 platform-general-user-license = Licenza del corpus: Definita dall'utente - Controlla i dettagli
@@ -128,6 +128,8 @@ common-zoom-out = Riduci zoom
 common-zoom-in = Aumenta zoom
 common-zoom-reset-default = Reimposta predefinito
 common-zoom-fit-content = Adatta al contenuto
+
+common-clip-media = Clip media
 
 common-yes = Sì
 common-no = No

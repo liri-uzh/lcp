@@ -45,6 +45,17 @@
         />
         {{ $t("common-zoom-fit-content") }}
       </button>
+      <button
+        class="btn btn-primary btn-sm me-1"
+        @click="clipMedia"
+        v-if="userData && userData.user && userData.user.id && Math.abs(selectionStart - selectionEnd) > 0.1"
+      >
+        <FontAwesomeIcon
+          :icon="['fas', 'file-export']"
+          class="me-1"
+        />
+        {{ $t("common-clip-media") }}
+      </button>
     </div>
     <!--
     <div class="slider-container">
@@ -132,10 +143,15 @@ svg#timeline-svg {
 <script>
 import * as d3 from 'd3'
 
+import { mapState } from "pinia";
+
+import { useCorpusStore } from "@/stores/corpusStore";
+import { useUserStore } from "@/stores/userStore";
 import Utils from "@/utils.js";
 
 // Global variables
 let svg = null;
+let selectRect = null;
 let zoom;
 let linearScale = null;
 // eslint-disable-next-line
@@ -148,7 +164,7 @@ const DEFAULT_ZOOM_LEVEL = 20;
 
 export default {
   name: "TimelineView",
-  props: ["data", "playerIsPlaying", "playerCurrentTime", "mediaDuration", "hoveredResult"],
+  props: ["data", "playerIsPlaying", "playerCurrentTime", "mediaDuration", "hoveredResult", "corpusId", "docId"],
   data() {
     return {
       defaultCurrentTime: this.playerCurrentTime,
@@ -158,7 +174,10 @@ export default {
       isMobile: false,
       isLandscape: false,
       resizeHandler: null,
-      hoveringAnnotation: null
+      hoveringAnnotation: null,
+      selectionStart: 0,
+      selectionEnd: 0,
+      selecting: false
     }
   },
   watch: {
@@ -208,6 +227,7 @@ export default {
     },
   },
   computed: {
+    ...mapState(useUserStore, ["userData", "roomId"]),
     mobileOrientationStyle() {
       // only override on mobile
       if (!this.isMobile) {
@@ -461,7 +481,7 @@ export default {
       barAndTextGroups.append("clipPath")
         .attr("id", (d, i) => `barClip${i}`)
         .append("rect")
-        .attr("x", (d) => linearScale(d.x1))
+        .attr("x", (d) => linearScale(d.x1) )
         .attr("y", (d) => heightStart[d.l])
         .attr("width", (d) => linearScale(d.x2) - linearScale(d.x1))
         .attr("height", 20);
@@ -478,7 +498,30 @@ export default {
         .attr("fill", (d) => (barColors[d.l % barColors.length]))
         .attr("opacity", 0.75);
 
-      // Add text labels to the bar and text groups
+      const that = this;
+      const selectionProxy = new Proxy({}, {
+        get(...args) {
+          if (args[1] == "x1")
+            return Math.min(that.selectionStart, that.selectionEnd);
+          else
+            return Math.max(that.selectionStart, that.selectionEnd);
+        }
+      });
+      // Selection box
+      selectRect = svg
+        .append("rect")
+        .data([selectionProxy])
+        .attr("clip-path", "url(#myClip)")
+        .attr("rx", "2")
+        .attr("x", (d) => linearScale(d.x1))
+        .attr("y", 0)
+        .attr("width", (d) => linearScale(d.x2) - linearScale(d.x1))
+        .attr("height", height) // Height of the bars
+        .attr("fill", "pink")
+        .attr("opacity", 0.5);
+
+
+        // Add text labels to the bar and text groups
       barAndTextGroups
         .append("text")
         .attr("x", (d) => linearScale(d.x1) + 3)
@@ -520,9 +563,13 @@ export default {
           .attr("x", (d) => newXScale(d.x1))
           .attr("width", (d) => newXScale(d.x2) - newXScale(d.x1));
 
+        selectRect
+          .attr("x", (d) => newXScale(d.x1))
+          .attr("width", (d) => newXScale(d.x2) - newXScale(d.x1));
+
         // Update the text
         barsGroup.selectAll("text").attr("x", (d) => newXScale(d.x1) + 5);
-
+        
         // Update the vertical line
         const verticalLineX = newXScale(this.currentTime);
 
@@ -543,6 +590,12 @@ export default {
           [padding, 0],
           [width, height],
         ])
+        .filter(function(event) {
+          if (event.type !== 'mousedown')
+            return false; // Ignore non-mousedown events
+          // Check if modifier key is pressed
+          return event.ctrlKey || event.altKey || event.shiftKey;
+        })
         .on("zoom", zoomed);
 
       // Apply zoom behavior to SVG
@@ -612,6 +665,16 @@ export default {
             this.$emit("annotationClick", this.hoveringAnnotation._stick);
           }
         })
+        .on('mousedown', (e) => {
+          if (e.ctrlKey || e.altKey || e.shiftKey) return;
+          const transform = d3.zoomTransform(svg.node());
+          const clickX = transform.invertX(d3.pointer(event)[0]);
+          const originalValue = linearScale.invert(clickX);
+
+          this.selectionStart = originalValue;
+          this.selectionEnd = originalValue;
+          this.selecting = true;
+        })
         .on('mouseout', function () {
           // on mouse out hide line, circles and text
           d3.select('.mouse-line').style('opacity', '0');
@@ -634,6 +697,14 @@ export default {
           const transform = d3.zoomTransform(svg.node());
           const clickX = transform.invertX(d3.pointer(event)[0]);
           const originalValue = linearScale.invert(clickX);
+
+          if (this.selectionStart && this.selecting) {
+            this.selectionEnd = originalValue;
+            const newXScale = d3.zoomTransform(svg.node()).rescaleX(linearScale);
+            selectRect
+              .attr("x", (d) => newXScale(d.x1))
+              .attr("width", (d) => newXScale(d.x2) - newXScale(d.x1));
+          }
 
           d3
             .select(".mouse-text")
@@ -671,6 +742,17 @@ export default {
       this.zoomValue = DEFAULT_ZOOM_LEVEL;
 
       this.updateCurrentPosition(this.currentTime > 0 ? this.currentTime : this.defaultCurrentTime);
+    },
+    clipMedia() {
+      const [x1,x2] = this.selectionStart < this.selectionEnd ? [this.selectionStart,this.selectionEnd] : [this.selectionEnd, this.selectionStart];
+      if (x2-x1 < 0.1) return;
+      useCorpusStore().clipMedia({
+        room: this.roomId,
+        user: this.userData.user.id,
+        corpus: this.corpusId,
+        document: this.docId,
+        span: [x1, x2]
+      });
     }
   },
   mounted() {
@@ -679,6 +761,14 @@ export default {
       clearTimeout(this._resizeTimeout)
       this._resizeTimeout = setTimeout(() => this.checkMobile(e), 200)
     }
+    document.addEventListener("mouseup", ()=>{
+      if (!this.selecting) return;
+      this.selecting = false;
+      if (this.selectionStart && this.selectionEnd && Math.abs(this.selectionEnd - this.selectionStart) > 0.1)
+        return;
+      this.selectionStart = 0;
+      this.selectionEnd = 0;
+    });
     // Initialize the timeline
     this.initializeTimeline();
   },

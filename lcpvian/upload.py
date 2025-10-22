@@ -510,18 +510,6 @@ async def make_schema(request: web.Request) -> web.Response:
     proj_id = cast(str, existing_project["id"])
 
     corpus_name = _sanitize_corpus_name(template["meta"]["name"])
-    # corpus_version = template["meta"]["version"]
-    # below we add a random suffix to the corpus name.
-    # suffix of the name has 1/65536 chance of collision,
-    # which is on the borderline of being too high in prod.
-    # becomes 1/4.3b chance if we use [0] instead of [1]
-    # but the schema name gets noticeably uglier, so ...
-
-    #  suffix = corpus_folder.split("-", 2)[1]
-    # suffix = re.sub(r"[^a-zA-Z0-9]", "", proj_id)
-    # version_n = re.sub(r"[^0-9]", "", str(corpus_version))
-
-    # schema_name = f"{corpus_name}__{suffix}_{version_n}"
 
     sames = [
         i
@@ -533,19 +521,8 @@ async def make_schema(request: web.Request) -> web.Response:
     ]
 
     corpus_version = (max(int(x["current_version"]) for x in sames) if sames else 0) + 1
-    # schema_name = f"{corpus_name.lower()}__{suffix}_{corpus_version}"
     template["meta"] = template.get("meta", {})
     template["meta"]["version"] = corpus_version
-
-    # todo: is this the right approach?
-    # cv = f"'{corpus_version}'" if isinstance(corpus_version, str) else corpus_version
-    # delete = f"DELETE FROM main.corpus WHERE name = '{template['meta']['name']}' AND current_version < {cv};"
-    # drops.append(delete)
-    # deletes = [
-    #     f"DELETE FROM main.corpus WHERE corpus_id = {int(i)};"
-    #     for i in set(x["corpus_id"] for x in sames if "corpus_id" in x)
-    # ]
-    # drops += deletes
 
     # Temporary schema name
     schema_name = str(uuid4())
@@ -558,7 +535,8 @@ async def make_schema(request: web.Request) -> web.Response:
         no_index: list[list[str]] = cast(
             list[list[str]], request_data.get("no_index", [])
         )
-        pieces = generate_ddl(template, proj_id, corpus_version, no_index)
+        n_batches = request_data.get("n_batches", 10)
+        pieces = generate_ddl(template, proj_id, corpus_version, no_index, n_batches)
         pieces["template"] = template
     except Exception as err:
         tb = traceback.format_exc()

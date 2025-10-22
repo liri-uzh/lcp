@@ -35,7 +35,7 @@ WITH RECURSIVE fixed_parts AS
    FROM fixed_parts),
                res1 AS
   (SELECT DISTINCT 1::int2 AS rstype,
-                   jsonb_build_array(u, jsonb_build_array(t) , array[lower(match_list."u_frame_range"), upper(match_list."u_frame_range")])
+                   jsonb_build_array("u", jsonb_build_array("t") , array[lower(match_list."u_frame_range"), upper(match_list."u_frame_range")])
    FROM match_list) ,
                res2 AS
   (SELECT 2::int2 AS rstype,

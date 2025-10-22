@@ -225,6 +225,7 @@ async def _handle_message(
         "image_annotations",
         "started_export",
         "export_complete",
+        "clip_media",
     )
     errors = (
         "failed",

@@ -3,56 +3,47 @@
     <div class="container-fluid mt-4 px-4">
       <div class="row">
         <div class="col">
-          <Title :title="$t('common-query')" />
-        </div>
-      </div>
-      <div class="row mt-2">
-        <div class="col-12 col-md-4">
-          <div class="form-group row">
-            <label for="staticEmail" class="col-sm-3 col-form-label">
-              {{ $t('common-corpora') }}
-              <!-- <div
-                v-if="selectedCorpora && selectedCorpora.corpus"
-                class="details-button icon-3 tooltips corpus-structure-button"
-                @click.stop="switchGraph()"
-                title="Show/hide corpus structure"
-              >
-                <FontAwesomeIcon :icon="['fas', 'circle-info']" />
-              </div> -->
-            </label>
-            <div class="col-sm-8">
-              <multiselect
-                v-model="selectedCorpora"
-                :options="corporaOptions"
-                placeholder="Select corpus"
-                :multiple="false"
-                label="name"
-                track-by="value"
-              ></multiselect>
-            </div>
-            <span
-              class="btn icon-x col-sm-1"
-              @click.stop="openCorpusDetailsModal(selectedCorpora.corpus)"
+          <!-- <Title :title="$t('common-query')" /> -->
+          <Title :title="selectedCorpora && selectedCorpora.corpus ? selectedCorpora.corpus.shortname : 'No corpus selected'">
+            <div
               v-if="selectedCorpora && selectedCorpora.corpus"
+              class="details-button icon-3 tooltips"
+              @click.stop="openCorpusDetailsModal(selectedCorpora.corpus)"
+              title="See corpus details"
             >
               <FontAwesomeIcon :icon="['fas', 'circle-info']" />
-            </span>
-          </div>
-          <div class="form-group row mt-1">
-            <label for="staticEmail" class="col-sm-3 col-form-label">{{ $t('common-languages') }}</label>
-            <div class="col-sm-9">
-              <multiselect
-                v-model="selectedLanguages"
-                :options="availableLanguages"
-                :multiple="true"
-                 v-if="selectedCorpora && availableLanguages.length > 1"
-              ></multiselect>
-              <label class="col-sm-3 col-form-label" v-else-if="selectedCorpora && availableLanguages.length == 1">
-                {{ getLanguageName(availableLanguages[0]) }}
-              </label>
             </div>
-          </div>
+          </Title>
         </div>
+      </div>
+      <div v-if="selectedCorpora && selectedCorpora.corpus">
+        <span>
+          {{ availableLanguages.length > 1 ? 'Include language(s): ' : 'Language: ' }}
+        </span>
+        <span v-if="availableLanguages.length == 1" :title="getLanguageName(availableLanguages[0])" class="language tooltips">
+          {{ availableLanguages[0] }}
+        </span>
+        <template v-else>
+          <span
+            v-for="al in availableLanguages"
+            :key="al"
+          >
+            <input
+              type="checkbox"
+              style="display: none;"
+              :value="al"
+              :id="`selected-language-${al}`"
+              v-model="selectedLanguages"
+            />
+            <label
+              :for="`selected-language-${al}`"
+              :title="getLanguageName(al)"
+              class="tooltips language"
+            >
+              {{ al }}
+            </label>
+          </span>
+        </template>
       </div>
       <div class="row mt-5" v-if="noCorpus">
         <div class="col-12 mt-3" v-if="userData && userData.user && userData.user.id">
@@ -63,11 +54,11 @@
           Either there is no corpus at this address, or it is not publicly accessible. Please log in and check again.
         </div>
       </div>
-      <div class="row mt-5" v-else-if="selectedCorpora">
+      <div class="row mt-5" style="margin-top: 0em !important;" v-else-if="selectedCorpora">
         <div class="col-12 mt-3">
           <div class="form-floating mb-3">
             <nav>
-              <div class="nav nav-tabs" id="nav-main-tab" role="tablist"
+              <div class="nav" id="nav-main-tab" role="tablist"
                 :class="{ 'reverse-items': ['soundscript', 'videoscope'].includes(appType) }">
                 <button class="nav-link" :class="{ active: activeMainTab === 'query' }" id="nav-query-tab"
                   data-bs-toggle="tab" data-bs-target="#nav-query" type="button" role="tab" aria-controls="nav-query"
@@ -138,12 +129,9 @@
                       <div class="tab-content" id="nav-query-tabContent">
                         <div class="tab-pane fade show active pt-3" id="nav-plaintext" role="tabpanel"
                           aria-labelledby="nav-plaintext-tab">
-                          <span
-                            class="btn icon-x col-sm-1"
-                            @click.stop="toggleModal('text')"
-                            v-if="selectedCorpora && selectedCorpora.corpus"
-                          >
-                            <FontAwesomeIcon :icon="['fas', 'circle-info']" />
+                          <span class="helper-description tootlips" title="Search strings are interpreted case-sensitive and literally and can match either the form or the lemma of a token.">
+                            Enter the word or sequence of words you are interested in, e.g. <code class="queryExample">Européenne</code>, <code class="queryExample">der internationale Währungsfond</code>, <code class="queryExample">I have a dream</code>.
+                            <FontAwesomeIcon :icon="['fas', 'circle-question']" />
                           </span>
                           <input class="form-control" type="text" :placeholder="$t('common-plain-query')" :class="isQueryValidData == null || isQueryValidData.valid == true
                             ? 'ok'
@@ -156,12 +144,8 @@
                         </div>
                         <div class="tab-pane fade pt-3" id="nav-dqd" role="tabpanel"
                           aria-labelledby="nav-results-tab">
-                          <span
-                            class="btn icon-x col-sm-1"
-                            @click.stop="toggleModal('dqd')"
-                            v-if="selectedCorpora && selectedCorpora.corpus"
-                          >
-                            <FontAwesomeIcon :icon="['fas', 'circle-info']" />
+                          <span class="helper-description">
+                            DQD is the LCP-specific query language. For more information on it, please visit the <a href="https://lcp.linguistik.uzh.ch/manual/dqd.html" target="_blank">Manual</a>.
                           </span>
                           <EditorView :query="queryDQD" :defaultQuery="defaultQueryDQD" :corpora="selectedCorpora"
                             :invalidError="isQueryValidData && isQueryValidData.valid != true
@@ -175,12 +159,8 @@
                           </p>
                         </div>
                         <div class="tab-pane fade pt-3" id="nav-cqp" role="tabpanel" aria-labelledby="nav-cqp-tab">
-                          <span
-                            class="btn icon-x col-sm-1"
-                            @click.stop="toggleModal('cqp')"
-                            v-if="selectedCorpora && selectedCorpora.corpus"
-                          >
-                            <FontAwesomeIcon :icon="['fas', 'circle-info']" />
+                          <span class="helper-description">
+                            CQP is the query language developed for the <a href="https://cwb.sourceforge.io/" target="_blank">CWB (Corpus Work Bench)</a>. LCP implements the basic functionalities described <a href="https://www.sketchengine.eu/documentation/cql-basics/" target="_blank">here</a>.
                           </span>
                           <textarea class="form-control query-field" :placeholder="$t('common-cqp-query')"
                             :class="isQueryValidData == null || isQueryValidData.valid == true
@@ -267,8 +247,7 @@
                     <div class="corpus-graph mt-3" v-if="selectedCorpora">
                       <FontAwesomeIcon :icon="['fas', 'expand']" @click="openGraphInModal" data-bs-toggle="modal"
                         data-bs-target="#corpusGraphModal" />
-                      <CorpusGraphViewNew :corpus="selectedCorpora.corpus" :key="graphIndex" v-if="showGraph == 'main'"
-                        @graphReady="resizeGraph" />
+                      <CorpusGraphViewNew :corpus="selectedCorpora.corpus" :key="graphIndex" v-if="showGraph == 'main'" />
                     </div>
                   </div>
                 </div>
@@ -278,6 +257,7 @@
                 <PlayerComponent
                   v-if="showExploreTab()"
                   :key="selectedCorpora"
+                  :meta="WSDataMeta"
                   :selectedCorpora="selectedCorpora"
                   :selectedMediaForPlay="selectedMediaForPlay"
                   :hoveredResult="hoveredResult"
@@ -538,7 +518,7 @@
           </div>
           <div class="modal-body text-start">
             <div class="form-floating mb-3">
-              <nav>
+              <!-- <nav>
                 <div class="nav nav-tabs justify-content-end" id="nav-export-tab" role="tablist">
                   <button
                     class="nav-link active"
@@ -568,7 +548,7 @@
                     SwissdoxViz
                   </button>
                 </div>
-              </nav>
+              </nav> -->
               <div class="tab-content" id="nav-exportxml-tabContent">
                 <div
                   class="tab-pane fade show active pt-3"
@@ -576,33 +556,58 @@
                   role="tabpanel"
                   aria-labelledby="nav-exportxml-tab"
                 >
-                  <label for="nExport">Number of hits:</label>
-                  <input
-                    type="text"
-                    class="form-control"
-                    id="nExport"
-                    name="nExport"
-                    v-model="nExport"
-                  />
-                  <label for="nameExport">Filename:</label>
-                  <input
-                    type="text"
-                    class="form-control"
-                    id="nameExport"
-                    name="nameExport"
-                    v-model="nameExport"
-                  />.{{ exportTab }}
-                  <button
-                    type="button"
-                    @click="exportResults('xml', /*download=*/true, /*preview=*/true)"
-                    class="btn btn-primary me-1"
-                    data-bs-dismiss="modal"
-                  >
-                    Download
-                  </button>
+                  <div class="row">
+                    <label class="col" for="nameExport">Filename:</label>
+                    <label class="col-2" for="extension">Export as</label>
+                  </div>
+                  <div class="row">
+                    <input
+                      type="text"
+                      class="form-control col"
+                      id="nameExport"
+                      name="nameExport"
+                      v-model="nameExport"
+                    />
+                    <select
+                      v-if="isSwissdox"
+                      class="col-2"
+                      v-model="exportTab"
+                    >
+                      <option value="xml">*.xml</option>
+                      <option value="swissdox">*.swissdox</option>
+                    </select>
+                    <span
+                      v-else
+                      class="col-2"
+                      style="margin-top: 0.33em;"
+                    >
+                      *.{{ exportTab }}
+                    </span>
+                  </div>
+                  <div class="row" style="margin-top: 1em;">
+                    <label for="nExport" v-if="!isSwissdox || exportTab == 'xml'">Number of hits:</label>
+                  </div>
+                  <div class="row">
+                    <input
+                      type="text"
+                      class="form-control col"
+                      id="nExport"
+                      name="nExport"
+                      v-model="nExport"
+                      :style="`margin-right: 1em; visibility: ${isSwissdox && exportTab == 'swissdox' ? 'hidden;' : 'visible'};`"
+                    />
+                    <button
+                      type="button"
+                      @click="exportResults(exportTab, /*download=*/true, /*preview=*/true)"
+                      class="btn btn-primary me-1 col-2"
+                      data-bs-dismiss="modal"
+                    >
+                      Download
+                    </button>
+                  </div>
                 </div>
               </div>
-              <div class="tab-content" id="nav-exportswissdox-tabContent">
+              <!-- <div class="tab-content" id="nav-exportswissdox-tabContent">
                 <div
                   class="tab-pane fade pt-3"
                   id="nav-exportswissdox"
@@ -626,7 +631,7 @@
                     Launch export
                   </button>
                 </div>
-              </div>
+              </div> -->
             </div>
           </div>
           <div class="modal-footer">
@@ -767,82 +772,96 @@
     </div> -->
 
 
-    <div class="modal fade" id="DQDModal" tabindex="-1" aria-labelledby="DQDModalLabel"
-      aria-hidden="true" ref="DQDModal">
-      <div class="modal-dialog modal-lg">
-        <div class="modal-content">
-          <div class="modal-header">
-            <h5 class="modal-title" id="DQDModalLabel">
-              DQD query information
-            </h5>
-            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-          </div>
-          <div class="modal-body text-start">
-            <span>DQD is the LCP-specific query language. for more information on it, please visit the <a href="https://lcp.linguistik.uzh.ch/manual/dqd.html" target="_blank">Manual</a>.</span>
-          </div>
-          <div class="modal-footer">
-            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
-              {{ $t('common-close') }}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div class="modal fade" id="CQPModal" tabindex="-1" aria-labelledby="CQPModalLabel"
-      aria-hidden="true" ref="CQPModal">
-      <div class="modal-dialog modal-lg">
-        <div class="modal-content">
-          <div class="modal-header">
-            <h5 class="modal-title" id="CQPModalLabel">
-              CQP query information
-            </h5>
-            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-          </div>
-          <div class="modal-body text-start">
-            <span>CQP is the query language developed for the <a href="https://cwb.sourceforge.io/" target="_blank">CWB (Corpus Work Bench)</a>. The basic functionalities described <a href="https://www.sketchengine.eu/documentation/cql-basics/" target="_blank">here</a> are implemented in LCP.</span>
-          </div>
-          <div class="modal-footer">
-            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
-              {{ $t('common-close') }}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div class="modal fade" id="TextModal" tabindex="-1" aria-labelledby="TextModalLabel"
-      aria-hidden="true" ref="TextModal">
-      <div class="modal-dialog modal-lg">
-        <div class="modal-content">
-          <div class="modal-header">
-            <h5 class="modal-title" id="TextModalLabel">
-              Text query information
-            </h5>
-            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-          </div>
-          <div class="modal-body text-start">
-            <span>Specifying a query in plain text is straightforward: just enter the word or sequence of words you are interested in, e.g. <code class="queryExample">Européenne</code>, <code class="queryExample">der internationale Währungsfond</code>, <code class="queryExample">I have a dream</code>.<br>Search strings are interpreted case-sensitive and literally and can match either the form or the lemma of a token.</span>
-          </div>
-          <div class="modal-footer">
-            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
-              {{ $t('common-close') }}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-
   </div>
 </template>
 
 <style scoped>
+#title-view, .container-fluid > div:nth-child(2) {
+  display: flex;
+  margin: auto;
+  width: min-content;
+  white-space: nowrap;
+}
+
+#title-view .icon-3 {
+  margin-left: 0.5em;
+}
+
+.container-fluid > div:nth-child(2) > * {
+  margin: 0em 0.5em;
+  white-space: nowrap;
+}
+
+label.language, span.language {
+  font-variant: small-caps;
+  width: 3em;
+  border: solid 1px gray;
+  border-radius: 20px;
+  text-align: center;
+  user-select: none;
+}
+
+input:checked + label.language {
+  background-color: burlywood;
+  color: white;
+}
+
+#nav-main-tab {
+  margin: auto;
+  width: min-content;
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+}
+
+#nav-main-tab::before {
+  content: "Views:";
+  padding: 0.15rem;
+  margin-right: 0.25em;
+}
+
+#nav-main-tab button {
+  background-color: whitesmoke;
+  height: 2em;
+  padding: 0px 2em;
+}
+
+#nav-main-tab button.active {
+  color: white;
+  background-color: gray;
+}
+
+#nav-main-tab button:first-child {
+  border-radius: 15px 0px 0px 15px;
+}
+#nav-main-tab button:last-child {
+  border-radius: 0px 15px 15px 0px;
+}
+#nav-main-tab.reverse-items button:first-child {
+  border-radius: 0px 15px 15px 0px;
+}
+#nav-main-tab.reverse-items button:last-child {
+  border-radius: 15px 0px 0px 15px;
+}
+
+.helper-description {
+  display: inline-block;
+  width: 80%;
+  margin-left: 10%;
+  margin-bottom: 0.5em;
+  border: solid 1px lightgray;
+  border-radius: 0.25em;
+  padding: 0.25em;
+  font-style: italic;
+}
+
 .modal-full .modal-body {
   max-height: calc(100vh - 200px);
   overflow-y: scroll;
 }
 .queryExample {
-  background-color: lightcoral;
+  background-color: beige;
+  font-style: normal;
 }
 .export {
   float: left;
@@ -920,6 +939,12 @@ textarea {
 }
 </style>
 <style>
+#title-view h2 {
+  max-width: 80vw;
+  overflow-x: hidden;
+  text-overflow: ellipsis;
+}
+
 #corpus-details-modal div:nth-child(1) {
   width: 100%;
 }
@@ -971,7 +996,7 @@ export default {
       WSDataSentences: {},
       nResults: 200,
       activeResultIndex: 1,
-      selectedLanguages: ["en"],
+      selectedLanguages: null,
       queryName: "",
       nExport: 200,
       nameExport: "",
@@ -1123,12 +1148,6 @@ export default {
       } else {
         history.pushState({}, null, `/query/`);
       }
-      if (
-        this.selectedLanguages &&
-        !this.availableLanguages.includes(this.selectedLanguages)
-      ) {
-        this.selectedLanguages = [this.availableLanguages[0]];
-      }
       // Switched which corpus is selected: clear results
       if (this.selectedCorpora) {
         this.percentageDone = 0;
@@ -1204,6 +1223,14 @@ export default {
         }, 1500);
       }
     },
+    availableLanguages() {
+      if (!(this.availableLanguages instanceof Array) || this.availableLanguages.length == 0)
+        return;
+      this.selectedLanguages = this.selectedLanguages || [];
+      this.selectedLanguages = this.selectedLanguages.filter(l=>this.availableLanguages.includes(l));
+      if (this.selectedLanguages.length == 0);
+        this.selectedLanguages = [this.availableLanguages[0]];
+    }
     // currentDocument() {
     //   this.loadDocument();
     // },
@@ -1241,24 +1268,6 @@ export default {
       this.image = image;
       this.getImageAnnotations(image.layer, image.layerId);
       setTimeout(()=>this.$refs.imageViewer.$refs.viewerContainer.scrollIntoView(), 50);
-    },
-    toggleModal(language) {
-    	let modalEl;
-
-    	switch (language) {
-      	case "cqp":
-          modalEl = this.$refs.CQPModal;
-          break;
-      	case "dqd":
-          modalEl = this.$refs.DQDModal;
-          break;
-      	case "text":
-          modalEl = this.$refs.TextModal;
-          break;
-    	}
-
-      const modal = new Modal(modalEl)
-      modal.show()
     },
     getLanguageName(lg) {
       const cl = this.corpusLanguages.find(v=>v.value.toLowerCase() == lg.toLowerCase());
@@ -1416,7 +1425,7 @@ export default {
       modal.show()
     },
     processMeta(meta) {
-      const META_LIMIT = 5000;
+      const META_LIMIT = 50000;
       const ancMap = {
         char_range: "Stream",
         frame_range: "Time",
@@ -1481,11 +1490,6 @@ export default {
           return;
         }
         if (data["action"] === "validate") {
-          // Validate is called after setting availableLanguages, so it's a good time to check selectedLanguages
-          this.selectedLanguages = this.selectedLanguages.filter(v => this.availableLanguages.includes(v));
-          if (this.selectedLanguages == 0) {
-            this.selectedLanguages = [this.availableLanguages[0]];
-          }
           // console.log("Query validation", data);
           if (data.kind in { dqd: 1, text: 1, cqp: 1 } && data.valid == true)
             this.query = JSON.stringify(data.json, null, 2);
@@ -1506,16 +1510,18 @@ export default {
           return;
         }
 
-        if (data["action"] === "document") {
-          // console.log("DOC", data)
-          useWsStore().addMessageForPlayer(data);
+        if (data["action"] === "clip_media") {
+          useCorpusStore().getClipMedia({file: data["file"]});
           return;
         }
 
-        if (data["action"] == "image_annotations") {
+        const is_doc = data["action"] == "document";
+
+        if (data["action"] == "image_annotations" || is_doc) {
+          const annotations = is_doc ? data.document : data.annotations;
           const meta = [], ids = [];
           this.WSDataSentences = this.WSDataSentences || {};
-          for (let [row] of data.annotations) {
+          for (let [row] of annotations) {
             if (row[0] == "_prepared") {
               const [seg_id, seg_offset, seg_content] = row.slice(1,)
               if (seg_id in this.WSDataSentences) continue;
@@ -1523,14 +1529,20 @@ export default {
             }
             else
               meta.push([[], ...row]);
-            if (row[0] == data.layer) ids.push(row[1]);
+            if (!is_doc && row[0] == data.layer) ids.push(row[1]);
           }
           this.WSDataSentences = {...this.WSDataSentences};
           for (let id of ids)
             this.imageAnnotations[id] = 1;
           if (meta.length)
             this.processMeta(meta);
-          }
+        }
+
+        if (is_doc) {
+          // console.log("DOC", data)
+          useWsStore().addMessageForPlayer(data);
+          return;
+        }
 
         if (data["action"] === "update_config") {
           // todo: when a new corpus is added, all connected websockets
@@ -1933,6 +1945,9 @@ export default {
     ...mapState(useCorpusStore, {corpusLanguages: "languages"}),
     ...mapState(useUserStore, ["userData", "roomId", "debug"]),
     ...mapState(useWsStore, ["messages"]),
+    isSwissdox() {
+      return this.selectedCorpora && this.selectedCorpora.corpus && this.selectedCorpora.corpus.shortname.match(/swissdox/i);
+    },
     baseMediaUrl() {
       let retval = ""
       if (this.selectedCorpora && this.selectedCorpora.corpus) {
@@ -2030,6 +2045,8 @@ export default {
   mounted() {
     // this.userId = this.userData.user.id;
     setTooltips();
+    // ugly, find a better trigger
+    setTimeout(()=>this.selectedLanguages = this.selectedLanguages || [this.availableLanguages[0]], 100);
   },
   beforeUnmount() {
     removeTooltips();

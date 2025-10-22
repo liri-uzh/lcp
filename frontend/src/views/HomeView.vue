@@ -1,150 +1,135 @@
 <template>
   <div class="home">
     <div class="container">
-      <div class="row mt-4">
+      <!-- <div class="row mt-4">
         <div class="col">
           <Title :title="appName" :isItalic="appType == 'lcp' ? false : true" />
         </div>
-        <div class="col mt-1 text-end" v-if="userData && userData.user && userData.user.displayName">
-          <button
-            type="button"
-            class="btn btn-secondary btn-sm"
-            data-bs-toggle="modal"
-            data-bs-target="#newProjectModal"
-            @click="modalIndexKey++"
-          >
-            <FontAwesomeIcon :icon="['fas', 'circle-plus']" class="me-1" />
-            {{ $t('common-add-group') }}
-          </button>
-        </div>
-      </div>
+      </div> -->
       <div class="row mt-3">
         <div class="col">
           <div class="input-group mb-3">
-            <span class="input-group-text" id="basic-addon1">
-              <FontAwesomeIcon :icon="['fas', 'magnifying-glass']" />
-            </span>
+            <!-- Include: Text | Sound | Video (once we have a single instance) -->
             <input type="text" class="form-control" v-model="corporaFilter" :placeholder="$t('platform-general-find-corpora')" />
-            <span class="input-group-text" id="basic-addon1" @click="switchLanguageFilter">
-              <FontAwesomeIcon :icon="['fas', 'filter']" />
-            </span>
-            <div id="languagesFilter" v-if="languageFilter instanceof Array && showLanguageFilters">
-              <div
-                class="title"
-                @click="languageFilter = allLanguages.some(l=>!languageFilter.includes(l.langCode)) ? allLanguages.map(l=>l.langCode) : []"
-              >
-                <input
-                  type="checkbox"
-                  :id="`language-filter-allLanguages`"
-                  :checked="allLanguages.every(l=>this.languageFilter.includes(l.langCode))"
-                />
-                <label :for="`language-filter-allLanguages`">Languages</label>
-              </div>
-              <span v-for="language in allLanguages" :key="language.langCode">
-                <input
-                  type="checkbox"
-                  :id="`language-filter-${language.langCode}`"
-                  :value="language.langCode"
-                  v-model="languageFilter"
-                />
-                <label :for="`language-filter-${language.langCode}`">{{ language.langName }} ({{ language.langCode }})</label>
-              </span>
-            </div>
           </div>
           <div v-if="corporaFilter && filterError && filterError.message" class="alert notification alert-danger">
             {{ filterError.message }}
+          </div>
+          <div id="languages-filter" v-if="allLanguages">
+            <span>Languages:</span>
+            <span
+              v-for="language in allLanguages"
+              :key="language.langCode"
+              class="language-filter"
+            >
+              <input
+                type="checkbox"
+                :id="`language-filter-${language.langCode}`"
+                :value="language.langCode"
+                v-model="languageFilter"
+              />
+              <label
+                :for="`language-filter-${language.langCode}`"
+                :title="language.langName"
+                class="tooltips"
+              >
+                {{ language.langCode }}
+              </label>
+            </span>
           </div>
         </div>
       </div>
     </div>
     <div class="container mt-4 text-start">
       <div class="row">
-        <nav ref="tabsnav" class="tabsnav">
-          <div class="scroller scroller-left" @click="tabsScrollLeft" ref="leftcaret">
-            <FontAwesomeIcon :icon="['fas', 'caret-left']" class="me-1" />
-          </div>
-          <div class="scroller scroller-right" @click="tabsScrollRight" ref="rightcaret">
-            <FontAwesomeIcon :icon="['fas', 'caret-right']" class="me-1" />
-          </div>
-          <div class="tabs-wrapper" ref="tabswrapper">
-            <div class="nav nav-tabs tabs-list" id="nav-tab" ref="tabslist" role="tablist">
-              <button
-                v-for="(project, index) in projectsGroups"
-                :key="project.id"
-                class="nav-link"
-                :class="[index == 0 ? 'active' : '', corporaFilter && project.corpora.length == 0 ? 'no-corpora' : '']"
-                :id="`nav-${project.id}-tab`"
-                data-bs-toggle="tab"
-                :data-bs-target="`#nav-${project.id}`"
-                type="button" role="tab"
-                :aria-controls="`nav-${project.id}`"
-                aria-selected="true"
-                @click="currentProject = project"
+        <div class="tab-content pt-3" id="nav-tabContent" ref="projects">
+          <div
+            v-for="project in projectsGroups"
+            :key="project.id"
+            :id="`project-${project.id}`"
+            class="tab-pane fade active show"
+            :style="`order: ${filterCorpora(project.corpora).length == 0 ? 2 : 1}`"
+            @pointerenter="currentProject=project"
+            @wheel="e=>wheelScroll(e, project.id)"
+          >
+            <div class="project-header" v-if="project.description || project.isAdmin">
+              <span
+                class="project-name"
+                :class="project.corpora.length == 0 ? 'no-corpora' : ''"
+                type="button"
               >
                 <FontAwesomeIcon
                   :icon="projectIcons(project)"
-                  class="me-1"
+                  class="me-1 tooltips"
+                  :title="project.isPublic ? 'Public collection' : (project.isSemiPublic ? 'Log-in required' : 'Private collection')"
                 />
-                {{ project.title }}
-                <span class="api-badge">({{ project.corpora.length }})</span>
-                <span class="ms-1 api-badge" v-if="project.api">[API]</span>
-              </button>
-            </div>
-          </div>
-        </nav>
-        <div class="tab-content pt-3" id="nav-tabContent">
-          <div v-for="(project, index) in projectsGroups" :key="project.id" class="tab-pane fade"
-            :class="index == 0 ? 'active show' : ''" :id="`nav-${project.id}`" role="tabpanel"
-            aria-labelledby="nav-results-tab">
-              <div class="alert alert-success" role="alert" v-if="project.description || project.isAdmin">
-                <div class="row">
-                  <div class="col-11">
-                    <div class="row" v-if="project.isAdmin">
-                      <div class="col-2">
-                        {{ $t('common-start-date') }}: <b>{{ formatDate(project.startDate, "DD.MM.YYYY") }}</b>
-                      </div>
-                      <div class="col-2">
-                        {{ $t('common-finish-date') }}: <b>{{ formatDate(project.finishDate, "DD.MM.YYYY") }}</b>
-                      </div>
-                      <div class="col-2">
-                        {{ $t('common-institution') }}: <b>{{ project.institution }}</b>
-                      </div>
-                      <div class="col-2">
-                        API: <b>{{ project.api ? "Enabled" : "Disabled" }}</b>
-                      </div>
-                      <!-- <div class="col-2">
-                        Visibility: <b>{{ project.additionalData && project.additionalData.visibility ? project.additionalData.visibility : "private" }}</b>
-                      </div> -->
-                    </div>
-                    <div class="row">
-                      <div class="col-12">
-                        {{ $t('common-description') }}: <b>{{ project.description }}</b>
-                      </div>
-                    </div>
+                <strong>{{ project.title }}</strong>
+                <span class="api-badge"> ({{ project.corpora.length }})</span>
+              </span>
+              <div class="project-details">
+                <div
+                  class="project-description tooltips"
+                  :title="project.description"
+                  :style="project.isAdmin ? '' : 'max-width: 90%;'"
+                  v-if="project.description"
+                >
+                  {{ project.description }}
+                </div>
+                <div class="project-admin" v-if="project.isAdmin">
+                  <div>
+                    {{ formatDate(project.startDate, "DD.MM.YYYY") || 'ever' }} > {{ formatDate(project.finishDate, "DD.MM.YYYY") || 'ever' }}
                   </div>
-                  <div class="col-1 text-end" v-if="project.isAdmin">
-                    <button
-                      type="button"
-                      class="btn btn-sm btn-light"
-                      data-bs-toggle="modal"
-                      data-bs-target="#editProjectModal"
-                      @click="modalIndexKey++"
-                    >
-                      <FontAwesomeIcon :icon="['fas', 'gear']" />
-                    </button>
+                  <div>
+                    {{ project.institution }}
+                  </div>
+                  <div>
+                    <FontAwesomeIcon :icon="['fas', project.api ? 'check' : 'ban']" />
+                    API
                   </div>
                 </div>
               </div>
-            <div class="row mt-2">
+              <div class="project-settings" v-if="project.isAdmin">
+                <button
+                  type="button"
+                  class="btn btn-sm btn-light"
+                  data-bs-toggle="modal"
+                  data-bs-target="#editProjectModal"
+                  @click="[modalIndexKey++,currentProject=project]"
+                >
+                  <FontAwesomeIcon :icon="['fas', 'gear']" />
+                </button>
+              </div>
+            </div>
+            <div
+              class="scroller-left"
+              :style="project.id in overflowingLeft ? '' : 'display: none;'"
+              @pointerdown="scrollProject(project.id, 'left')"
+            >
+              &lt;
+            </div>
+            <div
+              class="scroller-right"
+              :style="project.id in overflowingRight ? '' : 'display: none;'"
+              @pointerdown="scrollProject(project.id, 'right')"
+            >
+              &gt;
+            </div>
+            <div class="corpora-container" :style="corporaContainer(filterCorpora(project.corpora))" @pointerdown="e=>dragScrollProjects(e,project.id)">
               <div
                 v-for="corpus in filterCorpora(project.corpora)"
                 :key="corpus.id"
-                @click="openQueryWithCorpus(corpus)"
-                class="col-4 mb-3"
+                @click.stop="openQueryWithCorpus(corpus)"
               >
                 <div class="corpus-block" :class="`data-type-${corpusDataType(corpus)}`">
                   <div class="corpus-block-header px-4 py-3">
-                    <p class="title mb-0">{{ corpus.meta.name }}</p>
+                    <p class="title mb-0">
+                      {{ corpus.meta.name }}
+                      <span
+                        class="badge revision text-bg-primary me-1 tooltips"
+                        :title="`${$t('common-revision')}: ${corpus.meta.revision}`"
+                        v-if="corpus.meta.revision"
+                      >r.{{ corpus.meta.revision }}</span>
+                    </p>
                     <!-- <p class="author mb-0">
                       <span v-if="corpus.meta.author">by {{ corpus.meta.author }}</span>
                     </p> -->
@@ -162,54 +147,27 @@
                       {{ corpus.meta.corpusDescription }}
                     </p>
                     <p class="word-count">
-                      <template v-if="corpus.partitions">
-                        <span
-                          class="badge text-bg-primary me-1 tooltips" :title="this.getLanguage(language)"
-                          v-for="language in corpus.partitions.values"
-                          v-html="language.toUpperCase()" :key="`${corpus.id}-${language}`"
-                        ></span>
-                      </template>
-                      <span
-                        class="badge text-bg-primary me-1 tooltips" :title="this.getLanguage(corpus.meta.language)"
-                        v-if="!(corpus.partitions) && corpus.meta.language"
-                        v-html="corpus.meta.language.toUpperCase()"
-                      ></span>
+                      <!-- These are listed in reverse (flex-direction: row-reverse) -->
                       <span class="badge text-bg-primary me-1 tooltips" :title="$t('common-word-count')"
                       >{{
                         nFormatter(
                           calculateSum(Object.entries(corpus.token_counts).filter(kv=>kv[0].endsWith("0")).map(kv=>kv[1]))
                         )
                       }}</span>
+                      <template v-if="corpus.partitions">
+                        <span
+                          class="badge text-bg-primary me-1 tooltips language" :title="corpus.partitions.values.map(l=>this.getLanguage(l)).reverse().join(', ')"
+                          v-for="language in corpus.partitions.values"
+                          v-html="language.toUpperCase()" :key="`${corpus.id}-${language}`"
+                        ></span>
+                      </template>
                       <span
-                        class="badge text-bg-primary me-1 tooltips"
-                        :title="`${$t('common-revision')}: ${corpus.meta.revision}`"
-                        v-if="corpus.meta.revision"
-                      >{{ corpus.meta.revision }}</span>
+                        class="badge text-bg-primary me-1 tooltips language" :title="this.getLanguage(corpus.meta.language)"
+                        v-else-if="corpus.meta.language"
+                        v-html="corpus.meta.language.toUpperCase()"
+                      ></span>
                     </p>
                   </div>
-                  <div
-                    class="details-button icon-1 tooltips"
-                    :title="$t('common-query-corpus')"
-                    v-if="hasAccessToCorpus(corpus, userData)"
-                    @click.stop="openQueryWithCorpus(corpus)"
-                  >
-                    <FontAwesomeIcon :icon="['fas', 'magnifying-glass-chart']" />
-                  </div>
-                  <div
-                    class="details-button icon-1 tooltips disabled"
-                    :title="$t('platform-general-no-permission')"
-                    v-else-if="userData.user.displayName"
-                  >
-                    <FontAwesomeIcon :icon="['fas', 'magnifying-glass-chart']" />
-                  </div>
-                  <div
-                    class="details-button icon-1 tooltips disabled"
-                    :title="$t('platform-general-access-restricted')"
-                    v-else
-                  >
-                    <FontAwesomeIcon :icon="['fas', 'magnifying-glass-chart']" />
-                  </div>
-
                   <div class="details-button icon-2">
                     <span
                       :href="corpusStore.getLicenseByTag(corpus.meta.license)"
@@ -233,10 +191,6 @@
                     <span class="tooltips icon-x" :title="$t('platform-general-corpus-details')" @click.stop="openCorpusDetailsModal(corpus)">
                       <FontAwesomeIcon :icon="['fas', 'circle-info']" />
                     </span>
-                    <a class="tooltips icon-x" :href="getURLWithProtocol(corpus.meta.url)" :title="$t('platform-general-corpus-origin')"
-                      :disabled="!corpus.meta.url" target="_blank" @click.stop>
-                      <FontAwesomeIcon :icon="['fas', 'link']" />
-                    </a>
                   </div>
                   <div class="details-data-type icon-3 tooltips" :title="$t('platform-general-data-type')" v-if="appType == 'lcp'">
                     <FontAwesomeIcon :icon="['fas', 'music']" v-if="corpusDataType(corpus) == 'audio'" />
@@ -249,6 +203,19 @@
           </div>
         </div>
       </div>
+    </div>
+
+    <div id="new-collection" class="col mt-1 text-end" v-if="userData && userData.user && userData.user.displayName">
+      <button
+        type="button"
+        class="btn btn-secondary btn-sm tooltips"
+        :title="$t('common-add-group')"
+        data-bs-toggle="modal"
+        data-bs-target="#newProjectModal"
+        @click="modalIndexKey++"
+      >
+        <FontAwesomeIcon :icon="['fas', 'circle-plus']" class="me-1" />
+      </button>
     </div>
 
     <!-- Modals -->
@@ -364,7 +331,7 @@ import { useProjectStore } from "@/stores/projectStore";
 import { useUserStore } from "@/stores/userStore";
 import { useNotificationStore } from "@/stores/notificationStore";
 
-import Title from "@/components/TitleComponent.vue";
+// import Title from "@/components/TitleComponent.vue";
 import ProjectNewView from "@/components/project/NewView.vue";
 import CorpusDetailsModal from "@/components/corpus/DetailsModal.vue";
 import MetadataEdit from "@/components/corpus/MetadataEdit.vue";
@@ -395,17 +362,63 @@ export default {
       inviteEmails: '',
       currentProjectToSubmit: null,
       modalIndexKey: 0,
-      corpusStore: useCorpusStore()
+      corpusStore: useCorpusStore(),
+      overflowingLeft: {},
+      overflowingRight: {},
+      scrollProjectTimeout: null,
+      resizeObserver: new ResizeObserver((entries) => entries.forEach(e=>{
+        const cc = e.target.querySelector(".corpora-container");
+        if (!cc) return;
+        cc.style.marginLeft = 0;
+        this.updateOverflows();
+      })),
+      dragScrolling: []
     };
   },
   components: {
-    Title,
+    // Title,
     ProjectNewView,
     CorpusDetailsModal,
     MetadataEdit,
     ProjectEdit,
   },
   methods: {
+    corpusOverflow(projectId, where) {
+      const projectRef = this.$refs.projects;
+      if (!projectRef) return false;
+      const projectNode = projectRef.querySelector(`#project-${projectId}`);
+      if (!projectNode) return false;
+      const corporaNode = projectNode.querySelector(".corpora-container");
+      if (!corporaNode) return false;
+      const projectEdge = projectNode.getBoundingClientRect()[where];
+      return [...corporaNode.children].find(c=>(where == "left" ? -1 : 1) * (c.getBoundingClientRect()[where] - projectEdge) > 0);
+    },
+    corporaContainer(corpora) {
+      let ret = "";
+      const projectsWithCorpora = this.projectsGroups.filter(p=>this.filterCorpora(p.corpora).length>0);
+      if (projectsWithCorpora.length < 2) {
+        if (this.projectsGroups.length == 1)
+          ret = "height: unset; flex-flow: row wrap;";
+        else
+          ret = "height: calc(100vh - 300px); flex-flow: row wrap;"
+      }
+      if (projectsWithCorpora.length > 2)
+        ret = "height: 250px";
+      if (corpora.length == 0)
+        ret = "height: 0px;"
+      return ret;
+    },
+    dragScrollProjects(event, projectId) {
+      this.dragScrolling = [event.clientx, projectId];
+    },
+    wheelScroll(event, projectId) {
+      if (!event.deltaX && !event.shiftKey) return;
+      const d = event.shiftKey ? event.deltaY : event.deltaX;
+      this.scrollProject(projectId, d > 0 ? "right" : "left");
+      this.scrollProjectTimeout = clearTimeout(this.scrollProjectTimeout);
+      event.stopPropagation();
+      event.preventDefault();
+    },
     switchLanguageFilter() {
       this.showLanguageFilters = !this.showLanguageFilters;
       if (this.languageFilter instanceof Array) return;
@@ -432,46 +445,6 @@ export default {
       }
       return icons
     },
-    tabsScrollLeft() {
-      let left = Math.abs(parseInt(this.$refs.tabslist.style.left || 0, 10)) - this.scrollBoxSize() + 200
-      if (left < 0) {
-        left = 0
-      }
-      this.$refs.rightcaret.style.opacity = 1
-      if (left == 0) {
-        this.$refs.leftcaret.style.opacity = 0.5
-      }
-      this.$refs.tabslist.style.left = `-${left}px`
-    },
-    tabsScrollRight() {
-      let left = Math.abs(parseInt(this.$refs.tabslist.style.left || 0, 10)) + this.scrollBoxSize() - 200
-      if (left > this.widthOfTabs()) {
-        left = this.widthOfTabs() - 200
-      }
-      this.$refs.leftcaret.style.opacity = 1
-      if ((left + this.scrollBoxSize()) >= this.widthOfTabs()) {
-        this.$refs.rightcaret.style.opacity = 0.5
-      }
-      this.$refs.tabslist.style.left = `-${left}px`
-    },
-    scrollBoxSize() {
-      return this.$refs.tabsnav.offsetWidth;
-    },
-    widthOfTabs() {
-      let itemsWidth = 0;
-      this.$refs.tabslist.querySelectorAll('button').forEach((item) => {
-        itemsWidth += item.offsetWidth;
-      });
-      return itemsWidth;
-    },
-    updateTabsCarets() {
-      // console.log("AE", this.widthOfTabs(), this.scrollBoxSize())
-      // if (this.widthOfTabs() > this.scrollBoxSize()) {
-        this.$refs.rightcaret.style.display = "block";
-        this.$refs.leftcaret.style.display = "block";
-      // }
-    },
-
     filterCorpora(corpora) {
       if (this.corporaFilter) {
         let rgx = null;
@@ -528,6 +501,7 @@ export default {
       modal.show();
     },
     openQueryWithCorpus(corpus) {
+      if (this.scrollProjectTimeout) return;
       if (this.hasAccessToCorpus(corpus, this.userData)) {
         if (config.appType == "videoscope") {
           router.push(`/query/${corpus.meta.id}/${Utils.slugify(corpus.shortname)}`);
@@ -634,6 +608,30 @@ export default {
     //   });
     //   this.tooltips = [];
     // },
+    updateOverflows() {
+      this.overflowingLeft = {1:1, ...Object.fromEntries(this.projectsGroups.filter(p=>this.corpusOverflow(p.id, 'left')).map(p=>[p.id,1]))};
+      this.overflowingRight = {1:1, ...Object.fromEntries(this.projectsGroups.filter(p=>this.corpusOverflow(p.id, 'right')).map(p=>[p.id,1]))};
+    },
+    scrollProject(projectId, direction, delta) {
+      delta = delta || 100;
+      if (this.scrollProjectTimeout)
+        this.scrollProjectTimeout = clearTimeout(this.scrollProjectTimeout);
+      const projectsRef = this.$refs.projects;
+      if (!projectsRef) return;
+      const projectContainer = projectsRef.querySelector(`#project-${projectId}`);
+      if (!projectContainer) return;
+      const corporaContainer = projectContainer.querySelector(".corpora-container");
+      if (!corporaContainer) return;
+      const projectContainerRight = projectContainer.getBoundingClientRect().right;
+      const lastChildLeft = [...corporaContainer.children].at(-1).getBoundingClientRect().left;
+      const left = parseInt(window.getComputedStyle(corporaContainer).marginLeft);
+      let newMargin = left + (direction=='right'?-1:1) * delta;
+      if (newMargin > 0) newMargin = 0;
+      if (lastChildLeft+350 < projectContainerRight) newMargin = Math.max(newMargin, left);
+      corporaContainer.style.marginLeft = `${newMargin}px`;
+      this.updateOverflows();
+      this.scrollProjectTimeout = setTimeout(()=>this.scrollProject(projectId, direction), 5);
+    }
   },
   computed: {
     ...mapState(useCorpusStore, ["queryData", "corpora"]),
@@ -704,16 +702,6 @@ export default {
       })
       // Rest
       sortedProjects.push(...Object.values(projects))
-      // If there is a filter, remove empty projects
-      // if (this.corporaFilter.length > 0) {
-      //   let _retval = {}
-      //   for (let key in retval) {
-      //     if (retval[key].corpora.length > 0) {
-      //       _retval[key] = retval[key]
-      //     }
-      //   }
-      //   retval = _retval
-      // }
       return sortedProjects;
     },
     getUniqueProjects() {
@@ -723,22 +711,52 @@ export default {
   mounted() {
     // this.setTooltips();
     setTooltips();
-
-    window.addEventListener('resize', this.updateTabsCarets);
-    this.updateTabsCarets();
+    window.addEventListener("keydown", e=>{
+      if (!this.currentProject) return;
+      if (e.key == "ArrowLeft") this.scrollProject(this.currentProject.id, 'left');
+      if (e.key == "ArrowRight") this.scrollProject(this.currentProject.id, 'right');
+    });
+    window.addEventListener("keyup", ()=>{
+      if (!this.scrollProjectTimeout) return;
+      this.scrollProjectTimeout = clearTimeout(this.scrollProjectTimeout);
+    });
+    window.addEventListener("pointermove", e=>{
+      const [lastX, projectId] = this.dragScrolling;
+      if (!projectId) return;
+      const diff = lastX - e.clientX;
+      this.scrollProject(projectId, diff > 0 ? 'right' : 'left', Math.abs(diff));
+      // Don't automatically keep scrolling but keep a 500ms timeout to prevent pointerup from opening corpora 
+      if (this.scrollProjectTimeout) clearTimeout(this.scrollProjectTimeout);
+      this.scrollProjectTimeout = setTimeout(()=>this.scrollProjectTimeout = null, 500);
+      this.dragScrolling[0] = e.clientX;
+    });
+    window.addEventListener("pointerup", ()=>{
+      this.dragScrolling = [];
+      if (!this.scrollProjectTimeout) return;
+      clearTimeout(this.scrollProjectTimeout);
+      this.scrollProjectTimeout = setTimeout(()=>this.scrollProjectTimeout = null, 500); // prevent clicks on corpora
+    });
   },
   watch: {
     projects() {
-      this.updateTabsCarets();
     },
+    allLanguages() {
+      this.languageFilter = this.allLanguages.map(l=>l.langCode);
+    }
   },
-  updated() {
+  async updated() {
     // this.setTooltips();
     // setTooltips();
+    this.languageFilter = this.languageFilter || this.allLanguages.map(l=>l.langCode);
+    if (Object.keys(this.overflowingLeft).length > 0 || Object.keys(this.overflowingRight).length > 0) return;
+    await new Promise(r=>setTimeout(r, 500));
+    this.updateOverflows();
+    this.resizeObserver.disconnect();
+    for (let c of this.$refs.projects.querySelectorAll(".corpora-container"))
+      this.resizeObserver.observe(c.parentElement);
   },
   beforeUnmount() {
     // this.removeTooltips();
-    window.removeEventListener('resize', this.updateTabsCarets);
     removeTooltips();
   },
 };
@@ -779,28 +797,6 @@ export default {
   overflow-y: scroll;
 }
 
-.scroller {
-  text-align: center;
-  cursor: pointer;
-  /* display: none; */
-  padding: 7px;
-  padding-top: 11px;
-  padding-bottom: 0px;
-  white-space: no-wrap;
-  vertical-align: middle;
-  background-color: #fff;
-}
-
-.scroller-right {
-  float: right;
-  display: none;
-}
-
-.scroller-left {
-  float: left;
-  display: none;
-}
-
 .nav-tabs {
   box-shadow: none !important;
   border-bottom: none !important;
@@ -811,12 +807,127 @@ export default {
   box-shadow: 0 5px 7px -8px #777;
 }
 
+.row.mt-3 {
+  max-width: 80%;
+  margin: auto;
+}
+
+.language-filter input {
+  display: none;
+}
+
+.language-filter label {
+  width: 2.75em;
+  text-align: center;
+  margin: 0em 0.25em;
+  border-radius: 20px;
+  border: solid 1px gray;
+  font-variant: petite-caps;
+  font-size: 1.2em;
+}
+
+.language-filter input:checked + label {
+  background-color: burlywood;
+  color: white;
+}
+
+#nav-tabContent {
+  display: flex;
+  flex-direction: column;
+}
+
+#nav-tabContent .tab-pane {
+  padding: 0.25em;
+  border-radius: 0.5em;
+  margin-bottom: 1em;
+  box-shadow: 0px 5px 5px lightgray;
+  position: relative;
+  overflow: hidden;
+}
+
+.project-header {
+  display: flex;
+  margin-bottom: 0.5em;
+  position:relative;
+  justify-content: space-between;
+}
+.project-header div {
+  padding-right: 0.5em;
+}
+.project-header .project-name, .project-header .project-details {
+  white-space: nowrap;
+  flex-shrink: 1;
+  overflow-x: hidden;
+  text-overflow: ellipsis;
+}
+.project-header .project-name {
+  max-width: 33%;
+}
+.project-header .project-details {
+  display: flex;
+  max-width: 80%;
+  flex-grow: 1;
+}
+.project-header .project-details .project-description {
+  max-width: 55%;
+  overflow-x: hidden;
+  text-overflow: ellipsis;
+  font-style: italic;
+}
+.project-header .project-details .project-admin {
+  display: flex;
+}
+.project-header .project-settings {
+  position: absolute;
+  top: -0.33em;
+  right: 0.5em;
+}
+
+.scroller-left, .scroller-right {
+  height: calc(100% - 3em);
+  width: 2em;
+  display: block;
+  position: absolute;
+  z-index: 99;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  text-align: center;
+  font-weight: bold;
+  color: white;
+  cursor: pointer;
+  opacity: 0.5;
+  user-select: none;
+}
+.scroller-left:hover, .scroller-right:hover {
+  color: black;
+  opacity: 1;
+}
+.scroller-left {
+  background: linear-gradient(90deg,rgb(130, 130, 130) 0%, rgb(179, 179, 179) 50%, rgba(255, 255, 255, 0) 100%);
+}
+.scroller-right {
+  right: 3px;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0) 0%, rgb(179, 179, 179) 50%, rgb(130, 130, 130) 100%);
+}
+
+.corpora-container {
+  display: flex;
+  height: 500px;
+  flex-flow: column wrap;
+  overflow-x: hidden;
+  resize: vertical;
+  user-select: none;
+}
+
 .corpus-block {
   border: 1px solid #d4d4d4;
   border-radius: 5px;
   cursor: pointer;
   position: relative;
   height: 233px;
+  width: 350px;
+  margin: 0em 1em 1em 0em;
 }
 
 .corpus-block-header {
@@ -869,6 +980,12 @@ export default {
   text-overflow: ellipsis;
 }
 
+.badge.revision {
+  transform: translate(-0.25em, -0.5em) scale(0.75);
+  background-color: #5599be !important;
+  padding: 0.2em;
+}
+
 .description {
   font-size: 90%;
   height: 108px;
@@ -877,6 +994,27 @@ export default {
 
 .word-count {
   font-size: 80%;
+}
+
+.corpus-block .word-count {
+  display: inline-flex;
+  flex-direction: row-reverse;
+  transform: translateY(-50%);
+}
+
+.corpus-block .badge {
+  box-shadow: 0px 0px 2px black;
+}
+
+.badge.language:not(:last-child):not(:first-child) {
+  margin-left: -1.25em;
+  width: 2.2em;
+}
+
+.badge.language:last-child::before {
+  content: '🚩';
+  position: absolute;
+  transform: translate(-100%, -100%);
 }
 
 .project-box {
@@ -984,7 +1122,7 @@ export default {
 }
 
 .details-button.icon-2 {
-  right: 55px;
+  right: 5px;
 }
 
 .icon-x {
@@ -993,11 +1131,40 @@ export default {
   padding-right: 7px;
 }
 
+.details-button .icon-x {
+  scale: 1.33;
+}
+
 .horizontal-space {
   margin: 0em 1em;
 }
 
-#languagesFilter {
+#new-collection {
+  width: min-content;
+  position: sticky;
+  bottom: 1.5em;
+  left: calc(100vw - 3.5em);
+  scale: 3;
+}
+#new-collection button {
+  border-radius: 50%;
+  width: 1em;
+  height: 1em;
+  padding: 0px;
+  color: gray;
+  background-color: white;
+  box-shadow: 0px 0px 2px gray;
+}
+#new-collection:hover button {
+  color: whitesmoke !important;
+  background-color: gray !important;
+}
+#new-collection button svg {
+  transform: translate(-1px,-4px);
+}
+
+
+/* #languages-filter {
   position: absolute;
   right: 0;
   max-width: 300px;
@@ -1007,5 +1174,5 @@ export default {
   z-index: 99;
   display: flex;
   flex-direction: column;
-}
+} */
 </style>

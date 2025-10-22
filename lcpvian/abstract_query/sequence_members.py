@@ -68,6 +68,7 @@ class Member:
                         {
                             "unit": {
                                 "label": members[0]["unit"].get("label", "anonymous"),
+                                "layer": members[0]["unit"]["layer"],
                                 "constraints": disjunction_constraints,
                             }
                         },
@@ -191,6 +192,9 @@ class Unit(Member):
         top_sequence: Sequence = self.get_top_sequence()
         query_data: QueryData = top_sequence.query_data
         unit_layer = top_sequence.conf.config["firstClass"]["token"]
+        assert obj["unit"].get("layer", "") == unit_layer, ReferenceError(
+            f"Sequences can only be made of {unit_layer} units."
+        )
         self.label: str = str(obj["unit"].get("label", ""))
         self.internal_label = self.label
         sequence_unit_labels = [

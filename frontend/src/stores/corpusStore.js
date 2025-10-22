@@ -161,6 +161,23 @@ export const useCorpusStore = defineStore("corpusData", {
         return response.data;
       });
     },
+    clipMedia(data) {
+      const {document} = data;
+      if (data.span[1]-data.span[0] < 0.1) return;
+      httpApi.post(`/document/${document}/clip`, data).then((response) => {
+        return response.data;
+      });
+    },
+    async getClipMedia(data) {
+      const {file} = data;
+      const res = await httpApi.get(`/document/get/clip/${file}`, {responseType: 'blob'});
+      const url = window.URL.createObjectURL(res.data);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', 'clip.zip');
+      document.body.appendChild(link);
+      link.click();
+    },
     async fetchExport(info) {
       const ampsInfo = Object.entries(info).map(([k,v])=>encodeURIComponent(k)+"="+encodeURIComponent(v)).join("&")
       let url = `${httpApi.getUri()}/download_export?${ampsInfo}`;

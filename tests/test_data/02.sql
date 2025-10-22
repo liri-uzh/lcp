@@ -82,7 +82,7 @@ WITH RECURSIVE fixed_parts AS
    FROM gather),
                res1 AS
   (SELECT DISTINCT 1::int2 AS rstype,
-                   jsonb_build_array(s, jsonb_build_array(t1, t2, t3))
+                   jsonb_build_array("s", jsonb_build_array("t1", "t2", "t3"))
    FROM match_list) ,
                res2 AS
   (SELECT 2::int2 AS rstype,

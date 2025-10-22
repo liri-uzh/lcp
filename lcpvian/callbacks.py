@@ -12,15 +12,22 @@ calls to Queue.enqueue in query_service.py
 
 import duckdb
 import json
+import lxml.etree
 import os
 import pandas
 import shutil
+import tempfile
 import traceback
+import zipfile
+
 
 from datetime import datetime
 from types import TracebackType
 from typing import Any, Unpack, cast
+from lxml.builder import E
 from uuid import uuid4
+from xml.sax.saxutils import escape, quoteattr
+
 
 from redis import Redis as RedisConnection
 from rq.job import Job
@@ -45,6 +52,8 @@ from .utils import (
 PUBSUB_LIMIT = int(os.getenv("PUBSUB_LIMIT", 31999999))
 MESSAGE_TTL = int(os.getenv("REDIS_WS_MESSSAGE_TTL", 5000))
 RESULTS_SWISSDOX = os.environ.get("RESULTS_SWISSDOX", "results/swissdox")
+RESULTS_USERS = os.environ.get("RESULTS_USERS", os.path.join("results", "users"))
+UPLOAD_MEDIA_PATH = os.environ.get("UPLOAD_MEDIA_PATH", "media")
 
 
 def _document(
@@ -131,6 +140,257 @@ def _image_annotations(
         "room": room,
         "msg_id": msg_id,
     }
+    return _publish_msg(connection, jso, msg_id)
+
+
+def _clip_media(
+    job: Job,
+    connection: RedisConnection,
+    result: list[JSONObject] | JSONObject,
+    **kwargs: Unpack[BaseArgs],
+) -> None:
+    """
+    When a user requests image annotations, we give it to them via websocket
+    """
+    # TODO: maybe rewrite and/or move this to make things cleaner?
+    job_kwargs: dict = cast(dict, job.kwargs)
+
+    user = cast(str, kwargs.get("user", job_kwargs["user"]))
+    room = cast(str | None, kwargs.get("room", job_kwargs["room"]))
+
+    config = cast(dict, kwargs.get("config", job_kwargs.get("config", {})))
+    span: list = cast(list, kwargs.get("span", job_kwargs.get("span", [0, 0])))
+    doc = config.get("document", "")
+    seg = config.get("segment", "")
+    tok = config.get("token", "")
+    layers = config.get("layer", {})
+    columns = config["mapping"]["layer"][seg]["prepared"]["columnHeaders"]
+    form_idx = columns.index("form")
+
+    contain_seg = [doc]
+    while 1:
+        child = next(
+            (l for l, p in layers.items() if p.get("contains", "") == contain_seg[-1]),
+            None,
+        )
+        if child is None:
+            break
+        contain_seg.append(child)
+        if child == seg:
+            break
+    if seg not in contain_seg:
+        contain_seg.append(seg)
+
+    globs: dict = {}
+    contained: dict = {}
+    uncontained: dict = {}
+    prepared: dict = {}
+    whens: dict = {}
+    for x in result:
+        layer, id, *more = cast(list, x)[0]
+        if layer == "_prepared":
+            prepared[id] = {"offset": more[0], "tokens": more[1]}
+            continue
+        fr_str: str = cast(dict, more[0]).get("frame_range", "")
+        if fr_str is None:
+            continue
+        data = contained if layer in contain_seg else uncontained
+        data[layer] = data.get(layer, {})
+        data[layer][id] = more[0]
+        fr_low, fr_up = [
+            int(x) for x in fr_str.replace("[", "").replace(")", "").split(",")
+        ]
+        for k, v in more[0].items():
+            attr = layers[layer].get("attributes", {}).get(k)
+            if not attr:
+                continue
+            if "ref" in attr:
+                sorted_obj = {x: v[x] for x in sorted(v.keys())}
+                json_obj = json.dumps(sorted_obj)
+                if json_obj not in globs:
+                    globs[json_obj] = sorted_obj
+                glob_idx = next(n for n, k in enumerate(globs) if k == json_obj)
+                more[0][k] = f"#G{glob_idx + 1}"
+        data[layer][id]["frame_range"] = [fr_low, fr_up]
+        data[layer][id]["_id"] = id
+        whens[fr_low] = whens.get(fr_low, {})
+        whens[fr_low][layer] = whens[fr_low].get(layer, [])
+        whens[fr_low][layer].append(more[0])
+        whens[fr_up] = whens.get(fr_up, {})
+        whens[fr_up][layer] = whens[fr_up].get(layer, [])
+
+    assert doc in contained, AssertionError(f"Could not find {doc} in payload")
+    doc_data = next(v for v in contained[doc].values())
+
+    span_dur = float(span[1]) - float(span[0])
+    doc_dur = doc_data["frame_range"][1] / 25.0 - doc_data["frame_range"][0] / 25.0
+    assert span_dur < 10.0 or span_dur / doc_dur < 0.5, PermissionError(
+        "Clipped media can only have a duration of up to 10 seconds or 50 percent of the original document"
+    )
+
+    whens_sorted = sorted(whens.keys())
+    whens_sorted_idx = {w: n for n, w in enumerate(whens_sorted, start=1)}
+
+    current_contains: dict = {}
+    built_contains: str = ""
+    open_at: dict = {}
+    for w in whens_sorted:
+        for n, c in enumerate(contain_seg):
+            current = current_contains.get(c, [])
+            found = whens[w].get(c, [])
+            if not found:
+                continue
+            for f in found:
+                if f in current:
+                    continue
+                indent = "      " + "".join(["  " for _ in range(n)])
+                for n2, c2 in enumerate(contain_seg):
+                    if n2 <= n:
+                        continue
+                    indent2 = "      " + "".join(["  " for _ in range(n2)])
+                    while open_at.get(n2, 0) > 0:
+                        open_at[n2] -= 1
+                        built_contains += f"\n{indent2}</{c2}>"
+                if open_at.get(n, 0) > 0:
+                    built_contains += f"\n{indent}</{c}>"
+                    open_at[n] = open_at[n] - 1
+                open_at[n] = open_at.get(n, 0) + 1
+                current = [x for x in current if x != f]
+                current.append(f)
+                start, end = [whens_sorted_idx[x] for x in f["frame_range"]]
+                built_contains += f'\n{indent}<{c} start="#T{start}" end="#T{end}" '
+                built_contains += " ".join(
+                    f"{escape(k)}={quoteattr(str(v))}"
+                    for k, v in f.items()
+                    if k not in ("start", "end")
+                )
+                built_contains += ">"
+                if c == seg:
+                    counter = int(f["char_range"].split(",")[0].replace("[", ""))
+                    for t in prepared[f["_id"]]["tokens"]:
+                        tattrs = " ".join(
+                            f"{escape(columns[n])}={quoteattr(str(t[n]))}"
+                            for n in range(len(t))
+                            if n != form_idx
+                        )
+                        cr = f'char_range="[{counter},{counter+len(t[form_idx])})"'
+                        built_contains += f"\n{indent}  <{tok} {cr} {tattrs}>{escape(t[form_idx])}</{tok}>"
+                        counter += len(t[form_idx]) + 1
+            current_contains[c] = current
+    for n, c in enumerate(reversed(contain_seg)):
+        indent = "      " + "".join(["  " for _ in range(len(contain_seg) - 1 - n)])
+        while open_at.get(n, 0) > 0:
+            built_contains += f"\n{indent}</{c}>"
+            open_at[n] = open_at[n] - 1
+
+    glob_notes = [
+        E.note(
+            id=f"G{n}",
+            type="global",
+            **{str(x): str(y) for x, y in globs[k].items()},
+        )
+        for n, k in enumerate(globs, start=1)
+    ]
+
+    main_node = E.TEI(
+        *(
+            [
+                E.teiHeader(
+                    E.fileDesc(
+                        E.notesStmt(
+                            E.note(
+                                *glob_notes,
+                                type="TEMPLATE_DESC",
+                            )
+                        )
+                    )
+                )
+            ]
+            if globs
+            else []
+        ),
+        E.text(
+            E.timeline(
+                E.when(absolute=str(span[0]), id="T0"),
+                *[
+                    E.when(
+                        interval=str(
+                            (int(x) - doc_data["frame_range"][0]) / 25.0 - span[0]
+                        ),
+                        since="#T0",
+                        id=f"T{n}",
+                    )
+                    for n, x in enumerate(whens_sorted, start=1)
+                ],
+            ),
+            E.body(
+                *[
+                    getattr(E, l)(
+                        **{
+                            str(k): str(v)
+                            for k, v in x.items()
+                            if k not in ("start", "end")
+                        },
+                        start="#T" + str(whens_sorted_idx[x["frame_range"][0]]),
+                        end="#T" + str(whens_sorted_idx[x["frame_range"][1]]),
+                    )
+                    for l, vs in uncontained.items()
+                    for x in sorted(vs.values(), key=lambda v: v["frame_range"][0])
+                ],
+                lxml.etree.XML(built_contains),
+            ),
+        ),
+        xmlns="https://tei-c.org/ns/1.0/",
+    )
+
+    user_dir = os.path.join(RESULTS_USERS, user)
+    if not os.path.exists(user_dir):
+        os.makedirs(user_dir)
+    xml_path = os.path.join(user_dir, "clip.xml")
+    string_formed = lxml.etree.tostring(main_node, encoding="UTF-8", pretty_print="True", xml_declaration=True)  # type: ignore
+    with open(xml_path, "w+", encoding="utf-8") as xml_out:
+        xml_out.write(string_formed.decode())
+
+    zip_fn = os.path.join(user_dir, "clip.zip")
+    zf = zipfile.ZipFile(zip_fn, "w")
+    zf.write(xml_path, "clip.xml")
+
+    media_col, media_props = next(
+        (x for x in config["meta"].get("mediaSlots", {}).items()), ("", "")
+    )
+    if media_fn := doc_data.get("media", {}).get(media_col):
+        ext = media_fn[-3:]
+        start, end = [float(x) for x in span]  # type: ignore
+        fullpath = os.path.join(UPLOAD_MEDIA_PATH, config["schema_path"], media_fn)
+        out_clip = os.path.join(user_dir, f"clip.{ext}")
+        import ffmpeg
+
+        stream = ffmpeg.input(fullpath)
+        aud = stream.filter_("atrim", start=start, end=end).filter_(
+            "asetpts", "PTS-STARTPTS"
+        )
+        if cast(dict, media_props).get("mediaType") == "video":
+            vid = stream.trim(start=start, end=end).setpts("PTS-STARTPTS")
+            joined = ffmpeg.concat(vid, aud, v=1, a=1).node
+            output = ffmpeg.output(joined[0], joined[1], out_clip)
+            output.run(overwrite_output=True)
+        else:
+            output = ffmpeg.output(aud, out_clip)
+            output.run(overwrite_output=True)
+        zf.write(out_clip, f"clip.{ext}")
+
+    zf.close()
+
+    action = "clip_media"
+    msg_id = str(uuid4())
+    jso: dict[str, Any] = {
+        "file": os.path.basename(zip_fn),
+        "action": action,
+        "user": user,
+        "room": room,
+        "msg_id": msg_id,
+    }
+
     return _publish_msg(connection, jso, msg_id)
 
 

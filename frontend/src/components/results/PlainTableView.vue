@@ -834,7 +834,7 @@ export default {
       return this.data
         .filter((row, rowIndex) => {
           let sentenceId = row[0];
-          return rowIndex >= start && rowIndex < end && this.sentences[sentenceId];
+          return rowIndex >= start && rowIndex < end && this.sentences[sentenceId] && this.sentences[sentenceId][1] instanceof Array;
         })
         .map(row=>this.formatTokens(row));
     },

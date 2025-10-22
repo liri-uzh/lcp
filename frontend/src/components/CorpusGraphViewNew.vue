@@ -1,5 +1,6 @@
 <template>
-  <div :style="`width: ${width}px; height: ${height}px; overflow: hidden;`">
+  <div style="text-align: center; font-size: 1.1em;">Corpus Data Structure</div>
+  <div :style="`width: ${width-10}px; height: ${height}px; overflow: hidden; border: solid 1px gray; border-radius: 10px;`">
     <svg id="corpusDiagram"></svg>
     <div id="zoomControls">
       <div id="zoomPlus" @click="zoom = Math.max(zoomMin, zoom - 0.1)">+</div>
@@ -199,8 +200,8 @@ export default {
   methods: {
     placeInit() {
       const svgInDOM = document.querySelector("#corpusDiagram");
-      this.viewBoxOffset = {x: -1 * Math.round(WIDTH/2), y: 0};
-      svgInDOM.setAttribute("viewBox", `${this.viewBoxOffset.x} ${this.viewBoxOffset.y} ${WIDTH} ${HEIGHT}`);
+      this.viewBoxOffset = {x: -1 * Math.round(this.width/2), y: 0};
+      svgInDOM.setAttribute("viewBox", `${this.viewBoxOffset.x} ${this.viewBoxOffset.y} ${this.width} ${this.height}`);
       this.zoom = 1;
     },
     title(node) {
@@ -226,7 +227,6 @@ export default {
 
       let hierarchy = d3.stratify()(unfoldedentities);
       const treeLayout = d3.tree()
-        // .size([WIDTH,HEIGHT])
         .nodeSize([nodeWidth+horizontalSep,nodeHeight+verticalSep]);
       hierarchy = treeLayout(hierarchy);
 
@@ -350,7 +350,7 @@ export default {
           const x = this.viewBoxPointer.x - event.pageX;
           const y = this.viewBoxPointer.y - event.pageY;
           this.viewBoxOffset = {x: x, y: y};
-          const [w, h] = (this.svg.attr("viewBox") || `_ _ ${WIDTH} ${HEIGHT}`)
+          const [w, h] = (this.svg.attr("viewBox") || `_ _ ${this.width} ${this.height}`)
             .split(" ").map(x=>parseInt(x)).slice(2,4);
           this.svg.attr("viewBox", `${x} ${y} ${w} ${h}`);
       }
@@ -365,17 +365,35 @@ export default {
         const [x,y] = svgInDOM.getAttribute("viewBox").split(" ").map(x=>parseInt(x)).slice(0,2);
         svgInDOM.setAttribute(
           "viewBox",
-          [x, y, Math.round(WIDTH * this.zoom), Math.round(HEIGHT * this.zoom)].join(" ")
+          [x, y, Math.round(this.width * this.zoom), Math.round(this.height * this.zoom)].join(" ")
         );
       }
     }
   },
-  mounted() {
+  async mounted() {
+    const svgInDOM = document.querySelector("svg#corpusDiagram");
+    svgInDOM.parentElement.addEventListener("wheel", (e)=>{
+      e.preventDefault();
+      e.stopPropagation();
+      this.zoom = Math.max(this.zoomMin, Math.min(this.zoomMax, this.zoom + e.deltaY/250));
+    });
+    setTooltips();
+
+    const getSuperParentWidth = r => {
+      const sp = svgInDOM.parentElement.parentElement;
+      if (!sp) return window.requestAnimationFrame(()=>getSuperParentWidth(r));
+      const w = sp.getBoundingClientRect().width;
+      if (w == 0) return window.requestAnimationFrame(()=>getSuperParentWidth(r));
+      console.log("superParent", sp, "width", w);
+      r(w);
+    }
+    this.width = await new Promise(r=>getSuperParentWidth(r));
+
     this.placeInit();
     this.svg = d3
       .select("svg#corpusDiagram")
-      .attr("width", WIDTH)
-      .attr("height", HEIGHT)
+      .attr("width", this.width)
+      .attr("height", this.height)
       .attr("cursor", "grab")
       .attr("position", "relative");
     this.corpusTree = this.svg.append("g");
@@ -386,13 +404,6 @@ export default {
     this.svg.on("pointerleave", this.onPointerUp);
     this.svg.on("pointermove", this.onPointerMove);
 
-    const svgInDOM = document.querySelector("svg#corpusDiagram");
-    svgInDOM.parentElement.addEventListener("wheel", (e)=>{
-      e.preventDefault();
-      e.stopPropagation();
-      this.zoom = Math.max(this.zoomMin, Math.min(this.zoomMax, this.zoom + e.deltaY/250));
-    });
-    setTooltips();
   },
   updated() {
     setTooltips();

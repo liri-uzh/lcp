@@ -2,12 +2,15 @@
 Endpoints for multimodal document/document ids fetching
 """
 
-from typing import Sequence, Any, cast
+import os
 
 from aiohttp import web
+from typing import Sequence, Any, cast
 
 from .typed import Config, JSONObject
 from .utils import push_msg
+
+RESULTS_USERS = os.environ.get("RESULTS_USERS", os.path.join("results", "users"))
 
 
 async def document(request: web.Request) -> web.Response:
@@ -95,6 +98,79 @@ async def image_annotations(request: web.Request) -> web.Response:
     )
     info: dict[str, str] = {"status": "started", "job": job.id}
     return web.json_response(info)
+
+
+async def clip_media(request: web.Request) -> web.Response:
+    """
+    Start a job fetching image annotations.
+
+    The job's callback will send the document to the user/room via websocket
+    """
+    authenticator = request.app["auth_class"](request.app)
+    user_data: dict = await authenticator.user_details(request)
+
+    if not user_data:
+        raise PermissionError("Unauthenticated users cannot clip media")
+
+    request_data: dict[str, str] = await request.json()
+    assert "corpus" in request_data, KeyError(
+        f"Corpus is missing from the request for image annotations"
+    )
+    corpus = request_data["corpus"]
+    span = request_data["span"]
+    assert isinstance(span, list) and len(span) == 2, TypeError(
+        "Span should be a list of 2 numbers"
+    )
+    doc_id: int = int(request.match_info["doc_id"])
+    assert doc_id, ReferenceError("Need a document id to export a media clip")
+
+    room: str | None = request_data.get("room")
+    user: str = request_data.get("user", "")
+
+    if not authenticator.check_corpus_allowed(
+        str(corpus),
+        user_data,
+        "lcp",
+    ):
+        raise PermissionError("This user is not authorized to access this corpus")
+
+    corpus_conf = request.app["config"][str(corpus)]
+
+    job = request.app["query_service"].clip_media(corpus_conf, span, doc_id, user, room)
+    info: dict[str, str] = {"status": "started", "job": job.id}
+    return web.json_response(info)
+
+
+async def get_clip_media(request: web.Request) -> web.FileResponse:
+    """
+    Start a job fetching image annotations.
+
+    The job's callback will send the document to the user/room via websocket
+    """
+    authenticator = request.app["auth_class"](request.app)
+    user_data: dict = await authenticator.user_details(request)
+    user_id = (user_data or {}).get("user", user_data.get("account", {})).get("id")
+
+    if not user_id:
+        raise PermissionError("Unauthenticated users cannot clip media")
+
+    file: str = str(request.match_info["file"])
+    assert "/" not in file, ValueError("The filename cannot contain the character '/'")
+    file = os.path.basename(file)
+
+    filepath = os.path.join(RESULTS_USERS, user_id, file)
+
+    # TODO: schedule deletion of the file after serving it
+    # see https://stackoverflow.com/a/73313042
+
+    content_disposition = f'attachment; filename="{file}"'
+    headers = {
+        "content-disposition": content_disposition,
+        "content-length": f"{os.stat(filepath).st_size}",
+    }
+    if file.endswith(".zip"):
+        headers["content-type"] = "application/zip"
+    return web.FileResponse(filepath, headers=headers)
 
 
 async def document_ids(request: web.Request) -> web.Response:

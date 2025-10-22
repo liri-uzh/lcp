@@ -24,7 +24,7 @@ WITH RECURSIVE fixed_parts AS
    FROM fixed_parts),
                res1 AS
   (SELECT DISTINCT 1::int2 AS rstype,
-                   jsonb_build_array(s, jsonb_build_array(t))
+                   jsonb_build_array("s", jsonb_build_array("t"))
    FROM match_list) ,
                res0 AS
   (SELECT 0::int2 AS rstype,
