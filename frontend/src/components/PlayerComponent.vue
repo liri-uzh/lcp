@@ -432,7 +432,7 @@ export default {
             value: document[0],
             document: document
           }
-        }).sort((x,y)=>x.name.toLowerCase() > y.name.toLowerCase()) :
+        }).sort((x,y)=>(x.name || "").toLowerCase() > (y.name || "").toLowerCase()) :
         []
     },
     baseMediaUrl() {
@@ -860,7 +860,13 @@ export default {
         else if (data["action"] === "document_ids") {
           this.documentDict = Object.fromEntries(Object.entries(data.document_ids).map(([id, props]) => [id, props.name]));
           this.corpusData = Object.entries(data.document_ids).map(
-            ([id, props]) => [id, props.name, Object.values(props.media), JSON.parse(props.frame_range.replace(")","]"))]
+            ([id, props]) => {
+              let fr = [0,0];
+              try {
+                fr = JSON.parse(props.frame_range.replace(")","]"));
+              } catch { /* */ }
+              return [id, props.name, Object.values(props.media), fr]
+            }
           );
 
           // Preselect first document

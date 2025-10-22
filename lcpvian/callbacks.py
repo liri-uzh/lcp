@@ -158,13 +158,14 @@ def _clip_media(
     user = cast(str, kwargs.get("user", job_kwargs["user"]))
     room = cast(str | None, kwargs.get("room", job_kwargs["room"]))
 
-    config = cast(dict, kwargs.get("config", job_kwargs.get("config", {})))
+    config = cast(dict, kwargs.get("conf", job_kwargs.get("conf", {})))
     span: list = cast(list, kwargs.get("span", job_kwargs.get("span", [0, 0])))
     doc = config.get("document", "")
     seg = config.get("segment", "")
     tok = config.get("token", "")
     layers = config.get("layer", {})
-    columns = config["mapping"]["layer"][seg]["prepared"]["columnHeaders"]
+    mapping = config.get("mapping", {}).get("layer", {})
+    columns = mapping.get(seg, {}).get("prepared", {}).get("columnHeaders") or ["form"]
     form_idx = columns.index("form")
 
     contain_seg = [doc]
