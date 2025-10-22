@@ -164,7 +164,8 @@ def _clip_media(
     seg = config.get("segment", "")
     tok = config.get("token", "")
     layers = config.get("layer", {})
-    columns = config["mapping"]["layer"][seg]["prepared"]["columnHeaders"]
+    mapping = config.get("mapping", {}).get("layer", {})
+    columns = mapping.get(seg, {}).get("prepared", {}).get("columnHeaders") or ["form"]
     form_idx = columns.index("form")
 
     contain_seg = [doc]
