@@ -395,9 +395,15 @@ export default {
     },
     corporaContainer(corpora) {
       let ret = "";
-      if (this.projectsGroups.length < 2)
-        ret = "height: unset; flex-flow: row wrap;"
-      if (this.projectsGroups.length > 2)
+      const projectsWithCorpora = this.projectsGroups.filter(p=>this.filterCorpora(p.corpora).length>0);
+      console.log("projectsWithCorpora",projectsWithCorpora);
+      if (projectsWithCorpora.length < 2) {
+        if (this.projectsGroups.length == 1)
+          ret = "height: unset; flex-flow: row wrap;";
+        else
+          ret = "height: calc(100vh - 300px); flex-flow: row wrap;"
+      }
+      if (projectsWithCorpora.length > 2)
         ret = "height: 250px";
       if (corpora.length == 0)
         ret = "height: 0px;"
@@ -440,39 +446,6 @@ export default {
       }
       return icons
     },
-    tabsScrollLeft() {
-      let left = Math.abs(parseInt(this.$refs.tabslist.style.left || 0, 10)) - this.scrollBoxSize() + 200
-      if (left < 0) {
-        left = 0
-      }
-      this.$refs.rightcaret.style.opacity = 1
-      if (left == 0) {
-        this.$refs.leftcaret.style.opacity = 0.5
-      }
-      this.$refs.tabslist.style.left = `-${left}px`
-    },
-    tabsScrollRight() {
-      let left = Math.abs(parseInt(this.$refs.tabslist.style.left || 0, 10)) + this.scrollBoxSize() - 200
-      if (left > this.widthOfTabs()) {
-        left = this.widthOfTabs() - 200
-      }
-      this.$refs.leftcaret.style.opacity = 1
-      if ((left + this.scrollBoxSize()) >= this.widthOfTabs()) {
-        this.$refs.rightcaret.style.opacity = 0.5
-      }
-      this.$refs.tabslist.style.left = `-${left}px`
-    },
-    scrollBoxSize() {
-      return this.$refs.tabsnav.offsetWidth;
-    },
-    widthOfTabs() {
-      let itemsWidth = 0;
-      this.$refs.tabslist.querySelectorAll('button').forEach((item) => {
-        itemsWidth += item.offsetWidth;
-      });
-      return itemsWidth;
-    },
-    
     filterCorpora(corpora) {
       if (this.corporaFilter) {
         let rgx = null;
@@ -730,16 +703,6 @@ export default {
       })
       // Rest
       sortedProjects.push(...Object.values(projects))
-      // If there is a filter, remove empty projects
-      // if (this.corporaFilter.length > 0) {
-      //   let _retval = {}
-      //   for (let key in retval) {
-      //     if (retval[key].corpora.length > 0) {
-      //       _retval[key] = retval[key]
-      //     }
-      //   }
-      //   retval = _retval
-      // }
       return sortedProjects;
     },
     getUniqueProjects() {
