@@ -396,7 +396,6 @@ export default {
     corporaContainer(corpora) {
       let ret = "";
       const projectsWithCorpora = this.projectsGroups.filter(p=>this.filterCorpora(p.corpora).length>0);
-      console.log("projectsWithCorpora",projectsWithCorpora);
       if (projectsWithCorpora.length < 2) {
         if (this.projectsGroups.length == 1)
           ret = "height: unset; flex-flow: row wrap;";

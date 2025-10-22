@@ -1425,7 +1425,7 @@ export default {
       modal.show()
     },
     processMeta(meta) {
-      const META_LIMIT = 5000;
+      const META_LIMIT = 50000;
       const ancMap = {
         char_range: "Stream",
         frame_range: "Time",
