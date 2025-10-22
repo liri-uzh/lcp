@@ -779,12 +779,13 @@ export default {
     projects() {
     },
     allLanguages() {
-      this.languageFilter = this.languageFilter || this.allLanguages.map(l=>l.langCode);
+      this.languageFilter = this.allLanguages.map(l=>l.langCode);
     }
   },
   async updated() {
     // this.setTooltips();
     // setTooltips();
+    this.languageFilter = this.languageFilter || this.allLanguages.map(l=>l.langCode);
     if (Object.keys(this.overflowingLeft).length > 0 || Object.keys(this.overflowingRight).length > 0) return;
     await new Promise(r=>setTimeout(r, 500));
     this.updateOverflows();
