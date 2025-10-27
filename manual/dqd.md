@@ -13,9 +13,7 @@ The picture above illustrates a simple query looking for co-occurrences of "cat"
 
 <div style="padding: 0.5em; margin: 1em 0em; background-color: rgb(217,225,233); color: black; border-radius: 0.2em;">
 <span style="color: darkblue; font-weight: bold;">( ! ) </span>
-As visible in the picutre, you can have <strong>multiple matches for one sentence</strong>. DQD follows the idea of 
-<!-- <a href="https://en.wikipedia.org/wiki/Entity%E2%80%93relationship_model" target="_blank"> -->
-<em>Entity-Relationship models</em>: it defines sets of entities by listing logical constraints on their properties and on their relations to one another. <strong>Any combination of entities matching the constraints constitutes a hit</strong>, which explains the results above.
+As visible in the picutre, you can have <strong>multiple matches for one sentence</strong>. DQD follows the idea of <em>Entity-Relationship models</em>: it defines sets of entities by listing logical constraints on their properties and on their relations to one another. <strong>Any combination of entities matching the constraints constitutes a hit</strong>, which explains the results above.
 
 DQD also includes quantifiers, which can be used to write constraints that do not add new entities to the constellation.
 </div>
@@ -43,7 +41,7 @@ To learn more about <strong>>corpus diagram</strong>, you can read the page <a h
 
 ### Entities
 
-Entities are instantiated by providing the name of their [annotation layer](model.md#layers), followed by a (unique) label, which can be used to reference the entity later on. The simple line **`Segment s` instantiates an entity labeled `s` on the annotation layer `Segment`**.
+Entities are instantiated by providing the name of their [annotation layer](data_structure.md#layers), followed by a (unique) label, which can be used to reference the entity later on. The simple line **`Segment s` instantiates an entity labeled `s` on the annotation layer `Segment`**.
 
 The query above declares a second entity, labeled `t`, on the annotation layer named `Token`. The operator **[`@`](at.md) requires that it overlap character-wise** with another entity, in this case the segment labeled `s`. As visible in the diagram, each token is fully contained _in_ a segment, so overlapping here means being _part of_ a segment.
 

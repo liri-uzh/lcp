@@ -72,9 +72,8 @@ LCP is currently in beta testing. The platform is free to use during this period
 
 * [Query writing](querying.md)
 * [The DQD query language in detail](dqd.md)
-* [LCP's Data Model](model.md)
-* [How corpora are modelled in LCP](corpora_in_lcp.md)
-* [importing your own corpora](importing.md)
+* [Data modeling and corpus structure in LCP](data_structure.md)
+* [Importing your own corpora](importing.md)
 * [Corpus management and sharing](corpus_management.md)
 
 
