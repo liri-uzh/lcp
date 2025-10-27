@@ -11,7 +11,7 @@ LCP's query language _DQD_ (**D**escriptive **Q**uery **D**efinition) lets you l
 The picture above illustrates a simple query looking for co-occurrences of "cat" and "dog" within the same sentence (the _Constraints_ part of the query) and asking to output them as a plain list of matches (the _Results_ part of the query).
 
 
-<div style="padding: 0.5em; margin: 1em 0em; background-color: rgb(237,245,253); color: black; border-radius: 0.2em;">
+<div style="padding: 0.5em; margin: 1em 0em; background-color: rgb(217,225,233); color: black; border-radius: 0.2em;">
 <span style="color: darkblue; font-weight: bold;">( ! ) </span>
 As visible in the picutre, you can have <strong>multiple matches for one sentence</strong>. DQD follows the idea of 
 <!-- <a href="https://en.wikipedia.org/wiki/Entity%E2%80%93relationship_model" target="_blank"> -->
@@ -36,7 +36,7 @@ The same is true of **all entities and attributes in the corpus**: in the BNC co
 For this reason, it is important to know the structure of a corpus when writing a DQD query, which is why LCP displays a diagram along with the query editor.
 
 
-<div style="padding: 0.5em; margin: 1em 0em; background-color: rgb(237,245,253); color: black; border-radius: 0.2em;">
+<div style="padding: 0.5em; margin: 1em 0em; background-color: rgb(217,225,233); color: black; border-radius: 0.2em;">
 <span style="color: darkblue; font-weight: bold;">( ! ) </span>
 To learn more about <strong>>corpus diagram</strong>, you can read the page <a href="corpora_in_lcp.html">Corpora in LCP</a>.</div>
 
@@ -62,7 +62,7 @@ The constraint in the example above respects this schema: `left` is `form`, `ope
 
 Annotation layers can come with any number of attributes. For example, the `Document` layer in this corpus has three attributes named `date`, `title`, `keyWords` and `classCode`. It is standard for tokens to also define an attribute named `lemma`. Had we written the constraint `lemma = "dog"` instead, we would have matched token occurrences whose surface form could be either "dog" or "dogs".
 
-<div style="padding: 0.5em; margin: 1em 0em; background-color: rgb(237,245,253); color: black; border-radius: 0.2em;">
+<div style="padding: 0.5em; margin: 1em 0em; background-color: rgb(217,225,233); color: black; border-radius: 0.2em;">
 <span style="color: darkblue; font-weight: bold;">( ! ) </span>
 Attributes can have different types; in this illustration, both <code>form</code> and <code>lemma</code> are assumed to be strings. Accordingly, we surround the test value with double quotes; DQD does <em>not</em> accept strings surrounded by single quotes. You can also use forward slashes <code>/</code> to define unanchored <strong>regular expressions</strong> (use <code>^</code> and <code>$</code> for anchoring purposes).</div>
 

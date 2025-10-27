@@ -1,10 +1,8 @@
 # Summary
 
 * [LCP](README.md#)
-    * [Landing page](lcp_landing.md)
-    * [catchphrase](catchphrase.md)
-    * [soundscript](soundscript.md)
-    * [videoscope](videoscope.md)
+    * [Results](lcp_results.md)
+    * [Media](lcp_media.md)
 * [Querying](querying.md)
 * [DQD](dqd.md)
     * [Keywords](keywords.md)

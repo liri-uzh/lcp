@@ -40,7 +40,7 @@ Time alignment is the process of reporting **where the units previously defined 
 SRT files do not provide a good estimate for timecode for words, but we can use the blocks' timecodes to align the segments.
 
 
-<div style="padding: 0.5em; margin: 1em 0em; background-color: rgb(237,245,253); color: black; border-radius: 0.2em;">
+<div style="padding: 0.5em; margin: 1em 0em; background-color: rgb(217,225,233); color: black; border-radius: 0.2em;">
 <span style="color: darkblue; font-weight: bold;">( ! ) </span>
 LCP uses a convention of <strong>25 frames per second</strong> for time-alignment purposes, which is the format in which we will report time alignment values.
 </div>
