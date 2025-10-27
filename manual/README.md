@@ -6,11 +6,11 @@
   <img src="images/Doors_interface_Functionalities.png" alt="alt" width="550"/>
 </p>
 
-**1. [Catchphrase](catchphrase.md) is the LCP interface optimized for working with _text_ corpora:** use it when you are working with mono- or multilingual text corpora of any size, or for faster inspection of the text content of audiovisual collections.
+**1. <span style='color: teal;'>Catchphrase</span> is the LCP interface optimized for working with _text_ corpora:** use it when you are working with mono- or multilingual text corpora of any size, or for faster inspection of the text content of audiovisual collections.
 
-**2. [Soundscript](soundscript.md) is optimized for working with _audio_ corpora:** use it for speech corpora that include audio recordings, transcriptions, and any other annotations on the textual or media stream. Results will output text and sound recordings.
+**2. <span style='color: blue;'>Soundscript</span> is optimized for working with _audio_ corpora:** use it for speech corpora that include audio recordings, transcriptions, and any other annotations on the textual or media stream. Results will output text and sound recordings.
 
-**3. [Videoscope](videoscope.md) is optimized for working with _audiovisual/video_ corpora:** use it for viewing and querying audiovisual corpora based on video, that can include annotations on the media stream or text. The interface includes a video player and a timeline annotation preview.
+**3. <span style='color: purple;'>Videoscope</span> is optimized for working with _audiovisual/video_ corpora:** use it for viewing and querying audiovisual corpora based on video, that can include annotations on the media stream or text. The interface includes a video player and a timeline annotation preview.
 
 ## Corpora
 
