@@ -13,7 +13,7 @@
         * [`set`](set.md)
     * [Results](results.md)
     * [Functions](functions.md)
-* [Data \& Structure](data_structure.md)
+* [Data & Structure](data_structure.md)
 * [Corpus management](corpus_management.md)
 * [Importing](importing.md)
     * [Tutorial - Part 1](import_tutorial_part1.md)

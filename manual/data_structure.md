@@ -1,4 +1,4 @@
-# Data \& Sturcture
+# Data & Sturcture
 
 ## Corpora in LCP
 
