@@ -2,7 +2,7 @@
 
 [LCP](https://www.liri.uzh.ch/en/services/LiRI-Corpus-Platform-LCP.html) is a cloud-based solution for handling and querying small to large multimodal corpora developed and maintained by a team at [LiRI](https://www.liri.uzh.ch/en.html), the Linguistic Research Infrastructure at UZH.
 
-<p align="center"> <!-- Doesnt work, I wanted to center it, but it's not that important -->
+<p>
   <img src="images/Doors_interface_Functionalities.png" alt="alt" width="550"/>
 </p>
 
@@ -32,27 +32,23 @@ Users can [query](querying.md) corpora from their browser by accessing the publi
 ## First steps
 
 The publicly accessible corpora of LCP are listed at [https://lcp.linguistik.uzh.ch](https://lcp.linguistik.uzh.ch/).
-<!-- This screenshot shows the current selection, though more corpora will be made available over time.
 
-<p align="center">
-  <img src="manual/images/landing_page_beforelogin.png" alt="alt" width="550"/>
-</p> -->
 
 The corpora are color-coded according to their modalities: <span style='color: teal;'>green</span> indicates text-only corpora, <span style='color: blue;'>blue</span> indicates audio corpora, and <span style='color: purple;'>purple</span> corresponds to video corpora. Those open, respectively, in <span style='color: teal;'>catchphrase</span>, <span style='color: blue;'>soundscript</span> and <span style='color: purple;'>videoscope</span> by default; (the text content of) audiovisiual corpora can also be open in catchphrase.
 
 Clicking on the (i) icon of a corpus box brings up more information about the corpus, including the structure of its annotations, which differ across datasets. See more information on corpus structure here: [Corpora in LCP](corpora_in_lcp.md).
 
-#### Login: edu-ID
+### Login: edu-ID
 
 While public corpora do not require log-in, querying semi-private corpora (e.g. Sparcling) requires authentication. Authenticated users can also manage their own private collections of corproa.
 
 The login button can be found in the top-right corner of the page. LCP uses the Switch edu-ID login system, which offers institutional authentication. If you cannot find your institution in any of the provided options, please [create a new Switch edu-ID login](https://eduid.ch/registration).
 
-#### Querying corpora
+### Querying corpora
 
 The _Text_ query option lets users search for plain words or sequences of words in a corpus. Below are two side-by-side screenshots of a search and its results for the word `Uftrag` in the _SWATCH annual report_ entry of the Swiss German _NOAH's Corpus_:
 
-<p style='display: flex;'>
+<p style='display: flex; flex-direction: column;'>
   <img src="images/example_text_query_in_corpus.png" alt="Plain text search for Uftrag" width="650"/>
   <img src="images/example_text_results.png" alt="Results for occurrences of Uftrag" width="650"/>
 </p>
@@ -60,20 +56,19 @@ The _Text_ query option lets users search for plain words or sequences of words 
 For more advanced searches, LCP uses a dedicated query language called [DQD](dqd.md). LCP provides example queries for each corpus, with comments (highlighted in green) guiding the user through their first query. As you are getting to know the platform and query language, you are invited to play around with the existing queries and see how the results change. Once you have written a valid query, click *Submit* to run the query.
 
 <p>
-  <img src="images/example_dqd_query_in_corpus.png" alt="Defualt DQD query looking for ART ADJ NN VERB" width="450"/>
+  <img src="images/example_dqd_query_in_corpus.png" alt="Defualt DQD query looking for ART ADJ NN VERB" width="650"/>
 </p>
 
 
 To learn more about querying options, see the [*Querying* section](querying.md). To learn more about the format of the results, see the [*Results* page](lcp_results.md).
 
 
-
-#### Beta-testing
+## Beta-testing
 
 LCP is currently in beta testing. The platform is free to use during this period, and we encourage users to provide feedback regarding discovered bugs or desired features via [lcp@linguistik.uzh.ch](mailto:lcp@linguistik.uzh.ch).
 
 
-#### Further reading
+## Further reading
 
 * [Query writing](querying.md)
 * [The DQD query language in detail](dqd.md)
