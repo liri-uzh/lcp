@@ -184,8 +184,7 @@ async def do_segment_and_meta(
                     cr = cr.get("char_range", "")
                 if not isinstance(cr, str) or not re.match(r"\[\d+,\d+\)", cr):
                     continue
-                char_range = range_from_str(cast(str, cr))
-                if not reqs_itvls[req_id][char_range]:
+                if not reqs_itvls[req_id][range_from_str(cast(str, cr))]:
                     continue
                 reqs_nlines[req_id][str(nline)] = 1
         for r in qi.requests:
