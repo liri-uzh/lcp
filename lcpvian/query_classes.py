@@ -370,7 +370,6 @@ class Request:
             n_seg_ids = len(
                 qi.segment_ids_in_results(
                     batch_res,
-                    qi.kwic_keys,
                     offset_this_batch,
                     offset_this_batch + lines_this_batch,
                 )
@@ -510,26 +509,6 @@ class QueryInfo:
     There is a single QueryInfo for potentially multiple POST requests (Request)
     """
 
-    @staticmethod
-    def segment_ids_in_results(
-        results: list, kwic_keys: list[str], offset: int = 0, upper: int | None = None
-    ) -> dict[str, int]:
-        """
-        Return the unique segment IDs listed in the results for the provided offset+upper
-        """
-        counter = -1
-        segment_ids: dict[str, int] = {}
-        for key, (sid, *_) in results:
-            if str(key) not in kwic_keys:
-                continue
-            counter += 1
-            if counter < offset:
-                continue
-            if upper is not None and counter >= upper:
-                break
-            segment_ids[str(sid)] = 1
-        return segment_ids
-
     def __init__(
         self,
         qhash: str,
@@ -647,6 +626,45 @@ class QueryInfo:
             (bn for bn, (bh, _) in self.query_batches.items() if bh == batch_hash), ""
         )
         return batch_name
+
+    def segment_ids_in_results(
+        self,
+        results: list,
+        offset: int = 0,
+        upper: int | None = None,
+    ) -> dict[str, int | list[int]]:
+        """
+        Return the unique segment IDs listed in the results for the provided offset+upper.
+        If the hits include a char_range for the context, it will be the value, else 1
+        """
+        kwic_keys: list[str] = self.kwic_keys
+        result_sets = self.result_sets
+        char_ranges: list[int | None] = [
+            next(
+                (
+                    n
+                    for n, y in enumerate(x.get("attributes", []))
+                    if y.get("name") == "char_ranges"
+                ),
+                None,
+            )
+            for x in result_sets
+        ]
+        counter = -1
+        segment_ids: dict[str, int | list[int]] = {}
+        for key, hit in results:
+            sid, *_ = hit
+            if str(key) not in kwic_keys:
+                continue
+            counter += 1
+            if counter < offset:
+                continue
+            if upper is not None and counter >= upper:
+                break
+            segment_ids[str(sid)] = (
+                1 if char_ranges[key - 1] is None else hit[char_ranges[key - 1]]
+            )
+        return segment_ids
 
     # Getters and setters to keep in sync with redis
     @property

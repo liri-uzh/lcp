@@ -22,16 +22,16 @@
           v-for="(item, resultIndex) in results"
           :key="`tr-results-${resultIndex}`"
           :data-index="resultIndex"
-          :class="resultIndex == this.selectedLine && this.selectedPage == this.currentPage ? `selected ${this.detachSelectedLine ? 'detached' : ''}` : ''"
-          @mousemove="hoverResultLine(resultIndex)"
+          :class="item.id == this.selectedLine && this.selectedPage == this.currentPage ? `selected ${this.detachSelectedLine ? 'detached' : ''}` : ''"
+          @mousemove="hoverResultLine(item.id)"
           @mouseleave="hoverResultLine(null)"
-          @click="selectLine(resultIndex, this.detachSelectedLine)"
+          @click="selectLine(item.id, this.detachSelectedLine)"
         >
           <td scope="row" class="results">
             <div
-              v-if="resultIndex == this.selectedLine && this.detachSelectedLine"
+              v-if="item.id == this.selectedLine && this.detachSelectedLine"
               class="unpin"
-              @click="selectLine(resultIndex, false)"
+              @click="selectLine(item.id, false)"
             >
               <FontAwesomeIcon :icon="['fas', 'thumb-tack']" />
               Unpin
@@ -42,45 +42,50 @@
             <span
               v-if="'mediaSlots' in corpora.corpus.meta"
               class="timetag"
-              :title="meta[data[resultIndex][0]][corpora.corpus.firstClass.document].name"
+              :title="meta[item.sentenceId][corpora.corpus.firstClass.document].name"
             >
               {{
-                this.getTimestamps(...this.getFrameRange(resultIndex, this.corpora.corpus.firstClass.segment)).join(" ")
+                this.getTimestamps(...this.getFrameRange(item.id, this.corpora.corpus.firstClass.segment)).join(" ")
               }}
             </span>
-            <span :title="$t('common-play-audio')" @click="playAudio(resultIndex)" class="action-button" v-if="showAudio(resultIndex)">
+            <span :title="$t('common-play-audio')" @click="playAudio(item.id)" class="action-button" v-if="showAudio(item.id)">
               <FontAwesomeIcon :icon="['fas', 'play']" />
             </span>
-            <span :title="$t('common-play-video')" @click="playVideo(resultIndex)" class="action-button" v-if="showVideo(resultIndex)">
+            <span :title="$t('common-play-video')" @click="playVideo(item.id)" class="action-button" v-if="showVideo(item.id)">
               <FontAwesomeIcon :icon="['fas', 'play']" />
             </span>
-            <span
-              v-if="Object.keys(meta).length"
-              style="margin-right: 0.5em"
-              @mousemove="showMeta(resultIndex, $event)"
-              @mouseleave="!stickMeta.x && !stickMeta.y && closeMeta()"
-              @click="setStickMeta($event)"
-              class="icon-info ms-2"
+            <div
+              v-for="(sid, sidIndex) in segmentSidSeries(item.sentenceId)"
+              :key="`tr-results-${resultIndex}-${sidIndex}`"
             >
-              <FontAwesomeIcon :icon="['fas', 'circle-info']" />
-            </span>
-            <PlainTokens
-              :item="item"
-              :columnHeaders="columnHeaders"
-              :currentToken="currentToken"
-              :resultIndex="resultIndex"
-              @showPopover="showPopover"
-              @closePopover="closePopover"
-            />
+              <span
+                v-if="Object.keys(meta).length && sid in meta"
+                style="margin-right: 0.5em"
+                @mousemove="showMeta(item.id, $event, sid)"
+                @mouseleave="!stickMeta.x && !stickMeta.y && closeMeta()"
+                @click="setStickMeta($event)"
+                class="icon-info ms-2"
+              >
+                <FontAwesomeIcon :icon="['fas', 'circle-info']" />
+              </span>
+              <PlainTokens
+                :item="formatTokens([sid, ...item.hits])"
+                :columnHeaders="columnHeaders"
+                :currentToken="currentToken"
+                :resultIndex="item.id"
+                @showPopover="showPopover"
+                @closePopover="closePopover"
+              />
+            </div>
           </td>
           <td class="action-button"
-            @click="showImage(...getImage(resultIndex), resultIndex, this.meta[this.data[resultIndex][0]])"
-            v-if="getImage(resultIndex)"
+            @click="showImage(...getImage(item.id), item.id, this.meta[item.sentenceId])"
+            v-if="getImage(item.id)"
           >
             <FontAwesomeIcon :icon="['fas', 'image']" />
           </td>
           <td class="action-button" style="opacity: 0.5;" title="No or more than one images"
-            v-else-if="Object.entries(this.meta[this.data[resultIndex][0]] || {}).find((lp=>lp[1].xy_box))"
+            v-else-if="Object.entries(this.meta[item.sentenceId] || {}).find((lp=>lp[1].xy_box))"
           >
             <FontAwesomeIcon :icon="['fas', 'image']" />
           </td>
@@ -90,12 +95,12 @@
               class="btn btn-secondary btn-sm"
               data-bs-toggle="modal"
               :data-bs-target="`#detailsModal${randInt}`"
-              @click="showModal(resultIndex)"
+              @click="showModal(item.id)"
             >
               {{ $t('common-details') }}
             </button>
           </td>
-          <td :class="['audioplayer','audioplayer-'+resultIndex, playIndex == resultIndex ? 'visible' : '']"></td>
+          <td :class="['audioplayer','audioplayer-'+item.id, playIndex == item.id ? 'visible' : '']"></td>
         </tr>
       </tbody>
     </table>
@@ -423,7 +428,17 @@ import Utils from "@/utils.js";
 import { FontAwesomeIcon } from "@fortawesome/vue-fontawesome";
 import config from "@/config";
 
+class DataLine {
+  constructor(line, n) {
+    this.id = n;
+    this.sentenceId = line[0];
+    this.hits = line.slice(1,);
+  }
+}
+
 const TokenToDisplay = Utils.TokenToDisplay;
+
+const SEGMENT_WINDOW = 2; // number of +/- characters to retrieve the surrounding sentences
 
 export default {
   name: "ResultsPlainTableView",
@@ -431,6 +446,7 @@ export default {
   props: [
     "data",
     "sentences",
+    "sentencesByStream",
     "languages",
     "attributes",
     "meta",
@@ -481,6 +497,17 @@ export default {
     FontAwesomeIcon
 },
   methods: {
+    segmentSidSeries(sid) {
+      if (!(sid in this.sentences)) return [];
+      const sentence = this.sentences[sid];
+      const range = sentence.find(x=>x instanceof Array && x.length == 2 && x.every(y=>typeof(y)=="number"));
+      if (!range) return [sid];
+      return this.sentencesByStream
+        .search(range.map((x,i)=>x + (i==0?-1:1) * this.segmentWindow))
+        .sort((x,y)=>x.low > y.low)
+        .map(x=>x.value)
+        .filter(s=>s in this.sentences);
+    },
     selectLine(index, detach) {
       if (detach && (this.showAudio(index) || this.showVideo(index) || this.imageLayerAttribute[0]))
         this.detachSelectedLine = true;
@@ -499,13 +526,15 @@ export default {
       this.currentToken = null;
       this.currentResultIndex = null;
     },
-    showMeta(resultIndex, event) {
+    showMeta(resultIndex, event, overwriteSid) {
       if (this.stickMeta.x || this.stickMeta.y) return;
       this.closePopover();
       resultIndex = resultIndex + (this.currentPage - 1) * this.resultsPerPage;
-      const sentenceId = this.data[resultIndex][0];
+      let sentenceId = this.data[resultIndex][0];
       const layer = this.corpora.corpus.layer;
       this.currentResultIndex = resultIndex;
+      if (overwriteSid)
+        sentenceId = overwriteSid;
       this.currentMeta = Object.fromEntries(Object.entries(this.meta[sentenceId]).sort((x,y)=>y[0] != layer[x[0]]?.contains));
       for (let layer in this.currentMeta) {
         const submeta = this.currentMeta[layer].meta;
@@ -800,6 +829,7 @@ export default {
     }
   },
   computed: {
+    segmentWindow() { return SEGMENT_WINDOW; },
     imageLayerAttribute() {
       if (!this.corpora.corpus) return ["",""];
       for (let [layerName, props] of Object.entries(this.corpora.corpus.layer)) {
@@ -831,12 +861,14 @@ export default {
     results() {
       let start = this.resultsPerPage * (this.currentPage - 1);
       let end = start + this.resultsPerPage;
-      return this.data
-        .filter((row, rowIndex) => {
-          let sentenceId = row[0];
-          return rowIndex >= start && rowIndex < end && this.sentences[sentenceId] && this.sentences[sentenceId][1] instanceof Array;
+      const ret = this.data
+        .map((row,rowIndex)=>new DataLine(row, rowIndex))
+        .filter(line => {
+          return line.id >= start && line.id < end && this.sentences[line.sentenceId] && this.sentences[line.sentenceId][1] instanceof Array;
         })
-        .map(row=>this.formatTokens(row));
+        // Sort by range
+        .sort((x,y)=>(this.sentences[x.sentenceId]||[0]).at(-1) > (this.sentences[y.sentenceId]||[0]).at(-1));
+      return ret;
     },
     columnHeaders() {
       let partitions = this.corpora.corpus.partitions

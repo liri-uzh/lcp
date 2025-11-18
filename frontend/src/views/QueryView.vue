@@ -462,6 +462,7 @@
                               v-if="plainType == 'table' || resultContainsSet(resultSet)"
                               :data="WSDataResults.result[index + 1] || []"
                               :sentences="WSDataSentences || {}"
+                              :sentencesByStream="WSDataSentencesByRange['stream']"
                               :languages="selectedLanguages"
                               :meta="WSDataMeta.bySegment"
                               :attributes="resultSet.attributes"
@@ -994,6 +995,7 @@ export default {
       WSDataResults: "",
       WSDataMeta: {"layer": {}, "bySegment": {}},
       WSDataSentences: {},
+      WSDataSentencesByRange: {"stream": new IntervalTree()/*, "time":  new IntervalTree(), "location":  new IntervalTree()*/}, // TODO
       nResults: 200,
       activeResultIndex: 1,
       selectedLanguages: null,
@@ -1676,8 +1678,17 @@ export default {
           this.processMeta(meta);
           if (!(-1 in data.result)) return;
           this.WSDataSentences = this.WSDataSentences || {};
-          for (let [sid, v] of Object.entries(data.result[-1]))
+          for (let [sid, v] of Object.entries(data.result[-1])) {
+            const rangeMatches = v.map(x=>String(x||"").match(/^\[(\d+),(\d+)\)$/));
+            const rangeIdx = rangeMatches.findIndex(x=>x);
+            if (rangeIdx>=0) {
+              const range = rangeMatches[rangeIdx].slice(1,).map(x=>parseInt(x));
+              v[rangeIdx] = range;
+              this.insertRange(this.WSDataSentencesByRange['stream'], range, sid);
+            }
             this.WSDataSentences[sid] = v;
+          }
+          console.log("sentences", this.WSDataSentences, "sentencesByRange", this.WSDataSentencesByRange['stream']);
           if (data.full) {
             if (this.WSDataResults) {
               if (!this.WSDataResults.result)

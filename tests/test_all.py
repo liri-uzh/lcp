@@ -1,11 +1,11 @@
 import json
 import os
 import re
-
 import sqlparse
 
 from aiohttp.test_utils import AioHTTPTestCase
 from rq.command import PUBSUB_CHANNEL_TEMPLATE
+from typing import cast
 
 from lcpvian.dqd_parser import convert as dqd_to_json
 
@@ -156,10 +156,24 @@ class MyAppTestCase(AioHTTPTestCase):
             self.assertTrue(meta_json is not None)
             self.assertTrue(post_processes is not None)
             self.assertEqual(sql_norm(sql_query), sql_norm(sql))
-            mq, _ = get_segment_meta_script(
-                meta,
-                [lg],
-                meta["batch"],
-            )
+
+            kwics = [
+                x for x in meta_json.get("result_sets", []) if x.get("type") == "plain"
+            ]
+            kwics_ids = [
+                next(
+                    y
+                    for y in cast(list, x.get("attributes", []))
+                    if y.get("name") == "identifier"
+                )
+                for x in kwics
+            ]
+            # context = (
+            #     kwics_ids[0].get("layer", meta["firstClass"]["segment"])
+            #     if kwics_ids
+            #     else None
+            # )
+
+            mq, _ = get_segment_meta_script(meta, [lg], meta["batch"], context=None)
             mm = sqlparse.format(mq, reindent=True, keyword_case="upper")
             self.assertEqual(sql_norm(meta_q), sql_norm(mm))

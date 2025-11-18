@@ -9,7 +9,7 @@ from aiohttp import web
 from base64 import b64decode as btoa
 from functools import cmp_to_key
 from io import TextIOWrapper
-from intervaltree import Interval, IntervalTree
+from intervaltree import IntervalTree
 from lxml.builder import E
 from redis import Redis as RedisConnection
 from rq import Callback, Queue
@@ -30,6 +30,7 @@ from .utils import (
     _is_anchored,
     _publish_msg,
     is_prepared_annotation,
+    range_from_str,
     sanitize_filename,
 )
 
@@ -555,23 +556,24 @@ class Exporter:
         work_path = self.get_working_path(batch_hash)
         res = payload.get("result", [])
         # SEGMENTS
-        for sid, (offset, tokens, *annotations) in res["-1"].items():
+        for sid, (offset, tokens, annotations, char_range) in res["-1"].items():
             prefix = sid[0:3]
             seg_path = self.get_working_path(prefix)
             fpath = os.path.join(seg_path, f"{sid}.xml")
             with open(fpath, "w") as seg_output:
-                for annotation in annotations:
-                    if not annotation:
+                ann_layer, ann_occurs = next(
+                    ((k, v) for k, v in annotations.items()), ("", [(None, None, None)])
+                )
+                for ann_pos, n_anns, ann_props in ann_occurs:
+                    if not ann_pos or not ann_props:
                         continue
-                    ann_layer, ann_occurs = next((k, v) for k, v in annotation.items())
-                    for ann_pos, n_anns, ann_props in ann_occurs:
-                        props = {
-                            "from": str(ann_pos),
-                            "to": str(ann_pos + n_anns),
-                            **{k: str(v) for k, v in ann_props.items()},
-                        }
-                        ann_node = getattr(E, ann_layer)(**props)
-                        seg_output.write(_node_to_string(ann_node))
+                    props = {
+                        "from": str(ann_pos),
+                        "to": str(ann_pos + n_anns),
+                        **{k: str(v) for k, v in ann_props.items()},
+                    }
+                    ann_node = getattr(E, ann_layer)(**props)
+                    seg_output.write(_node_to_string(ann_node))
                 for token in self.build_tokens(offset, tokens):
                     seg_output.write(_node_to_string(token))
         # META
@@ -595,7 +597,7 @@ class Exporter:
                 anc_meta = meta.get(anchor_col[a], "")
                 if not anc_meta:
                     continue
-                itv = range(*json.loads(anc_meta.replace(")", "]")))
+                itv = range_from_str(anc_meta)
                 layer_ids_by_anchor[lname][a][itv] = lid
         top_layer = _get_top_layer(config, restrict=set(layers_in_meta))
         nested_layers: list[str] = []
@@ -615,8 +617,7 @@ class Exporter:
         for lid, attrs in layers_by_id[top_layer].items():
             fpath = os.path.join(work_path, f"{lid}.xml")
             top_itv_by_anchor = {
-                a: range(*json.loads(attrs[anchor_col[a]].replace(")", "]")))
-                for a in valid_anchors
+                a: range_from_str(attrs[anchor_col[a]]) for a in valid_anchors
             }
             with open(fpath, "w") as top_output:
                 self.write_unit(top_output, lid, top_layer, attrs)
@@ -632,9 +633,7 @@ class Exporter:
                     # Retrieve the bottom units
                     for bottom_unit_id in sorted(bottom_anchors[a][top_itv]):
                         bottom_unit = layers_by_id[bottom_layer][bottom_unit_id.data]
-                        bottom_unit_itv = range(
-                            *json.loads(bottom_unit[anchor_col[a]].replace(")", "]"))
-                        )
+                        bottom_unit_itv = range_from_str(bottom_unit[anchor_col[a]])
                         for iu_layer, iu_id in interim_units.items():
                             new_iu_id = next(
                                 (
@@ -828,7 +827,7 @@ class Exporter:
                         _next_line(i, indented_layers)
                     line = cast(str, inputs[0]["line"])
                     output.write("    " + line)
-                    layers_to_close = [inputs[0]["layer"]]
+                    layers_to_close: list[str] = [cast(str, inputs[0]["layer"])]
                     # Now proceed with the actual lines
                     for i in inputs:
                         _next_line(i, indented_layers)
@@ -843,10 +842,15 @@ class Exporter:
                         embedding = cast(int, inp["embedding"])
                         # close any embedded node
                         while embedding_from >= embedding and layers_to_close:
-                            layer_to_close = layers_to_close.pop()
+                            layer_to_close = layers_to_close[-1]
+                            embedding_to_close = indented_layers.index(layer_to_close)
+                            if embedding_to_close < embedding:
+                                # if we're skipping some intermediate layers
+                                break
                             ind = _get_indent(embedding_from)
                             output.write(f"{ind}</{layer_to_close}>\n")
                             embedding_from += -1
+                            layers_to_close.pop()
                         ind = _get_indent(embedding)
                         output.write(f"{ind}{line}")
                         if inp["layer"] == config["segment"]:
@@ -862,7 +866,7 @@ class Exporter:
                             if os.path.exists(fn):
                                 _paste_file(output, fn, _get_indent(embedding + 1))
                         # we'll need to close this later
-                        layers_to_close.append(inp["layer"])
+                        layers_to_close.append(cast(str, inp["layer"]))
                         embedding_from = embedding
                         for x in inputs:
                             if x["line"] != line:
