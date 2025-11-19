@@ -152,7 +152,7 @@
         top: `min(${stickMeta.y || popoverY}px, calc(100vh - 33vh))`,
         left: (stickMeta.x || popoverX) + 'px',
         overflowY: (stickMeta.x || stickMeta.y) ? 'scroll' : 'visible',
-        maxHeight: '33vh',
+        maxHeight: stickMeta.y ? '33vh' : 'unset',
       }"
     >
       <span
