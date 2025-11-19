@@ -51,7 +51,7 @@
                 @mousemove="showPopover(token, resultIndex, $event)"
                 @mouseleave="closePopover"
               >
-                {{ token[0] }}
+                {{ token[formIndex] }}
               </span>
             </td>
             <td scope="row" class="match-context text-bold">
@@ -66,7 +66,7 @@
                 @mousemove="showPopover(token, resultIndex, $event)"
                 @mouseleave="closePopover"
               >
-                {{ token[0] }}
+                {{ token[formIndex] }}
               </span>
             </td>
           </template>
@@ -82,7 +82,7 @@
               @mousemove="showPopover(token, resultIndex, $event)"
               @mouseleave="closePopover"
             >
-              {{ token[0] }}
+              {{ token[formIndex] }}
             </span>
           </td>
           <td>
@@ -289,8 +289,8 @@ export default {
       modalVisible: false,
       modalIndex: null,
       currentPage: 1,
-      groups: this.data ? this.getGroups(this.data[0], true) : [],
-      randInt: Math.floor(Math.random() * 1000)
+      groups: this.data ? this.getGroups(this.data, true) : [],
+      randInt: Math.floor(Math.random() * 1000),
     };
   },
   components: {
@@ -320,15 +320,16 @@ export default {
       if (data) {
         let tokenData = JSON.parse(JSON.stringify(data));
         tokenData = tokenData.splice(1, tokenData.length).sort();
-        if (initial === true) {
-          tokenData = tokenData[0]
-        }
+        if (initial === true)
+          tokenData = tokenData[0][1];
         groups = tokenData.map(tokenOrArrayOfTokens =>
           tokenOrArrayOfTokens instanceof Array
             ? tokenOrArrayOfTokens
             : [tokenOrArrayOfTokens]
         );
       }
+      if (groups.length > 0)
+        console.log("groups", groups, data);
       return groups;
     },
     showPopover(token, resultIndex, event) {
@@ -359,6 +360,7 @@ export default {
           resultIndex + (this.currentPage - 1) * this.resultsPerPage;
 
         let sentenceId = this.data[resultIndex][0];
+        if (!(sentenceId in this.sentences)) return classes;
         let startId = this.sentences[sentenceId][0];
         let currentTokenId = 0;
         let groupStartIndex = 0;
@@ -412,6 +414,7 @@ export default {
         let tokenId = this.currentToken[headIndex];
         if (tokenId) {
           let sentenceId = this.data[this.currentResultIndex][0];
+          if (!(sentenceId in this.sentences)) return token;
           let startId = this.sentences[sentenceId][0];
           let tokenIndexInList = tokenId - startId;
           token = this.sentences[sentenceId][1][tokenIndexInList][lemmaIndex];
@@ -428,6 +431,7 @@ export default {
         })
         .map((row) => {
           let sentenceId = row[0];
+          if (!(sentenceId in this.sentences)) return [];
           let startIndex = this.sentences[sentenceId][0];
           let tokens = this.sentences[sentenceId][1];
           let tokenData = this.getGroups([0, ...row[1]]);
@@ -492,6 +496,9 @@ export default {
       // }
       return headers;
     },
+    formIndex() {
+      return Math.max(this.columnHeaders.indexOf("form"), 0);
+    }
   },
   mounted() {
     this.columnEllipses();
