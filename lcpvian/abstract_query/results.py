@@ -239,10 +239,13 @@ class ResultsMaker:
 
         for result in results:
             if "resultsPlain" in cast(JSONObject, result):
+                layers_conf = cast(dict, self.config["layer"])
+                first_class = cast(dict, self.config["firstClass"])
                 legal_layers_plain_entities = {
-                    y.lower()
-                    for x, y in cast(dict, self.config["firstClass"]).items()
-                    if x in ("token", "segment")
+                    x.lower()
+                    for x, y in layers_conf.items()
+                    if x in (first_class["token"], first_class["segment"])
+                    or y.get("contains") == first_class["token"]
                 }
                 plain = cast(JSONObject, result["resultsPlain"])
                 ents = cast(list[str], plain["entities"])
@@ -757,7 +760,7 @@ WHERE {ent_stream_ref} && {cont_tok_stream_ref}
         )
         for comp in comps:
             left, comparator, _, right = _parse_comparison(comp)
-            left_str = left.get("label")
+            left_str = left.get("label") or left.get("reference")
             right_str = next(x for x in cast(dict, right).values())
             if not left_str or not right_str:
                 continue
@@ -843,21 +846,13 @@ WHERE {ent_stream_ref} && {cont_tok_stream_ref}
             alias = re.sub("[^a-zA-Z0-9_]", "_", alias)
             alias = alias.lstrip("_").rstrip("_")
             # The method below does not work for sub-attributes of global attributes
-            # if "sql" in ref_info:
-            #     alias = cast(SQLRef, ref_info["sql"]).alias
             self.r.selects.add(ref + sql_str(" AS {}", alias))
             self.r.entities.add(alias)
             parsed_attributes.append((alias, ref_info))
-            if (
-                not count_entities
-                # or "attribute" not in att
-                # or "." not in att["attribute"]
-            ):
+            if not count_entities:
                 continue
             entity = next(x for x in count_entities)
             entity_layer, _ = self.r.label_layer[entity]
-            # prefix, *_ = att["attribute"].split(".")
-            # prefix_layer, _ = self.r.label_layer[prefix]
             for prefix in ref_info.get("entities", []):
                 prefix_layer, _ = self.r.label_layer.get(prefix, ("", ""))
                 if prefix_layer not in self.conf_layer:
@@ -874,16 +869,6 @@ WHERE {ent_stream_ref} && {cont_tok_stream_ref}
                 ]
                 if not anchorings:
                     continue
-                # assert anchorings, RuntimeError(
-                #     f"Layer {prefix_layer} ({prefix}) does not share an anchoring with layer {entity_layer} ({entity_lab})"
-                # )
-                # prefix_table = _get_table(prefix_layer, self.config, self.batch, self.lang)
-                # join_formed = f"{self.schema}.{prefix_table} {prefix}"
-                # if join_formed != f"{self.schema}.{table} {entity_lab}":
-                #     jjoins.append(join_formed)
-                # new_label = self.r.unique_label(
-                #     prefix, prefix_layer, self.r.sql.used_aliases
-                # )
                 anchors = {
                     a: self.r.sql.anchor(prefix, prefix_layer, a) for a in anchorings
                 }
@@ -906,21 +891,6 @@ WHERE {ent_stream_ref} && {cont_tok_stream_ref}
                     jselects.append(jselect)
                 if alias not in jgroups:
                     jgroups.append(alias)
-                # jwheres.append(f"{ref} = {alias}")
-                # self.r.selects.update({f"{prefix}.{a} AS {prefix}_{a}" for a in anchorings})
-                # jgroups = [new_anchors[a].alias for a in anchorings]
-                # self.r.entities.update({x for x in jgroups})
-                # where_anchors = " OR ".join(
-                #     sql_str("{} && ", self.r.sql.anchor(prefix, prefix_layer, a).alias)
-                #     + self.r.sql.anchor(entity_lab, entity_layer, a).ref
-                #     for a in anchorings
-                # )
-                # jwheres.append(where_anchors)
-                # # self.r.selects.update({f"{prefix}.{a} AS {prefix}_{a}" for a in anchorings})
-                # jgroups = [
-                #     self.r.sql.anchor(prefix, prefix_layer, a).alias for a in anchorings
-                # ]
-                # self.r.entities.update({x for x in jgroups})
         assert parsed_attributes, RuntimeError(
             f"Need at least one *attribute* referenced in the analysis"
         )
