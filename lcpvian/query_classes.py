@@ -637,6 +637,9 @@ class QueryInfo:
         Return the unique segment IDs listed in the results for the provided offset+upper.
         If the hits include a char_range for the context, it will be the value, else 1
         """
+        config = self.config
+        if isinstance(config, RedisDict):
+            config = config.to_dict()
         kwic_keys: list[str] = self.kwic_keys
         result_sets = self.result_sets
         char_ranges: list[int | None] = [
@@ -646,6 +649,13 @@ class QueryInfo:
                     for n, y in enumerate(x.get("attributes", []))
                     if y.get("name") == "char_ranges"
                 ),
+                None,
+            )
+            for x in result_sets
+        ]
+        contexts = [
+            next(
+                (y for y in x.get("attributes", []) if y.get("name") == "identifier"),
                 None,
             )
             for x in result_sets
@@ -661,9 +671,13 @@ class QueryInfo:
                 continue
             if upper is not None and counter >= upper:
                 break
-            segment_ids[str(sid)] = (
-                1 if char_ranges[key - 1] is None else hit[char_ranges[key - 1]]
-            )
+            v = 1
+            if char_ranges[key - 1]:
+                v = hit[char_ranges[key - 1]]
+                ctx = contexts[key - 1]
+                if ctx and ctx.get("layer") == config["firstClass"]["segment"]:
+                    v = [v[0] - 2, v[1] + 2]
+            segment_ids[str(sid)] = v
         return segment_ids
 
     # Getters and setters to keep in sync with redis
