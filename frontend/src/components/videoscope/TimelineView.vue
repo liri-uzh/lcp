@@ -241,6 +241,14 @@ export default {
     }
   },
   methods: {
+    select(start=0, end=0) {
+      this.selectionStart = start;
+      this.selectionEnd = end;
+      const newXScale = d3.zoomTransform(svg.node()).rescaleX(linearScale);
+      selectRect
+        .attr("x", (d) => newXScale(d.x1))
+        .attr("width", (d) => newXScale(d.x2) - newXScale(d.x1));
+    },
     resetZoom() {
       this.zoomValue = DEFAULT_ZOOM_LEVEL;
     },
@@ -671,8 +679,7 @@ export default {
           const clickX = transform.invertX(d3.pointer(event)[0]);
           const originalValue = linearScale.invert(clickX);
 
-          this.selectionStart = originalValue;
-          this.selectionEnd = originalValue;
+          this.select(originalValue, originalValue);
           this.selecting = true;
         })
         .on('mouseout', function () {
@@ -698,13 +705,8 @@ export default {
           const clickX = transform.invertX(d3.pointer(event)[0]);
           const originalValue = linearScale.invert(clickX);
 
-          if (this.selectionStart && this.selecting) {
-            this.selectionEnd = originalValue;
-            const newXScale = d3.zoomTransform(svg.node()).rescaleX(linearScale);
-            selectRect
-              .attr("x", (d) => newXScale(d.x1))
-              .attr("width", (d) => newXScale(d.x2) - newXScale(d.x1));
-          }
+          if (this.selectionStart && this.selecting)
+            this.select(this.selectionStart, originalValue);
 
           d3
             .select(".mouse-text")

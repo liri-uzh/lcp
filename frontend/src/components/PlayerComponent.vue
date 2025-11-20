@@ -509,12 +509,14 @@ export default {
         if (!player)
           continue
         const tv = this.$refs.timelineview;
-        let [tvstart,tvend] = [tv.selectionStart,tv.selectionEnd]
-        if (tvstart > tvend) [tvstart,tvend] = [tvend, tvstart];
-        if (tvend - tvstart > 0.1 && tvend > 0) {
-          this.currentTime = tvstart;
-          player.currentTime = tvstart;
-          end = tvend;
+        if (tv) {
+          let [tvstart,tvend] = [tv.selectionStart,tv.selectionEnd]
+          if (tvstart > tvend) [tvstart,tvend] = [tvend, tvstart];
+          if (tvend - tvstart > 0.1 && tvend > 0) {
+            this.currentTime = tvstart;
+            player.currentTime = tvstart;
+            end = tvend;
+          }
         }
         if (end && end >= 0) {
           end = Math.min(end, player.duration);
@@ -1000,6 +1002,7 @@ export default {
           this.selectedMediaForPlay.startTime,
           this.selectedMediaForPlay.endTime
         ]
+        this.$refs.timelineview.select(start, end);
         this.setResultTimes = [start, end];
 
         this.currentDocumentSelected = {
