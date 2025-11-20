@@ -155,8 +155,8 @@ class MyAppTestCase(AioHTTPTestCase):
             sql_query, meta_json, post_processes = json_to_sql(json_query, **kwa)
             self.assertTrue(meta_json is not None)
             self.assertTrue(post_processes is not None)
-            self.assertEqual(sql_norm(sql_query), sql_norm(sql), msg=base)
+            self.assertEqual(sql_norm(sql_query), sql_norm(sql), msg=f"{base}.dqd")
 
             mq, _ = get_segment_meta_script(meta, [lg], meta["batch"], context=None)
             mm = sqlparse.format(mq, reindent=True, keyword_case="upper")
-            self.assertEqual(sql_norm(meta_q), sql_norm(mm))
+            self.assertEqual(sql_norm(meta_q), sql_norm(mm), msg=f"{base}.msql")

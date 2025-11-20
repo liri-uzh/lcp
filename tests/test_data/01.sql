@@ -78,7 +78,7 @@ WITH RECURSIVE fixed_parts AS
    FROM gather),
                res1 AS
   (SELECT DISTINCT 1::int2 AS rstype,
-                   jsonb_build_array("s", jsonb_build_array("t1", "t2", "t3"))
+                   jsonb_build_array("s", jsonb_build_array("t1", "t2", "t3") , array[lower(match_list."s_char_range"), upper(match_list."s_char_range")])
    FROM match_list) ,
                res2 AS
   (SELECT 2::int2 AS rstype,
@@ -87,7 +87,8 @@ WITH RECURSIVE fixed_parts AS
      (SELECT "t3_lemma" ,
              count(*) AS frequency
       FROM match_list
-      GROUP BY "t3_lemma") x) ,
+      GROUP BY "t3_lemma") x
+   WHERE frequency > 1 ) ,
                res0 AS
   (SELECT 0::int2 AS rstype,
           jsonb_build_array(count(match_list.*))
