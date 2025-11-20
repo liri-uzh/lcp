@@ -671,9 +671,9 @@ class QueryInfo:
                 continue
             if upper is not None and counter >= upper:
                 break
-            v = 1
+            v: int | list[int] = 1
             if char_ranges[key - 1]:
-                v = hit[char_ranges[key - 1]]
+                v = cast(list[int], hit[char_ranges[key - 1]])
                 ctx = contexts[key - 1]
                 if ctx and ctx.get("layer") == config["firstClass"]["segment"]:
                     v = [v[0] - 2, v[1] + 2]
