@@ -881,7 +881,7 @@ def _get_all_attributes(layer: str, config: Any, lang: str = "") -> dict:
     if partitions:
         if lang and lang not in partitions:
             return ret
-        lkey = f"{layer}@{lang}"
+        lkey = f"{layer}:{lang}"
         if lang and lkey in config["layer"]:
             ret.update({k: v for k, v in _get_all_attributes(lkey, config).items()})
         if not lang:
@@ -889,7 +889,7 @@ def _get_all_attributes(layer: str, config: Any, lang: str = "") -> dict:
                 {
                     k: v
                     for lg in partitions
-                    for k, v in _get_all_attributes(f"{layer}@{lg}", config).items()
+                    for k, v in _get_all_attributes(f"{layer}:{lg}", config).items()
                 }
             )
     return ret
