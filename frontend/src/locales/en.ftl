@@ -246,6 +246,7 @@ modal-project-create-key = Create API Key
 
 # Results details modal
 
+modal-results-tab-context = Context
 modal-results-tab-graph = Dependency Graph
 modal-results-tab-tabular = Tabular
 

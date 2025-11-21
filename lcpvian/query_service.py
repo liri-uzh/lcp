@@ -222,6 +222,78 @@ class QueryService:
         )
         return job
 
+    def annotations(
+        self,
+        config: CorpusConfig,
+        anchor: str,
+        rang: list[int],
+        corpus: str,
+        user: str,
+        room: str | None,
+        queue: str = "internal",
+    ) -> Job:
+        """
+        Fetch all the annotations aligned with the anchor
+        """
+        schema: str = config["schema_path"]
+        col_name: str = "frame_range" if anchor == "time" else "char_range"
+        from_cte: str = f"SELECT int4range({rang[0]},{rang[1]}) AS {col_name}"
+        aligned = get_aligned_annotations(
+            cast(dict, config),
+            "",
+            "",
+            from_cte,
+            anchor=anchor,
+            exclude={config["token"]: {}},
+            contains=False,
+            pointer_global_attributes=True,
+        )
+
+        seg = config["segment"]
+        seg_id = seg + "_id"
+        query = aligned + sql_str(
+            "\nUNION ALL SELECT jsonb_build_array('_prepared', {}.{}, prep.content) AS res FROM {} JOIN {}.{} prep ON prep.{} = {}.{};",
+            seg,
+            seg_id,
+            seg,
+            schema,
+            f"prepared_{seg.lower()}",
+            f"{seg.lower()}_id",  # prep.segment_id
+            seg,
+            seg_id,
+        )
+        print("annotation query", query)
+
+        hashed = str(hasher(query))
+        job: Job
+        if self.use_cache:
+            try:
+                job = Job.fetch(hashed, connection=self.app["redis"])
+                if job and job.get_status(refresh=True) == "finished":
+                    kwa: BaseArgs = {"user": user, "room": room}
+                    _document(job, self.app["redis"], job.result, **kwa)
+                    return job
+            except NoSuchJobError:
+                pass
+
+        kwargs = {
+            "document": True,
+            "corpus": corpus,
+            "user": user,
+            "room": room,
+            "doc": "",
+        }
+        job = self.app[queue].enqueue(
+            _db_query,
+            on_success=Callback(_document, self.timeout),
+            on_failure=Callback(_general_failure, self.callback_timeout),
+            result_ttl=self.query_ttl,
+            job_timeout=self.timeout,
+            args=(query, {}),
+            kwargs=kwargs,
+        )
+        return job
+
     def image_annotations(
         self,
         config: CorpusConfig,

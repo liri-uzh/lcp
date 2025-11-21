@@ -245,6 +245,7 @@ modal-project-create-key = Crea chiave API
 
 # Dettagli dei risultati
 
+modal-results-tab-context = Contesto
 modal-results-tab-graph = Grafo delle dipendenze
 modal-results-tab-tabular = Tabellare
 

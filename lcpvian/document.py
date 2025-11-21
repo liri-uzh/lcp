@@ -100,6 +100,47 @@ async def image_annotations(request: web.Request) -> web.Response:
     return web.json_response(info)
 
 
+async def annotations(request: web.Request) -> web.Response:
+    """
+    Start a job fetching all annotations aligned with an anchor.
+
+    The job's callback will send the document to the user/room via websocket
+    """
+    authenticator = request.app["auth_class"](request.app)
+    user_data: dict = await authenticator.user_details(request)
+
+    request_data: dict[str, str] = await request.json()
+    assert "corpus" in request_data, KeyError(
+        "Corpus is missing from the request for annotations"
+    )
+    assert "anchor" in request_data, KeyError(
+        "Anchor is missing from the request for annotations"
+    )
+    assert "range" in request_data, KeyError(
+        "Range is missing from the request for annotations"
+    )
+    corpus = request_data["corpus"]
+    anchor = request_data["anchor"]
+    rang = request_data["range"]
+
+    room: str | None = request_data.get("room")
+    user: str = request_data.get("user", "")
+
+    if not authenticator.check_corpus_allowed(
+        str(corpus),
+        user_data,
+        "lcp",
+    ):
+        raise PermissionError("This user is not authorized to access this corpus")
+
+    corpus_conf = request.app["config"][str(corpus)]
+    job = request.app["query_service"].annotations(
+        corpus_conf, anchor, rang, str(corpus), user, room
+    )
+    info: dict[str, str] = {"status": "started", "job": job.id}
+    return web.json_response(info)
+
+
 async def clip_media(request: web.Request) -> web.Response:
     """
     Start a job fetching image annotations.

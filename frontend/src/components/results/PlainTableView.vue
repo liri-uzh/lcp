@@ -219,7 +219,9 @@
             <div class="modal-body-content">
               <ResultsDetailsModalView
                 :data="data[modalIndex]"
-                :sentences="sentences[data[modalIndex][0]]"
+                :sentences="sentences"
+                :sentencesByStream="sentencesByStream"
+                :meta="meta"
                 :corpora="corpora"
                 :languages="languages"
                 :key="modalIndex"
