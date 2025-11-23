@@ -19,6 +19,12 @@ class IntervalTree {
         this.root = null;
     }
 
+    clone() {
+        const c = new IntervalTree();
+        c.root = this.root;
+        return c;
+    }
+
     // Insert a new interval
     insert(interval, value) {
         this.root = this._insert(this.root, interval, value);

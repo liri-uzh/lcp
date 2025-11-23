@@ -57,11 +57,23 @@
         <ol>
           <li v-for="(prep, n) in sentencesInContext" :key="`prep-${n}`">
             <span
-              v-if="Object.keys(meta).length"
+              v-if="Object.keys(meta).length && prep._sid && prep._sid in meta"
               style="margin-right: 0.5em"
               class="icon-info ms-2"
             >
               <FontAwesomeIcon :icon="['fas', 'circle-info']" />
+              <table class="popover-details-table mb-2">
+                <template v-for="(meta_attrs, meta_layer) in meta[prep._sid]" :key="`${prep._sid}-${meta_layer}`">
+                  <tr>
+                    <td>{{ meta_layer }}</td>
+                    <td>
+                      <div v-for="(attr_value, attr_name) in filterMetaAttrs(meta_attrs)" :key="`${prep._sid}-${meta_layer}-${attr_name}`">
+                        <strong>{{ attr_name }}:</strong> {{ attr_value }}
+                      </div>
+                    </td>
+                  </tr>
+                </template>
+              </table>
             </span>
             <PlainTokens
               :item="prep"
@@ -99,6 +111,19 @@
 #nav-details {
   overflow: auto;
 }
+li span .popover-details-table {
+  display: none;
+  position: absolute;
+  background-color: beige;
+  padding: 0.25em;
+  border-radius: 0.5em;
+}
+li span:hover .popover-details-table {
+  display: block;
+}
+.popover-details-table tr {
+  vertical-align: top;
+}
 </style>
 
 <script>
@@ -126,13 +151,6 @@ export default {
     }
     let columnHeaders = mapping.prepared.columnHeaders;
     let deprel = Object.values(columnHeaders).indexOf("head") >= 0;
-    console.log(
-      "data",
-      JSON.parse(JSON.stringify(this.data)),
-      JSON.parse(JSON.stringify(this.sentences)),
-      JSON.parse(JSON.stringify(this.meta)),
-      JSON.parse(JSON.stringify(this.corpora))
-    );
     return {
       context: this.corpora.corpus.firstClass.segment,
       hasDepRel: deprel,
@@ -141,10 +159,11 @@ export default {
     }
   },
   methods: {
+    filterMetaAttrs(attrs) {
+      return Object.fromEntries(Object.entries(attrs).filter(kv=>!(kv[0] in {char_range:1,frame_range:1,xy_box:1,_id:1})));
+    },
     plainTokens(sentence) {
-      const [startIndex, tokens, annotations, char_range] = sentence;
-      console.log("char_range", char_range);
-
+      const [startIndex, tokens, annotations, char_range] = sentence; // eslint-disable-line no-unused-vars
       let tokenData = JSON.parse(JSON.stringify(this.data[1]));
       tokenData = tokenData.map( tokenIdOrSet => tokenIdOrSet instanceof Array ? tokenIdOrSet : [tokenIdOrSet] );
       // Return a list of TokenToDisplay instances
@@ -172,21 +191,22 @@ export default {
       char_range = [char_range[0] - 2, char_range[1] + 2];
       if (this.context != this.corpora.corpus.firstClass.segment && this.context in (this.meta[this.sentenceId] || {}))
         char_range = this.meta[this.sentenceId][this.context].char_range;
-      const sentenceIds = this.sentencesByStream.searchValue([char_range[0] - 2, char_range[1] + 2]);
-      console.log("sentenceIds", sentenceIds);
-      return sentenceIds.filter(sid=>sid in this.sentences).map(sid=>this.plainTokens(this.sentences[sid]));
+      const sentenceIds = this.sentencesByStream.search(char_range).sort((x,y)=>x.low > y.low).map(x=>x.value);
+      return sentenceIds.filter(sid=>sid in this.sentences).map(sid=>{
+        const ret = this.plainTokens(this.sentences[sid]);
+        ret._sid = sid;
+        return ret;
+      });
     },
   },
   watch: {
     context() {
-      console.log("context", this.context, this.metaPerLayer);
       if (this.context == this.corpora.corpus.firstClass.segment) return;
       if (this.context in this.metaPerLayer) return;
       if (!(this.context in (this.meta[this.sentenceId] || {}))) return;
       const char_range = this.meta[this.sentenceId][this.context].char_range;
       this.metaPerLayer[this.context] = true;
       const corpus = this.corpora.corpus.meta.id;
-      console.log("corpus", corpus);
       const data = {
         user: this.userData.user.id,
         room: this.roomId,
@@ -195,17 +215,7 @@ export default {
         range: char_range
       };
       useCorpusStore().fetchAnnotations(data);
-    },
-    messages: {
-      handler() {
-        console.log("sentences by stream", this.sentencesByStream);
-        const ctx = this.context;
-        this.context = this.corpora.corpus.firstClass.segment;
-        setTimeout(() => this.context = ctx, 1); // force a refresh
-      },
-      immediate: true,
-      deep: true,
-    },
+    }
   },
   components: {
     DepRelView,
