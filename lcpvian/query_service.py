@@ -25,6 +25,7 @@ save ourselves from running duplicate DB queries.
 
 import json
 import os
+import re
 import uuid
 
 from typing import Any, final, cast
@@ -229,6 +230,7 @@ class QueryService:
         anchor: str,
         rang: list[int],
         corpus: str,
+        language: str,
         user: str,
         room: str | None,
         queue: str = "internal",
@@ -238,11 +240,14 @@ class QueryService:
         """
         schema: str = config["schema_path"]
         col_name: str = "frame_range" if anchor == "time" else "char_range"
-        from_cte: str = f"SELECT int4range({rang[0]},{rang[1]}) AS {col_name}"
+        irange: str = (
+            "int8range" if re.match(r"^swissdox_\d*$", schema) else "int4range"
+        )
+        from_cte: str = f"SELECT {irange}({rang[0]},{rang[1]}) AS {col_name}"
         aligned = get_aligned_annotations(
             cast(dict, config),
             "",
-            "",
+            language,
             from_cte,
             anchor=anchor,
             exclude={config["token"]: {}},
@@ -252,6 +257,13 @@ class QueryService:
 
         seg = config["segment"]
         seg_id = seg + "_id"
+        seg_map = config["mapping"]["layer"][seg]
+        prep_tab = (
+            seg_map.get("partitions", {})
+            .get(language, seg_map)
+            .get("prepared", {})
+            .get("relation", f"prepared_{seg.lower()}")
+        )
         query = aligned + sql_str(
             "\nUNION ALL SELECT jsonb_build_array('_prepared', {}.{}, prep.id_offset, prep.content, {}.char_range) AS res FROM {} JOIN {}.{} prep ON prep.{} = {}.{};",
             seg,
@@ -259,7 +271,7 @@ class QueryService:
             seg,
             seg,
             schema,
-            f"prepared_{seg.lower()}",
+            prep_tab,
             f"{seg.lower()}_id",  # prep.segment_id
             seg,
             seg_id,

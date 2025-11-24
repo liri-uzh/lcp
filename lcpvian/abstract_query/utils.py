@@ -157,7 +157,7 @@ class SQLCorpus:
             accessor = "->" if attr_type in ("dict", "jsonb") else "->>"
             attr_str = literal_sql(attribute)
             ref = sql_str(f"{entity_label}.{LR}{accessor}{attr_str}", "meta")
-        elif attr_type in ("categorical", "number", "labels", "image") and not is_glob:
+        elif attr_type in ("number", "labels", "image") and not is_glob:
             ref = sql_str(f"{entity_label}.{LR}", attribute)
         if ref:
             return self.add_ref(key, entity, ref, alias, joins)
@@ -165,7 +165,12 @@ class SQLCorpus:
         attr_map = mapping_attributes.get(attribute, {})
         rel_key = attr_map.get("key") or attribute
         rel_tab = attr_map.get("name")
-        if not rel_tab and not is_glob and attr_type not in ("dict", "jsonb"):
+        rel_typ = attr_map.get("type")
+        if (
+            (rel_typ == "enum" or not rel_tab)
+            and not is_glob
+            and attr_type not in ("dict", "jsonb")
+        ):
             ref = sql_str(f"{entity_label}.{LR}", attribute)
             return self.add_ref(key, entity, ref, alias, joins)
         rel_tab = rel_tab or (
@@ -180,11 +185,12 @@ class SQLCorpus:
             table.meta["entity"] = entity
             # rel_alias.rel_key_id = entity.attribute_id
             # e.g. Document_speaker_L.speaker_id = Document.speaker_l_id
+            ent_key = f"{attribute}_id" if is_glob else f"{rel_key}_id"
             condition = sql_str(
                 f"{LR}.{LR} = {entity_label}.{LR}",
                 ref,
                 f"{rel_key}_id",
-                f"{attribute}_id",
+                ent_key,
             )
             joins[table] = {**joins.get(table, {}), condition: 1}
         ref = sql_str("{}.{}", ref, rel_key)

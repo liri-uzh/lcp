@@ -230,7 +230,8 @@ export default {
         room: this.roomId,
         corpus: corpus,
         anchor: "stream",
-        range: char_range
+        range: char_range,
+        language: (this.languages || [""])[0]
       };
       useCorpusStore().fetchAnnotations(data);
     }

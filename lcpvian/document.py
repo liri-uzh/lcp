@@ -122,6 +122,7 @@ async def annotations(request: web.Request) -> web.Response:
     corpus = request_data["corpus"]
     anchor = request_data["anchor"]
     rang = request_data["range"]
+    lang = request_data["language"]
 
     room: str | None = request_data.get("room")
     user: str = request_data.get("user", "")
@@ -135,7 +136,7 @@ async def annotations(request: web.Request) -> web.Response:
 
     corpus_conf = request.app["config"][str(corpus)]
     job = request.app["query_service"].annotations(
-        corpus_conf, anchor, rang, str(corpus), user, room
+        corpus_conf, anchor, rang, str(corpus), lang, user, room
     )
     info: dict[str, str] = {"status": "started", "job": job.id}
     return web.json_response(info)
