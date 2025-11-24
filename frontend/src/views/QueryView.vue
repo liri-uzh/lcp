@@ -465,6 +465,7 @@
                               :sentencesByStream="WSDataSentencesByStream"
                               :languages="selectedLanguages"
                               :meta="WSDataMeta.bySegment"
+                              :metaByLayer="WSDataMeta.layer"
                               :attributes="resultSet.attributes"
                               :corpora="selectedCorpora"
                               @updatePage="updatePage"
@@ -1474,6 +1475,7 @@ export default {
         }
       }
       this.WSDataMeta.bySegment = {...this.WSDataMeta.bySegment};
+      this.WSDataMeta.layer = {...this.WSDataMeta.layer};
       this.WSDataMeta = {...this.WSDataMeta};
     },
     onSocketMessage(data) {
@@ -1533,11 +1535,13 @@ export default {
             if (row[0] == "_prepared") {
               const [seg_id, seg_offset, seg_content, char_range_str] = row.slice(1,)
               if (seg_id in this.WSDataSentences) continue;
-              this.WSDataSentences[seg_id] = [seg_offset, seg_content];
+              let char_range = [-1,-1];
               try {
-                const char_range = JSON.parse(char_range_str.replace(")","]"));
+                char_range = JSON.parse(char_range_str.replace(")","]"));
                 this.insertRange(this.WSDataSentencesByStream, char_range, seg_id);
               } catch { null }
+              // Add empty annotations in 3rd slot
+              this.WSDataSentences[seg_id] = [seg_offset, seg_content, {}, char_range];
             }
             else
               meta.push([[], ...row]);

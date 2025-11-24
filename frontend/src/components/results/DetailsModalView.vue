@@ -57,13 +57,12 @@
         <ol>
           <li v-for="(prep, n) in sentencesInContext" :key="`prep-${n}`">
             <span
-              v-if="Object.keys(meta).length && prep._sid && prep._sid in meta"
               style="margin-right: 0.5em"
               class="icon-info ms-2"
             >
               <FontAwesomeIcon :icon="['fas', 'circle-info']" />
               <table class="popover-details-table mb-2">
-                <template v-for="(meta_attrs, meta_layer) in meta[prep._sid]" :key="`${prep._sid}-${meta_layer}`">
+                <template v-for="(meta_attrs, meta_layer) in metaPerSentence(prep)" :key="`${prep._sid}-${meta_layer}`">
                   <tr>
                     <td>{{ meta_layer }}</td>
                     <td>
@@ -124,6 +123,12 @@ li span:hover .popover-details-table {
 .popover-details-table tr {
   vertical-align: top;
 }
+ol li:nth-child(2n) {
+  background-color: cornsilk;
+}
+ol li:nth-child(2n+1) {
+  background-color: lavender;
+}
 </style>
 
 <script>
@@ -141,7 +146,7 @@ import Utils from "@/utils.js";
 
 export default {
   name: "ResultsDetailsModalView",
-  props: ["data", "sentences", "sentencesByStream", "meta", "languages", "corpora"],
+  props: ["data", "sentences", "sentencesByStream", "meta", "metaByLayer", "languages", "corpora"],
   data() {
     let lang = (this.languages||[])[0];
     let segment = this.corpora.corpus.segment;
@@ -155,7 +160,7 @@ export default {
       context: this.corpora.corpus.firstClass.segment,
       hasDepRel: deprel,
       columnHeaders: columnHeaders,
-      metaPerLayer: {}
+      annotationsFetched: {}
     }
   },
   methods: {
@@ -168,6 +173,16 @@ export default {
       tokenData = tokenData.map( tokenIdOrSet => tokenIdOrSet instanceof Array ? tokenIdOrSet : [tokenIdOrSet] );
       // Return a list of TokenToDisplay instances
       return tokens.map( (token,idx) => new Utils.TokenToDisplay(token, startIndex + idx, tokenData, this.columnHeaders, annotations) );
+    },
+    metaPerSentence(sentence) {
+      if (sentence._sid in this.meta) return this.meta[sentence._sid];
+      const ret = {};
+      for (let [layerName,layerAnnotations] of Object.entries(this.metaByLayer)) {
+        const annotation = layerAnnotations.byStream.searchValue(sentence._char_range);
+        if (!annotation || annotation.length==0) continue;
+        ret[layerName] = annotation[0];
+      }
+      return ret;
     }
   },
   computed: {
@@ -194,6 +209,7 @@ export default {
       const sentenceIds = this.sentencesByStream.search(char_range).sort((x,y)=>x.low > y.low).map(x=>x.value);
       return sentenceIds.filter(sid=>sid in this.sentences).map(sid=>{
         const ret = this.plainTokens(this.sentences[sid]);
+        ret._char_range = this.sentences[sid].at(-1);
         ret._sid = sid;
         return ret;
       });
@@ -202,10 +218,12 @@ export default {
   watch: {
     context() {
       if (this.context == this.corpora.corpus.firstClass.segment) return;
-      if (this.context in this.metaPerLayer) return;
+      if (this.sentenceId in this.annotationsFetched && this.context in this.annotationsFetched[this.sentenceId])
+        return;
       if (!(this.context in (this.meta[this.sentenceId] || {}))) return;
       const char_range = this.meta[this.sentenceId][this.context].char_range;
-      this.metaPerLayer[this.context] = true;
+      this.annotationsFetched[this.sentenceId] = this.annotationsFetched[this.sentenceId] || {};
+      this.annotationsFetched[this.sentenceId][this.context] = 1;
       const corpus = this.corpora.corpus.meta.id;
       const data = {
         user: this.userData.user.id,

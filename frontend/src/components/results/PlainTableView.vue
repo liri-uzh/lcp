@@ -222,6 +222,7 @@
                 :sentences="sentences"
                 :sentencesByStream="sentencesByStream"
                 :meta="meta"
+                :metaByLayer="metaByLayer"
                 :corpora="corpora"
                 :languages="languages"
                 :key="modalIndex"
@@ -259,6 +260,12 @@ tr.detached {
   left: 2.5vw;
   width: 95vw;
   box-shadow: 0px 0px 14px 0px black;
+}
+td.results div:nth-child(2n) {
+  background-color: cornsilk;
+}
+td.results div:nth-child(2n+1) {
+  background-color: lavender;
 }
 div.unpin {
   position: absolute;
@@ -452,6 +459,7 @@ export default {
     "languages",
     "attributes",
     "meta",
+    "metaByLayer",
     "corpora",
     "resultsPerPage",
     "loading",
