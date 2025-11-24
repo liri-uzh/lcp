@@ -778,10 +778,10 @@ export default {
         return track;
       }
       let all_groups = {};
-      for (let [[layer, lid, info]] of data) {
-        if (layer == "_prepared" && lid in segs_to_fill) {
+      for (let [[layer, lid, info, ...rest]] of data) {
+        if (layer == "_prepared" && lid in segs_to_fill && rest instanceof Array && rest.length > 0) {
           // the _prepared rows come last, after the segments have been processed
-          const content = info.map(t=>t[form_n]).join(" ");
+          const content = rest[0].map(t=>t[form_n]).join(" ");
           segs_to_fill[lid].n = content;
         }
         if (!(layer in conf.layers)) continue;
