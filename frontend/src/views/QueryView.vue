@@ -462,8 +462,10 @@
                               v-if="plainType == 'table' || resultContainsSet(resultSet)"
                               :data="WSDataResults.result[index + 1] || []"
                               :sentences="WSDataSentences || {}"
+                              :sentencesByStream="WSDataSentencesByStream"
                               :languages="selectedLanguages"
                               :meta="WSDataMeta.bySegment"
+                              :metaByLayer="WSDataMeta.layer"
                               :attributes="resultSet.attributes"
                               :corpora="selectedCorpora"
                               @updatePage="updatePage"
@@ -994,6 +996,7 @@ export default {
       WSDataResults: "",
       WSDataMeta: {"layer": {}, "bySegment": {}},
       WSDataSentences: {},
+      WSDataSentencesByStream: new IntervalTree(),
       nResults: 200,
       activeResultIndex: 1,
       selectedLanguages: null,
@@ -1236,6 +1239,10 @@ export default {
     // },
   },
   methods: {
+    updateSentencesByStream() {
+      // Use a method to trigger a reflective update because vue is stupid
+      this.WSDataSentencesByStream = this.WSDataSentencesByStream.clone();
+    },
     shouldImageViewer() {
       if (!this.selectedCorpora || !this.selectedCorpora.corpus) return false;
       return Object.values(this.selectedCorpora.corpus.layer || {})
@@ -1425,6 +1432,7 @@ export default {
       modal.show()
     },
     processMeta(meta) {
+      // TODO: store meta by stream, and pass that to components instead of by id?
       const META_LIMIT = 50000;
       const ancMap = {
         char_range: "Stream",
@@ -1466,6 +1474,8 @@ export default {
           this.insertRange(byAnchor, range, info);
         }
       }
+      this.WSDataMeta.bySegment = {...this.WSDataMeta.bySegment};
+      this.WSDataMeta.layer = {...this.WSDataMeta.layer};
       this.WSDataMeta = {...this.WSDataMeta};
     },
     onSocketMessage(data) {
@@ -1523,15 +1533,22 @@ export default {
           this.WSDataSentences = this.WSDataSentences || {};
           for (let [row] of annotations) {
             if (row[0] == "_prepared") {
-              const [seg_id, seg_offset, seg_content] = row.slice(1,)
+              const [seg_id, seg_offset, seg_content, char_range_str] = row.slice(1,)
               if (seg_id in this.WSDataSentences) continue;
-              this.WSDataSentences[seg_id] = [seg_offset, seg_content];
+              let char_range = [-1,-1];
+              try {
+                char_range = JSON.parse(char_range_str.replace(")","]"));
+                this.insertRange(this.WSDataSentencesByStream, char_range, seg_id);
+              } catch { null }
+              // Add empty annotations in 3rd slot
+              this.WSDataSentences[seg_id] = [seg_offset, seg_content, {}, char_range];
             }
             else
               meta.push([[], ...row]);
             if (!is_doc && row[0] == data.layer) ids.push(row[1]);
           }
           this.WSDataSentences = {...this.WSDataSentences};
+          this.updateSentencesByStream();
           for (let id of ids)
             this.imageAnnotations[id] = 1;
           if (meta.length)
@@ -1676,8 +1693,17 @@ export default {
           this.processMeta(meta);
           if (!(-1 in data.result)) return;
           this.WSDataSentences = this.WSDataSentences || {};
-          for (let [sid, v] of Object.entries(data.result[-1]))
+          for (let [sid, v] of Object.entries(data.result[-1])) {
+            const rangeMatches = v.map(x=>String(x||"").match(/^\[(\d+),(\d+)\)$/));
+            const rangeIdx = rangeMatches.findIndex(x=>x);
+            if (rangeIdx>=0) {
+              const range = rangeMatches[rangeIdx].slice(1,).map(x=>parseInt(x));
+              v[rangeIdx] = range;
+              this.insertRange(this.WSDataSentencesByStream, range, sid);
+            }
             this.WSDataSentences[sid] = v;
+          }
+          this.updateSentencesByStream();
           if (data.full) {
             if (this.WSDataResults) {
               if (!this.WSDataResults.result)

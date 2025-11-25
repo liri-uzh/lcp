@@ -36,7 +36,7 @@ WITH RECURSIVE fixed_parts AS
    FROM fixed_parts),
                res1 AS
   (SELECT DISTINCT 1::int2 AS rstype,
-                   jsonb_build_array("s", jsonb_build_array("t3"))
+                   jsonb_build_array("s", jsonb_build_array("t3") , array[lower(match_list."s_char_range"), upper(match_list."s_char_range")])
    FROM match_list) ,
                collocates2 AS
   (SELECT "_token_collocate2"."form_id"

@@ -2,10 +2,6 @@
 
 ![LCP querying](images/lcp-query.png)
 
-To start querying, select the "Query" option from the navigation bar at the top of the page.
-
-Once you are in the query interface, ensure that the corpus you want to query is selected.
-
 ## Languages
 
 As of June 12, 2025, LCP offers three language options to write your queries:

@@ -34,6 +34,8 @@ class SingleNode:
         """
         if not self._can_prefilter():
             return ""
+        if self.field not in col_data.values():
+            return ""
         inv = "!" if self.inverse else ""
         joiner = " | " if not self.inverse else " & "
         fixed = []
@@ -405,7 +407,9 @@ class Prefilter:
             single = []
             if isinstance(prefilt, Disjunction):
                 disj = " | ".join(
-                    " <1> ".join(self._as_string(u) for u in units)
+                    " <1> ".join(
+                        self._as_string(u) for u in units if self._as_string(u)
+                    )
                     for units in prefilt.units
                 )
                 all_made.append(f"({disj})")
@@ -419,7 +423,8 @@ class Prefilter:
 
             for item in items:
                 strung = self._as_string(item)
-                single.append(strung)
+                if strung:
+                    single.append(strung)
 
             if connective == "AND":
                 joined = " & ".join(single)

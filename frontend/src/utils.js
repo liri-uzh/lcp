@@ -11,18 +11,20 @@ class TokenToDisplay {
       throw Error(`Invalid groups (${JSON.stringify(groups)}) for token ${JSON.stringify(tokenArray)}`);
     groups = groups.map(g=>g instanceof Array ? g : [g]);
     columnHeaders.forEach( (header,i) => this[header] = tokenArray[i] );
-    this.token = tokenArray;
-    this.index = index;
-    this.group = groups.findIndex( g => g.find(id=>id==index) );
-    this.columnHeaders = columnHeaders.filter(ch=>ch!= 'spaceAfter');
+    const ta = JSON.parse(JSON.stringify(tokenArray));
+    const ch = columnHeaders.filter(ch=>ch!= 'spaceAfter');
     for (let [annotation_name, annotation_occurences] of Object.entries(annotations||{})) {
       for (let [ann_start_idx, ann_num_toks, annotation] of annotation_occurences) {
         if (index < ann_start_idx || index > (ann_start_idx+(ann_num_toks-1)))
           continue;
-        this.columnHeaders.push(annotation_name);
-        tokenArray.push(annotation);
+        ch.push(annotation_name);
+        ta.push(annotation);
       }
     }
+    this.token = ta;
+    this.index = index;
+    this.group = groups.findIndex( g => g.find(id=>id==index) );
+    this.columnHeaders = ch;
   }
 }
 

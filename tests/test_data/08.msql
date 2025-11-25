@@ -1,9 +1,15 @@
-WITH preps AS (SELECT Segment_id, id_offset, content FROM udhr_ocr_c789824360354006aa3cf723bed8d2db_1.prepared_Segment WHERE Segment_id = ANY(:sids)),
-meta AS (WITH "x" AS (SELECT s.char_range, s."segment_id" FROM preps JOIN udhr_ocr_c789824360354006aa3cf723bed8d2db_1.segmentrest s ON s."segment_id" = preps."segment_id"),
-"Segment" AS (SELECT array_agg("x"."segment_id") AS "_sids", "Segment"."segment_id" AS "Segment_id","Segment"."char_range" AS "char_range","Segment"."xy_box" AS "xy_box" FROM "x" LEFT JOIN "udhr_ocr_c789824360354006aa3cf723bed8d2db_1"."segmentrest" "Segment" ON "Segment"."char_range" && "x"."char_range" GROUP BY "Segment_id"),
-"Document" AS (SELECT array_agg("x"."segment_id") AS "_sids", "Document"."document_id" AS "Document_id","Document"."char_range" AS "char_range","Document"."xy_box" AS "xy_box","Document"."page" AS "page" FROM "x" LEFT JOIN "udhr_ocr_c789824360354006aa3cf723bed8d2db_1"."document" "Document" ON "Document"."char_range" && "x"."char_range" GROUP BY "Document_id")
+WITH preps AS (SELECT DISTINCT ps."segment_id", ps.id_offset, ps.content, jsonb_build_object() AS annotations, s2.char_range
+        FROM udhr_ocr_c789824360354006aa3cf723bed8d2db_1.segmentrest s1
+        JOIN udhr_ocr_c789824360354006aa3cf723bed8d2db_1."document" c ON c.char_range @> s1.char_range
+        JOIN udhr_ocr_c789824360354006aa3cf723bed8d2db_1.segment0 s2 ON c.char_range @> s2.char_range AND s2.char_range && int4range(lower(s1.char_range) - 2, upper(s1.char_range) + 2)
+        JOIN udhr_ocr_c789824360354006aa3cf723bed8d2db_1.prepared_Segment ps ON ps."segment_id" = s2."segment_id"
+        WHERE s1."segment_id" = ANY(:sids)
+        ORDER BY s2.char_range),
+meta AS (WITH "x" AS (SELECT ps.char_range, ps."segment_id" FROM preps ps),
+"Segment" AS (SELECT array_agg("x"."segment_id") AS "_sids", "Segment"."segment_id" AS "Segment_id","Segment"."char_range" AS "char_range","Segment"."xy_box" AS "xy_box" FROM "x"LEFT JOIN "udhr_ocr_c789824360354006aa3cf723bed8d2db_1"."segment0" "Segment" ON "Segment"."char_range" && "x"."char_range" GROUP BY "Segment_id"),
+"Document" AS (SELECT array_agg("x"."segment_id") AS "_sids", "Document"."document_id" AS "Document_id","Document"."char_range" AS "char_range","Document"."xy_box" AS "xy_box","Document"."page" AS "page" FROM "x"LEFT JOIN "udhr_ocr_c789824360354006aa3cf723bed8d2db_1"."document" "Document" ON "Document"."char_range" && "x"."char_range" GROUP BY "Document_id")
 SELECT jsonb_build_array("_sids",'Segment',"Segment_id",jsonb_build_object('char_range',"Segment"."char_range",'xy_box',"Segment"."xy_box")) AS res FROM "Segment"
 UNION ALL SELECT jsonb_build_array("_sids",'Document',"Document_id",jsonb_build_object('char_range',"Document"."char_range",'xy_box',"Document"."xy_box",'page',"Document"."page")) AS res FROM "Document")
-SELECT -1::int2 AS rstype, jsonb_build_array(preps."segment_id", preps.id_offset, preps.content) FROM preps
+SELECT -1::int2 AS rstype, jsonb_build_array(preps."segment_id", preps.id_offset, preps.content, preps.annotations, preps.char_range) FROM preps
 UNION ALL
 SELECT -2::int2 AS rstype, res FROM meta;

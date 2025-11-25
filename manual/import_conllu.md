@@ -28,7 +28,7 @@ lcpcli -i /path/to/conllu/files/ -o /path/for/output/files/
 Then one can import the corpus using:
 
 ```bash
-lcpcli -i $CONLLU_FOLDER -o $OUTPUT_FOLDER -m upload -k $API_KEY -s $API_SECRET -p $PROJECT_NAME --live
+lcpcli -i $CONLLU_FOLDER -o $OUTPUT_FOLDER -m upload -k $API_KEY -s $API_SECRET -p $COLLECTION_NAME --live
 ```
 
 See [Importing](importing.md) for explanations about this last command

@@ -12,18 +12,6 @@
         }
     },
     {
-        "entity": "t",
-        "layer": "Token",
-        "attribute": "misc",
-        "ref": "\"t_misc\".\"misc\"",
-        "joins": {
-            "\"ofrom\".\"tokenrest\" \"t\"": {},
-            "\"ofrom\".\"token_misc\" \"t_misc\"": {
-                "\"t_misc\".\"misc_id\" = \"t\".\"misc_id\"": 1
-            }
-        }
-    },
-    {
         "entity": "u",
         "layer": "Utterance",
         "attribute": "agent",

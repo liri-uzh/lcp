@@ -239,10 +239,13 @@ class ResultsMaker:
 
         for result in results:
             if "resultsPlain" in cast(JSONObject, result):
+                layers_conf = cast(dict, self.config["layer"])
+                first_class = cast(dict, self.config["firstClass"])
                 legal_layers_plain_entities = {
-                    y.lower()
-                    for x, y in cast(dict, self.config["firstClass"]).items()
-                    if x in ("token", "segment")
+                    x.lower()
+                    for x, y in layers_conf.items()
+                    if x in (first_class["token"], first_class["segment"])
+                    or y.get("contains") == first_class["token"]
                 }
                 plain = cast(JSONObject, result["resultsPlain"])
                 ents = cast(list[str], plain["entities"])
@@ -362,12 +365,18 @@ class ResultsMaker:
         lay: str
         lay, _ = self.r.label_layer[context]
         first_class: dict[str, str] = cast(dict[str, str], self.config["firstClass"])
-        # keys = {first_class[f].lower() for f in {"token", "segment", "document"}}
-        keys = set({first_class["segment"].lower()})
+        tok = first_class["token"]
+        # keys = {first_class[f].lower() for f in {"segment", "document"}}
+        # keys = set({first_class["segment"].lower()})
+        keys = {
+            x
+            for x in cast(dict, self.config["layer"])
+            if _layer_contains(self.config, x, tok) and x != tok
+        }
         err = (
             f"Context not allowed: {lay.lower()} not in {' or '.join(k for k in keys)}"
         )
-        assert lay.lower() in keys, err
+        assert lay in keys, err
         context_ref = self.r.sql.layer(context, lay, pointer=True)
         select = sql_str(f"{context_ref} AS {LR}", context_ref.alias)
         self.r.selects.add(select)
@@ -562,11 +571,12 @@ class ResultsMaker:
                     for seq in self.r.sqlsequences
                     for m in seq.get_members()
                 )
-                if not is_fixed_token_in_sequence and e not in self.r.set_objects:
-                    ent_ref = self.r.sql.layer(e, lay, pointer=True)
-                    select = sql_str(f"{ent_ref} AS {LR}", ent_ref.alias)
-                    self.r.selects.add(select)
-                    self.r.entities.add(ent_ref.alias)
+                if is_fixed_token_in_sequence or e in self.r.set_objects:
+                    continue
+                ent_ref = self.r.sql.layer(e, lay, pointer=True)
+                select = sql_str(f"{ent_ref} AS {LR}", ent_ref.alias)
+                self.r.selects.add(select)
+                self.r.entities.add(ent_ref.alias)
 
         for e in ents:
             entities_list, attributes = self._process_entity(e)
@@ -610,31 +620,35 @@ WHERE {ent_stream_ref} && {cont_tok_stream_ref}
         ents_form: str = ", ".join(sql_str("{}", x) for x in entout)
         doc_join = ""
         extras: list[str] = []
-        frame_ranges: list[dict[str, Any]] = []
+        ranges: list[dict[str, Any]] = []
 
-        if _is_anchored(self.config, context_layer, "time"):
-            out_ref = self.r.sql.anchor(context, context_layer, "time")
-            self.r.selects.add(sql_str(f"{out_ref} AS {LR}", out_ref.alias))
-            self.r.entities.add(out_ref.alias)
-            fr = sql_str(
-                "array[lower(match_list.{}), upper(match_list.{})]",
-                out_ref.alias,
-                out_ref.alias,
-            )
-            extras.append(fr)
-            frame_ranges.append(
-                {
-                    "name": out_ref.alias,
-                    "type": "list[int]",
-                    "multiple": True,
-                }
-            )
+        for anchor in ("time", "stream"):
+            if _is_anchored(self.config, context_layer, anchor):
+                out_ref = self.r.sql.anchor(context, context_layer, anchor)
+                self.r.selects.add(sql_str(f"{out_ref} AS {LR}", out_ref.alias))
+                self.r.entities.add(out_ref.alias)
+                fr = sql_str(
+                    "array[lower(match_list.{}), upper(match_list.{})]",
+                    out_ref.alias,
+                    out_ref.alias,
+                )
+                extras.append(fr)
+                ranges.append(
+                    {
+                        "name": out_ref.alias,
+                        "type": "list[int]",
+                        "multiple": True,
+                        "range_name": (
+                            "frame_ranges" if anchor == "time" else "char_ranges"
+                        ),
+                    }
+                )
 
         if extras:
             formed = ", ".join(extras)
             select_extra = ", " + formed
 
-        attribs = self._make_attribs(context, context_layer, tokens, frame_ranges)
+        attribs = self._make_attribs(context, context_layer, tokens, ranges)
 
         if include_disjunction:
             ents_form = (
@@ -646,10 +660,27 @@ WHERE {ent_stream_ref} && {cont_tok_stream_ref}
                 {"name": "disjunction_matches", "type": "set", "multiple": True}
             )
 
+        # TODO: pick t.segment_id (add to r.selects) from one of the tokens if context is not seg
+        context_ref = sql_str("{}", context)
+        if context_layer != self.segment:
+            first_token = next(
+                (e for e in ents if self.r.label_layer[e][0] == self.token), None
+            )
+            assert first_token, ReferenceError(
+                f"Contexts wider than {self.segment} require at least one {self.token} entity"
+            )
+            ft_seg_ref = self.r.sql.not_attribute(
+                first_token, self.token, f"{self.segment.lower()}_id"
+            )
+            ft_select = sql_str(f"{ft_seg_ref} AS {LR}", ft_seg_ref.alias)
+            self.r.selects.add(ft_select)
+            self.r.entities.add(ft_seg_ref.alias)
+            context_ref = sql_str("{}", ft_seg_ref.alias)
+
         out = f"""
             res{i} AS ( SELECT DISTINCT
             {i}::int2 AS rstype,
-            jsonb_build_array({sql_str('{}', context)}, jsonb_build_array({ents_form}) {select_extra})
+            jsonb_build_array({context_ref}, jsonb_build_array({ents_form}) {select_extra})
         FROM
             match_list
             {doc_join}
@@ -680,33 +711,13 @@ WHERE {ent_stream_ref} && {cont_tok_stream_ref}
         context: str,
         context_layer: str,
         tokens: list[dict],
-        frame_ranges: list[dict],
+        ranges: list[dict],
     ) -> list[dict]:
         """
         Format kwic metadata for queries
         """
 
-        out: list[dict]
-
-        if not _is_anchored(self.config, context_layer, "time"):
-            out = [
-                {
-                    "name": "identifier",
-                    "label": context,
-                    "layer": context_layer,
-                    "type": "str|int",
-                    "multiple": False,
-                },
-                {
-                    "name": "entities",
-                    "multiple": True,
-                    "data": tokens,
-                    "type": "list[dict]",
-                },
-            ]
-            return out
-
-        out = [
+        out: list[dict] = [
             {
                 "name": "identifier",
                 "label": context,
@@ -720,15 +731,19 @@ WHERE {ent_stream_ref} && {cont_tok_stream_ref}
                 "data": tokens,
                 "type": "list[dict]",
             },
-            # {"name": "document_id", "type": "number", "multiple": False},
-            # {"name": "agent", "type": "str", "multiple": False},
-            {
-                "name": "frame_ranges",
-                "type": "list[dict]",
-                "multiple": True,
-                "data": frame_ranges,
-            },
         ]
+
+        for r in ranges:
+            range_name = r.pop("range_name", "ranges")
+            out.append(
+                {
+                    "name": range_name,
+                    "type": "list[dict]",
+                    "multiple": True,
+                    "data": r,
+                }
+            )
+
         return out
 
     def _process_filters(self, filt: JSONObject) -> tuple[str, list[dict[str, Any]]]:
@@ -745,7 +760,7 @@ WHERE {ent_stream_ref} && {cont_tok_stream_ref}
         )
         for comp in comps:
             left, comparator, _, right = _parse_comparison(comp)
-            left_str = left.get("label")
+            left_str = left.get("label") or left.get("reference")
             right_str = next(x for x in cast(dict, right).values())
             if not left_str or not right_str:
                 continue
@@ -831,21 +846,13 @@ WHERE {ent_stream_ref} && {cont_tok_stream_ref}
             alias = re.sub("[^a-zA-Z0-9_]", "_", alias)
             alias = alias.lstrip("_").rstrip("_")
             # The method below does not work for sub-attributes of global attributes
-            # if "sql" in ref_info:
-            #     alias = cast(SQLRef, ref_info["sql"]).alias
             self.r.selects.add(ref + sql_str(" AS {}", alias))
             self.r.entities.add(alias)
             parsed_attributes.append((alias, ref_info))
-            if (
-                not count_entities
-                # or "attribute" not in att
-                # or "." not in att["attribute"]
-            ):
+            if not count_entities:
                 continue
             entity = next(x for x in count_entities)
             entity_layer, _ = self.r.label_layer[entity]
-            # prefix, *_ = att["attribute"].split(".")
-            # prefix_layer, _ = self.r.label_layer[prefix]
             for prefix in ref_info.get("entities", []):
                 prefix_layer, _ = self.r.label_layer.get(prefix, ("", ""))
                 if prefix_layer not in self.conf_layer:
@@ -862,16 +869,6 @@ WHERE {ent_stream_ref} && {cont_tok_stream_ref}
                 ]
                 if not anchorings:
                     continue
-                # assert anchorings, RuntimeError(
-                #     f"Layer {prefix_layer} ({prefix}) does not share an anchoring with layer {entity_layer} ({entity_lab})"
-                # )
-                # prefix_table = _get_table(prefix_layer, self.config, self.batch, self.lang)
-                # join_formed = f"{self.schema}.{prefix_table} {prefix}"
-                # if join_formed != f"{self.schema}.{table} {entity_lab}":
-                #     jjoins.append(join_formed)
-                # new_label = self.r.unique_label(
-                #     prefix, prefix_layer, self.r.sql.used_aliases
-                # )
                 anchors = {
                     a: self.r.sql.anchor(prefix, prefix_layer, a) for a in anchorings
                 }
@@ -894,21 +891,6 @@ WHERE {ent_stream_ref} && {cont_tok_stream_ref}
                     jselects.append(jselect)
                 if alias not in jgroups:
                     jgroups.append(alias)
-                # jwheres.append(f"{ref} = {alias}")
-                # self.r.selects.update({f"{prefix}.{a} AS {prefix}_{a}" for a in anchorings})
-                # jgroups = [new_anchors[a].alias for a in anchorings]
-                # self.r.entities.update({x for x in jgroups})
-                # where_anchors = " OR ".join(
-                #     sql_str("{} && ", self.r.sql.anchor(prefix, prefix_layer, a).alias)
-                #     + self.r.sql.anchor(entity_lab, entity_layer, a).ref
-                #     for a in anchorings
-                # )
-                # jwheres.append(where_anchors)
-                # # self.r.selects.update({f"{prefix}.{a} AS {prefix}_{a}" for a in anchorings})
-                # jgroups = [
-                #     self.r.sql.anchor(prefix, prefix_layer, a).alias for a in anchorings
-                # ]
-                # self.r.entities.update({x for x in jgroups})
         assert parsed_attributes, RuntimeError(
             f"Need at least one *attribute* referenced in the analysis"
         )

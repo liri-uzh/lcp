@@ -1,9 +1,11 @@
 import asyncio
 import json
 import logging
+import re
 import traceback
 
 from aiohttp import web
+from intervaltree import IntervalTree
 from redis import Redis as RedisConnection
 from rq.job import get_current_job, Job
 from typing import cast, Any
@@ -20,6 +22,7 @@ from .utils import (
     get_segment_meta_script,
     hasher,
     push_msg,
+    range_from_str,
     CustomEncoder,
     LCPApplication,
 )
@@ -97,11 +100,29 @@ async def do_segment_and_meta(
     batch_hash, _ = qi.query_batches[batch_name]
     batch_results: list = qi.get_from_cache(batch_hash)
 
-    script, meta_labels = get_segment_meta_script(qi.config, qi.languages, batch_name)
+    segment: str = qi.config["firstClass"]["segment"]
+    export_to_xml = any(
+        r.to_export and r.to_export.get("format") == "xml" for r in qi.requests
+    )
 
-    all_segment_ids: dict[str, int] = qi.segment_ids_in_results(
+    kwics = [x for x in qi.result_sets if x.get("type") == "plain"]
+    kwics_ids = [
+        next(y for y in x.get("attributes", []) if y.get("name") == "identifier")
+        for x in kwics
+    ]
+    context: None | str = kwics_ids[0].get("layer", segment)
+    assert all(x.get("layer") == context for x in kwics_ids), ReferenceError(
+        f"All contexts in the plain results must refer to the same annotation layer"
+    )
+    if not export_to_xml:
+        context = None
+
+    script, meta_labels = get_segment_meta_script(
+        qi.config, qi.languages, batch_name, context=context
+    )
+
+    all_segment_ids: dict[str, int | list[int]] = qi.segment_ids_in_results(
         batch_results,
-        qi.kwic_keys,
         offset_this_batch,
         offset_this_batch + lines_this_batch,
     )
@@ -118,6 +139,12 @@ async def do_segment_and_meta(
         print(
             f"Found {len(existing_sids)}/{len(all_segment_ids)} segments in cache for {batch_name}"
         )
+    if export_to_xml and context != segment:
+        # Force re-querying the segments and their meta for wide contexts when exporting to XML
+        needed_sids = {sid: 1 for sid in all_segment_ids}
+        print(
+            f"Running the segment query (again?) for export purposes -- it might take a while"
+        )
     if not needed_sids:
         print(f"No new segment query needed for {batch_name}")
     else:
@@ -130,24 +157,34 @@ async def do_segment_and_meta(
         qi.segments_for_batch[batch_name][squery_id] = needed_sids
     # Calculate which lines from res should be sent to each request
     reqs_offsets = {r.id: r.lines_for_batch(qi, batch_name) for r in qi.requests}
-    reqs_sids: dict[str, dict[str, int]] = {
-        req_id: qi.segment_ids_in_results(batch_results, qi.kwic_keys, o, o + l)
+    reqs_sids: dict[str, dict[str, int | list[int]]] = {
+        req_id: qi.segment_ids_in_results(batch_results, o, o + l)
         for req_id, (o, l) in reqs_offsets.items()
     }
+    reqs_itvls: dict[str, IntervalTree] = {}
+    for req_id, sids_to_crs in reqs_sids.items():
+        reqs_itvls[req_id] = IntervalTree()
+        for char_range in sids_to_crs.values():
+            reqs_itvls[req_id][range(*cast(list[int], char_range))] = 1
     segments_this_batch = cast(RedisDict, qi.segments_for_batch[batch_name]).to_dict()
     for sqid in segments_this_batch:
         reqs_nlines: dict[str, dict[str, int]] = {req_id: {} for req_id in reqs_sids}
-        # TODO: re-run sqid if absent from cache?
         lines: list
         try:
             lines = qi.get_from_cache(sqid)
         except:
             sids = [si for si in segments_this_batch[sqid]]
             lines = await qi.query(sqid, script, params={"sids": sids})
-        for nline, (_, (sid, *_)) in enumerate(lines):
-            sids_of_line = sid if isinstance(sid, list) else [sid]
+        # Be smart about which lines to include
+        for nline, (rtype, content) in enumerate(lines):
             for req_id, sids_in_req in reqs_sids.items():
-                if not any(s in sids_in_req for s in sids_of_line):
+                # No longer using sids_in_req here since we're using char_range
+                cr: str | dict = content[-1]
+                if isinstance(cr, dict):
+                    cr = cr.get("char_range", "")
+                if not isinstance(cr, str) or not re.match(r"\[\d+,\d+\)", cr):
+                    continue
+                if not reqs_itvls[req_id][range_from_str(cast(str, cr))]:
                     continue
                 reqs_nlines[req_id][str(nline)] = 1
         for r in qi.requests:

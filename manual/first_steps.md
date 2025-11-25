@@ -27,7 +27,7 @@ Feel free to report any feedback or bugs to ((add email address here)).
 #### Further Links
   * Further description of the [DQD query language](dqd.md)
   * Detailed tutorial on [Querying](querying.md)
-  * [How corpora are modelled in LCP](corpora_in_lcp.md)
+  * [How corpora are modelled in LCP](data_structure.md)
   * How to store and share your corpora: [Corpus management](corpus_management.md)
   * How to [import your own corpora](importing.md)
 

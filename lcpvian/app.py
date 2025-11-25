@@ -58,6 +58,7 @@ from .document import (
     document,
     document_ids,
     get_clip_media,
+    annotations,
     image_annotations,
 )
 from .export import download_export
@@ -250,6 +251,7 @@ async def create_app(test: bool = False) -> web.Application:
     # app["auth"] = Authenticator(app)
 
     endpoints: list[tuple[str, str, Endpoint]] = [
+        ("/annotations", "POST", annotations),
         ("/api/corpora", "GET", list_coprora),
         ("/api/corpora/{corpus_id}", "GET", get_corpus),
         ("/api/corpora/{corpus_id}/search", "POST", search),

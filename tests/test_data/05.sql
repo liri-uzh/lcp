@@ -40,7 +40,7 @@ WITH RECURSIVE fixed_parts AS
    FROM fixed_parts),
                res1 AS
   (SELECT DISTINCT 1::int2 AS rstype,
-                   jsonb_build_array("interruptor", jsonb_build_array("t") , array[lower(match_list."interruptor_frame_range"), upper(match_list."interruptor_frame_range")])
+                   jsonb_build_array("interruptor", jsonb_build_array("t") , array[lower(match_list."interruptor_frame_range"), upper(match_list."interruptor_frame_range")], array[lower(match_list."interruptor_char_range"), upper(match_list."interruptor_char_range")])
    FROM match_list) ,
                res2 AS
   (SELECT 2::int2 AS rstype,

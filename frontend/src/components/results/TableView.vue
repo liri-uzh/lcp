@@ -319,6 +319,9 @@ export default {
           let { index, direction } = sortCondition;
           let valA = a[index] || "";
           let valB = b[index] || "";
+          const [nValA, nValB] = [Number(valA),Number(valB)];
+          if (!isNaN(nValA) && !isNaN(nValB))
+            [valA, valB] = [nValA, nValB];
           if (valA !== valB) {
             return direction === 1
               ? valA > valB ? 1 : -1

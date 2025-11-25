@@ -155,6 +155,13 @@ export const useCorpusStore = defineStore("corpusData", {
         return response.data;
       });
     },
+    fetchAnnotations(data) {
+      if (!(data.anchor in {stream: 1, time: 1}) && !(data.range instanceof Array)) return;
+      console.log("data for fetchAnnotations", data);
+      httpApi.post("/annotations", data).then((response) => {
+        return response.data;
+      });
+    },
     fetchImageAnnotations(data) {
       if (!(data.ids instanceof Array) && !(data.xy_box instanceof Array)) return;
       httpApi.post("/image_annotations", data).then((response) => {

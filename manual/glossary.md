@@ -21,7 +21,7 @@ A dimension is one of the three conceptual axes along which data and annotations
 
 The term "layer" should always be qualified to clarify what it refers to. Often, it will occur in the phrase "**annotation layer**", in which case it refers to a level of representation of the data that corpus creators can define arbitrarily.
 
-Mostly in LCP a 'Layer' designates an abstract class of entities - see [this page](model.md#layers) for more details.
+Mostly in LCP a 'Layer' designates an abstract class of entities - see [this page](data_structure.md#layers) for more details.
 
 Alternatively, the term "layer" could be understood as synonymous with "tier" or "track", as can be seen in tools such as ELAN, or in the timeline of VideoScope for example. Although the timeline can dedicate a single track to display the annotations of one annotation layer in the corpus, that need not be the case, and there is **no** systematic one-to-one correspondance between the annotation layers of a corpus and the tracks of a timeline.
 

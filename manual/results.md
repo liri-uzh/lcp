@@ -34,7 +34,7 @@ The LCP will display the results in a tab named _myKWIC1_, as specified by the v
 
 ## `analysis`
 
-The `analysis` keyword will give you back a statistical transformation of attributes, optionally filtered. It is formed of two (optionally three) sub-blocks defined by the keywords `attributes` and `functions` (and optionally `filter`). `attributes` should reference attributes of entities, using the format `entity_variable.attribute`, that the statistical transformations will be applied to. `functions` should reference one or more function names that apply a statistical transformation: `frequency`, `minimum`, `maximum`, `average` or `stddev`. Finally, the optional `filter` block lets you exclude some lines from the results; for example, specifying `frequency > 5` in the `filter` block below has the effect of excluding lemmas that appear less than 6 times from the `myStat1` table.
+The `analysis` keyword will give you back a statistical transformation of attributes, optionally filtered. It is formed of two (optionally three) sub-blocks defined by the keywords `attributes` and `functions` (and optionally `filter`). `attributes` should reference attributes of entities, using the format `entity_variable.attribute`, that the statistical transformations will be applied to. `functions` should reference one or more function names that apply a statistical transformation: `frequency`, `minimum`, `maximum`, `average` or `stddev`. **Note that LCP currently only supports the function `frequency`.** Finally, the optional `filter` block lets you exclude some lines from the results; for example, specifying `frequency > 5` in the `filter` block below has the effect of excluding lemmas that appear less than 6 times from the `myStat1` table.
 
 Example:
 

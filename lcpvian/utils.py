@@ -881,7 +881,7 @@ def _get_all_attributes(layer: str, config: Any, lang: str = "") -> dict:
     if partitions:
         if lang and lang not in partitions:
             return ret
-        lkey = f"{layer}@{lang}"
+        lkey = f"{layer}:{lang}"
         if lang and lkey in config["layer"]:
             ret.update({k: v for k, v in _get_all_attributes(lkey, config).items()})
         if not lang:
@@ -889,7 +889,7 @@ def _get_all_attributes(layer: str, config: Any, lang: str = "") -> dict:
                 {
                     k: v
                     for lg in partitions
-                    for k, v in _get_all_attributes(f"{layer}@{lg}", config).items()
+                    for k, v in _get_all_attributes(f"{layer}:{lg}", config).items()
                 }
             )
     return ret
@@ -981,6 +981,10 @@ def hasher(arg):
     return md5(str_arg.encode("utf-8")).digest().hex()
 
 
+def range_from_str(inp: str) -> range:
+    return range(*json.loads(inp.replace(")", "]")))
+
+
 def _parent_of(config: CorpusConfig, child: str, parent: str) -> bool:
     return _layer_contains(config, parent, child)
 
@@ -1060,6 +1064,18 @@ def get_aligned_annotations(
     exclude: dict = {},
     pointer_global_attributes: bool = False,
 ) -> str:
+    """
+    Gets all the annotations aligned on the provided anchor.
+    The main_from should select the provided anchor too.
+    If selecing more than just the anchor, use add to carry over the selection:
+    use x to refer to the CTE and provide an alias as the second member.
+    Example:
+        get_aligned_annotations(
+            config, batch_name, lang,
+            "SELECT s.char_range, s.segment_id FROM segment0 s LIMIT 1",
+            add=("x.segment_id", "sid")
+        )
+    """
     schema = config["schema_path"]
     has_media = config.get("meta", config).get("mediaSlots", {})
     sqlc = SQLCorpus(config, schema, batch_name, lang)
@@ -1250,41 +1266,68 @@ def get_aligned_annotations(
 
 
 def get_segment_meta_script(
-    config: dict, languages: list[str], batch_name: str
+    config: dict, languages: list[str], batch_name: str, context: str | None = None
 ) -> tuple[str, list[str]]:
     schema = config["schema_path"]
     layers: dict = config["layer"]
+    doc: str = config["document"]
     seg: str = config["segment"]
     tok: str = config["token"]
     lang = languages[0] if languages else ""
+
+    ori_batch_name = batch_name
+    batch_name = f"{tok.lower()}0"
+
     seg_table = _get_table(seg, config, batch_name, lang)
     if not seg_table:
         underlang = f"_{lang}" if lang else ""
         seg_table = f"{seg}{underlang}"
+    seg_table_batch = _get_table(seg, config, ori_batch_name, lang)
+    if not seg_table_batch:
+        underlang = f"_{lang}" if lang else ""
+        seg_table_batch = f"{seg}{underlang}"
+    seg_id = sql_str("{}", f"{seg.lower()}_id")
 
     # SEGMENT
     annotations: str = (
-        ", annotations"
+        ", ps.annotations"
         if any(p.get("contains", "") == tok for l, p in layers.items() if l != seg)
-        else ""
+        else ", jsonb_build_object() AS annotations"
     )
     seg_mapping = _get_mapping(seg, config, batch_name, lang)
+    ctx_table = sql_str(
+        "{}", _get_table(context or doc, config, batch_name, lang).lower()
+    )
+    irange: str = "int8range" if re.match(r"^swissdox_\d*$", schema) else "int4range"
+    s2conds = (
+        ""
+        if context
+        else f" AND s2.char_range && {irange}(lower(s1.char_range) - 2, upper(s1.char_range) + 2)"
+    )
     prep_table: str = seg_mapping.get("prepared", {}).get(
         "relation", f"prepared_{seg_table}"
     )
-    prep_cte = f"SELECT {seg}_id, id_offset, content{annotations} FROM {schema}.{prep_table} WHERE {seg}_id = ANY(:sids)"
+    prep_cte: str = f"""SELECT DISTINCT ps.{seg_id}, ps.id_offset, ps.content{annotations}, s2.char_range
+        FROM {schema}.{seg_table_batch} s1
+        JOIN {schema}.{ctx_table} c ON c.char_range @> s1.char_range
+        JOIN {schema}.{seg_table} s2 ON c.char_range @> s2.char_range{s2conds}
+        JOIN {schema}.{prep_table} ps ON ps.{seg_id} = s2.{seg_id}
+        WHERE s1.{seg_id} = ANY(:sids)
+        ORDER BY s2.char_range"""
     preps_annotations = ", preps.annotations" if annotations else ""
 
     # META
     exclude_meta: dict[str, Any] = {
         ln: {} for ln in layers if is_prepared_annotation(config, ln) or ln == tok
     }
-    seg_id = sql_str("{}", f"{seg.lower()}_id")
+
     meta_script = get_aligned_annotations(
         config,
         batch_name,
         lang,
-        f"SELECT s.char_range, s.{seg_id} FROM preps JOIN {schema}.{seg_table} s ON s.{seg_id} = preps.{seg_id}",
+        # f"SELECT s.char_range, s.{seg_id} FROM preps JOIN {schema}.{seg_table} s ON s.{seg_id} = preps.{seg_id}",
+        # f"SELECT ps.char_range, ps.{seg_id} FROM preps ps WHERE ps.{seg_id} = ANY(:sids)",
+        f"SELECT ps.char_range, ps.{seg_id} FROM preps ps",
         add=(sql_str("array_agg({}.", "x") + f"{seg_id})", "_sids"),
         exclude=exclude_meta,
     )
@@ -1292,7 +1335,7 @@ def get_segment_meta_script(
 
     script = f"""WITH preps AS ({prep_cte}),
 meta AS ({meta_script})
-SELECT -1::int2 AS rstype, jsonb_build_array(preps.{seg_id}, preps.id_offset, preps.content{preps_annotations}) FROM preps
+SELECT -1::int2 AS rstype, jsonb_build_array(preps.{seg_id}, preps.id_offset, preps.content{preps_annotations}, preps.char_range) FROM preps
 UNION ALL
 SELECT -2::int2 AS rstype, res FROM meta;
     """
