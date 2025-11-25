@@ -262,8 +262,8 @@ class QueryService:
             seg_map.get("partitions", {})
             .get(language, seg_map)
             .get("prepared", {})
-            .get("relation", f"prepared_{seg.lower()}")
-        )
+            .get("relation", f"prepared_{seg}")
+        ).lower()
         query = aligned + sql_str(
             "\nUNION ALL SELECT jsonb_build_array('_prepared', {}.{}, prep.id_offset, prep.content, {}.char_range) AS res FROM {} JOIN {}.{} prep ON prep.{} = {}.{};",
             seg,
