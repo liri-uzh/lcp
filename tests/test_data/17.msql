@@ -1,0 +1,19 @@
+WITH preps AS (SELECT DISTINCT ps."segment_id", ps.id_offset, ps.content, jsonb_build_object() AS annotations, s2.char_range
+        FROM bnc1.segmentrest s1
+        JOIN bnc1."document" c ON c.char_range @> s1.char_range
+        JOIN bnc1.segment0 s2 ON c.char_range @> s2.char_range AND s2.char_range && int4range(lower(s1.char_range) - 2, upper(s1.char_range) + 2)
+        JOIN bnc1.prepared_segment ps ON ps."segment_id" = s2."segment_id"
+        WHERE s1."segment_id" = ANY(:sids)
+        ORDER BY s2.char_range),
+meta AS (WITH "x" AS (SELECT ps.char_range, ps."segment_id" FROM preps ps),
+"Segment" AS (SELECT array_agg("x"."segment_id") AS "_sids", "Segment"."segment_id" AS "Segment_id","Segment"."char_range" AS "char_range" FROM "x"LEFT JOIN "bnc1"."segment0" "Segment" ON "Segment"."char_range" && "x"."char_range" GROUP BY "Segment_id"),
+"Division" AS (SELECT array_agg("x"."segment_id") AS "_sids", "Division"."division_id" AS "Division_id","Division"."char_range" AS "char_range" FROM "x"LEFT JOIN "bnc1"."division" "Division" ON "Division"."char_range" && "x"."char_range" GROUP BY "Division_id"),
+"Paragraph" AS (SELECT array_agg("x"."segment_id") AS "_sids", "Paragraph"."paragraph_id" AS "Paragraph_id","Paragraph"."char_range" AS "char_range" FROM "x"LEFT JOIN "bnc1"."paragraph" "Paragraph" ON "Paragraph"."char_range" && "x"."char_range" GROUP BY "Paragraph_id"),
+"Document" AS (SELECT array_agg("x"."segment_id") AS "_sids", "Document"."document_id" AS "Document_id","Document"."char_range" AS "char_range","Document"."meta"::jsonb->'date' AS "date","Document"."meta"::jsonb->'title' AS "title","Document"."meta"::jsonb->'keyWords' AS "keyWords","Document"."meta"::jsonb->'classCode' AS "classCode" FROM "x"LEFT JOIN "bnc1"."document" "Document" ON "Document"."char_range" && "x"."char_range" GROUP BY "Document_id")
+SELECT jsonb_build_array("_sids",'Segment',"Segment_id",jsonb_build_object('char_range',"Segment"."char_range")) AS res FROM "Segment"
+UNION ALL SELECT jsonb_build_array("_sids",'Division',"Division_id",jsonb_build_object('char_range',"Division"."char_range")) AS res FROM "Division"
+UNION ALL SELECT jsonb_build_array("_sids",'Paragraph',"Paragraph_id",jsonb_build_object('char_range',"Paragraph"."char_range")) AS res FROM "Paragraph"
+UNION ALL SELECT jsonb_build_array("_sids",'Document',"Document_id",jsonb_build_object('char_range',"Document"."char_range",'date',"Document"."date",'title',"Document"."title",'keyWords',"Document"."keyWords",'classCode',"Document"."classCode")) AS res FROM "Document")
+SELECT -1::int2 AS rstype, jsonb_build_array(preps."segment_id", preps.id_offset, preps.content, preps.annotations, preps.char_range) FROM preps
+UNION ALL
+SELECT -2::int2 AS rstype, res FROM meta;
