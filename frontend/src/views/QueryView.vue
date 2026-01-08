@@ -1256,7 +1256,7 @@ export default {
       if (id_or_box instanceof Array)
         xy_box = id_or_box;
       else
-        for (let i = id_or_box-window; i <= id_or_box+window; i++) {
+        for (let i = parseInt(id_or_box)-window; i <= parseInt(id_or_box)+window; i++) {
           if (i <= 0 || i in this.imageAnnotations) continue;
           ids.push(i);
         }
@@ -1529,6 +1529,14 @@ export default {
 
         if (data["action"] == "image_annotations" || is_doc) {
           const annotations = is_doc ? data.document : data.annotations;
+          // if (!annotations || annotations.length == 0) {
+          //   console.log("data", data);
+          //   useNotificationStore().add({
+          //     type: "error",
+          //     text: "No annotations for this document",
+          //   });
+          //   return;
+          // }
           const meta = [], ids = [];
           this.WSDataSentences = this.WSDataSentences || {};
           for (let [row] of annotations) {
