@@ -19,6 +19,7 @@ from .lama import (
     _lama_check_api_key,
 )
 from .typed import JSONObject, TypeAlias
+from .utils import _filter_corpora
 
 subtype: TypeAlias = list[dict[str, str]]
 
@@ -34,36 +35,35 @@ class Lama(Authentication):
     ## Check methods
 
     async def check_file_permissions(self, request: web.Request) -> tuple[str, int]:
-        msg, status = ("Error", 460)
-        profiles_id: set[str] = set()
-        uri: str = request.headers.get("X-Request-Uri", "")
-
+        uri: str = request.headers.get("X-Request-Uri", "") or ""
         user_details_lama = await _lama_user_details(request.headers)
-        sub = cast(dict[str, Any], user_details_lama["subscription"])
-        subs = cast(list[dict[str, Any]], sub["subscriptions"])
-        for subscription in subs:
-            for profile in subscription["profiles"]:
-                profiles_id.add(profile["id"])
 
-        profiles = cast(
-            list[dict[str, Any]], user_details_lama.get("publicProfiles", [])
-        )
-        for public_profile in profiles:
-            profiles_id.add(public_profile["id"])
+        if not user_details_lama:
+            return ("Invalid user", 461)
 
-        profile_id: str = ""
-        if uri and user_details_lama:
-            profile_id = URL(uri).parts[-2]
-            if profile_id in profiles_id:
-                msg, status = ("OK", 200)
-            elif not profile_id:
-                msg, status = ("Invalid query", 464)
-            elif profile_id not in profiles_id:
-                msg, status = ("No permission", 465)
-        elif not user_details_lama:
-            msg, status = ("Invalid user", 461)
+        user_data = await self.user_details(request)
+        corpora = _filter_corpora(self, request.app["config"], "lcp", user_data)
+        allowed_schema_paths = {
+            corpus.get("schema_path")
+            for corpus_id, corpus in corpora.items()
+            if corpus and corpus.get("schema_path")
+        }
 
-        return (msg, status)
+        if not uri:
+            return ("Invalid query", 464)
+
+        try:
+            parts = URL(uri).parts
+            if len(parts) < 2 or not parts[-2]:
+                return ("Invalid query", 464)
+            profile_id = parts[-2]
+        except Exception:
+            return ("Invalid query", 464)
+
+        if profile_id in allowed_schema_paths:
+            return ("OK", 200)
+
+        return ("No permission", 465)
 
     def check_corpus_allowed(
         self,
