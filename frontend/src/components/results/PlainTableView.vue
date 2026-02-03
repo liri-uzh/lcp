@@ -167,7 +167,7 @@
           <tr v-if="layer in allowedMetaColums">
             <td @click="this.meta_fold(layer, /*flip=*/true)">
               <span class="text-bold">{{ this.meta_fold(layer) ? "&#9662;" : "&#9656;" }}{{ layer }}
-                <span v-if="'mediaSlots' in corpora.corpus.meta" class="timetag nowrap">
+                <span v-if="'mediaSlots' in corpora.corpus.meta && 'frame_range' in meta" class="timetag nowrap">
                   {{
                     this.getTimestamps(...meta.frame_range
                       .map(fr=>fr-currentMeta[corpora.corpus.firstClass.document].frame_range[0])
