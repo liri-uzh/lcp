@@ -11,6 +11,7 @@ async def check_file_permissions(request: web.Request) -> web.Response:
     Returns if user has access to file
     """
 
-    msg, status = request.app["auth_class"](request.app).check_file_permissions(request)
+    authenticator = request.app["auth_class"](request.app)
+    msg, status = await authenticator.check_file_permissions(request)
 
     return web.Response(body=msg, status=status)
