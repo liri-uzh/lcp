@@ -1464,7 +1464,7 @@ export default {
           info[anc_col] = info[anc_col]
             .split(",")
             .map(x=>parseInt(x.replace(/[[()]/g,"")))
-            .map((v,i)=>v-(anc_col != "xy_box" && i==1));
+            .map((v,i)=>v-(anc_col != "xy_box" && i==1)); // decrement right edge by 1 if not xy_box
         }
         // And insert in a second pass: JSON.stringify is now consistent across iterations
         for (let [anc_col, anc_name] of Object.entries(ancMap)) {
@@ -1545,7 +1545,9 @@ export default {
               if (seg_id in this.WSDataSentences) continue;
               let char_range = [-1,-1];
               try {
-                char_range = JSON.parse(char_range_str.replace(")","]"));
+                char_range = JSON.parse(
+                  char_range_str.replace(")","]")
+                ).map((v,i)=>v-(i==1)); // decrement right edge by 1
                 this.insertRange(this.WSDataSentencesByStream, char_range, seg_id);
               } catch { null }
               // Add empty annotations in 3rd slot
