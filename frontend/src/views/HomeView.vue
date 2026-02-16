@@ -398,7 +398,13 @@ export default {
     ProjectEdit,
   },
   methods: {
-    switchFold(event, projectId) {
+    foldProject(corporaNode, height, projectId) {
+      corporaNode.style.height = height+"px";
+      delete this.unfolded[projectId];
+      this.updateOverflows();
+      return false;
+    },
+    async switchFold(event, projectId) {
       event.preventDefault();
       event.stopPropagation();
       const defaultHeight = 250;
@@ -409,30 +415,24 @@ export default {
       if (!projectNode) return false;
       const corporaNode = projectNode.querySelector(".corpora-container");
       if (!corporaNode) return false;
-      const containerRect = corporaNode.getBoundingClientRect();
-      if (containerRect.height >= defaultHeight*2) {
-        corporaNode.style.height = defaultHeight+"px";
-        delete this.unfolded[projectId];
-        return false;
+      let ml;
+      while ((ml = parseInt(window.getComputedStyle(corporaNode).marginLeft)) != 0) {
+        this.scrollProject(projectId, ml > 0 ? 'right' : 'left', Math.abs(ml));
+        await new Promise(r=>setTimeout(r, 10));
       }
+      const containerRect = corporaNode.getBoundingClientRect();
+      if (containerRect.height >= defaultHeight*2) return this.foldProject(corporaNode, defaultHeight, projectId);
       const containerWidth = containerRect.width;
       const allCorpora = corporaNode.querySelectorAll(".corpus-block");
-      if (allCorpora.length < 1) {
-        corporaNode.style.height = defaultHeight+"px";
-        delete this.unfolded[projectId];
-        return false;
-      }
+      if (allCorpora.length < 1) return this.foldProject(corporaNode, defaultHeight, projectId);
       const {width, height} = allCorpora[0].getBoundingClientRect();
       const horizontalFit = Math.floor(containerWidth / width);
-      if (horizontalFit >= allCorpora.length) {
-        corporaNode.style.height = defaultHeight+"px";
-        delete this.unfolded[projectId];
-        return false;
-      }
+      if (horizontalFit >= allCorpora.length) return this.foldProject(corporaNode, defaultHeight, projectId);
       const nRows = Math.ceil(allCorpora.length / horizontalFit);
       const newHeight = nRows * (height + verticalMargin);
       corporaNode.style.height = newHeight + "px";
       this.unfolded[projectId] = 1;
+      this.updateOverflows();
       return false;
     },
     corpusOverflow(projectId, where) {
