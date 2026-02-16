@@ -421,7 +421,7 @@ export default {
         await new Promise(r=>setTimeout(r, 10));
       }
       const containerRect = corporaNode.getBoundingClientRect();
-      if (containerRect.height >= defaultHeight*2) return this.foldProject(corporaNode, defaultHeight, projectId);
+      if (containerRect.height > defaultHeight) return this.foldProject(corporaNode, defaultHeight, projectId);
       const containerWidth = containerRect.width;
       const allCorpora = corporaNode.querySelectorAll(".corpus-block");
       if (allCorpora.length < 1) return this.foldProject(corporaNode, defaultHeight, projectId);
