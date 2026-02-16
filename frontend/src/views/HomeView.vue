@@ -88,7 +88,7 @@
                   </div>
                 </div>
               </div>
-              <div class="project-settings" v-if="project.isAdmin">
+              <div class="project-settings" v-if="project.isAdmin || true">
                 <button
                   type="button"
                   class="btn btn-sm btn-light"
@@ -101,20 +101,34 @@
               </div>
             </div>
             <div
-              class="scroller-left"
+              class="scroller-left tooltips"
               :style="project.id in overflowingLeft ? '' : 'display: none;'"
+              title="Scroll list to the left"
               @pointerdown="scrollProject(project.id, 'left')"
             >
               &lt;
             </div>
             <div
-              class="scroller-right"
+              class="scroller-right tooltips"
               :style="project.id in overflowingRight ? '' : 'display: none;'"
+              title="Scroll list to the right"
               @pointerdown="scrollProject(project.id, 'right')"
             >
               &gt;
             </div>
-            <div class="corpora-container" :style="corporaContainer(filterCorpora(project.corpora))" @pointerdown="e=>dragScrollProjects(e,project.id)">
+            <div
+              v-if="project.id in overflowingLeft || project.id in overflowingRight || project.id in unfolded"
+              class="unfolder tooltips"
+              :title="project.id in unfolded ? 'Fold to one line' : 'Unfold the list'"
+              @pointerdown="e=>switchFold(e, project.id)"
+            >
+              <FontAwesomeIcon :icon="['fas', project.id in unfolded ? 'caret-up' : 'caret-down']" />
+            </div>
+            <div
+              class="corpora-container"
+              :class="corporaContainer(filterCorpora(project.corpora))"
+              @pointerdown="e=>dragScrollProjects(e,project.id)"
+            >
               <div
                 v-for="corpus in filterCorpora(project.corpora)"
                 :key="corpus.id"
@@ -372,7 +386,8 @@ export default {
         cc.style.marginLeft = 0;
         this.updateOverflows();
       })),
-      dragScrolling: []
+      dragScrolling: [],
+      unfolded: {},
     };
   },
   components: {
@@ -383,6 +398,43 @@ export default {
     ProjectEdit,
   },
   methods: {
+    switchFold(event, projectId) {
+      event.preventDefault();
+      event.stopPropagation();
+      const defaultHeight = 250;
+      const verticalMargin = 16;
+      const projectRef = this.$refs.projects;
+      if (!projectRef) return false;
+      const projectNode = projectRef.querySelector(`#project-${projectId}`);
+      if (!projectNode) return false;
+      const corporaNode = projectNode.querySelector(".corpora-container");
+      if (!corporaNode) return false;
+      const containerRect = corporaNode.getBoundingClientRect();
+      if (containerRect.height >= defaultHeight*2) {
+        corporaNode.style.height = defaultHeight+"px";
+        delete this.unfolded[projectId];
+        return false;
+      }
+      const containerWidth = containerRect.width;
+      const allCorpora = corporaNode.querySelectorAll(".corpus-block");
+      if (allCorpora.length < 1) {
+        corporaNode.style.height = defaultHeight+"px";
+        delete this.unfolded[projectId];
+        return false;
+      }
+      const {width, height} = allCorpora[0].getBoundingClientRect();
+      const horizontalFit = Math.floor(containerWidth / width);
+      if (horizontalFit >= allCorpora.length) {
+        corporaNode.style.height = defaultHeight+"px";
+        delete this.unfolded[projectId];
+        return false;
+      }
+      const nRows = Math.ceil(allCorpora.length / horizontalFit);
+      const newHeight = nRows * (height + verticalMargin);
+      corporaNode.style.height = newHeight + "px";
+      this.unfolded[projectId] = 1;
+      return false;
+    },
     corpusOverflow(projectId, where) {
       const projectRef = this.$refs.projects;
       if (!projectRef) return false;
@@ -394,18 +446,18 @@ export default {
       return [...corporaNode.children].find(c=>(where == "left" ? -1 : 1) * (c.getBoundingClientRect()[where] - projectEdge) > 0);
     },
     corporaContainer(corpora) {
-      let ret = "";
+      let ret = [""];
       const projectsWithCorpora = this.projectsGroups.filter(p=>this.filterCorpora(p.corpora).length>0);
       if (projectsWithCorpora.length < 2) {
         if (this.projectsGroups.length == 1)
-          ret = "height: unset; flex-flow: row wrap;";
+          ret = ["onlyProject"];
         else
-          ret = "height: calc(100vh - 300px); flex-flow: row wrap;"
+          ret = ["onlyCorpus"];
       }
       if (projectsWithCorpora.length > 2)
-        ret = "height: 250px";
+        ret = ["manyCorpora"];
       if (corpora.length == 0)
-        ret = "height: 0px;"
+        ret = ["noCorpus"];
       return ret;
     },
     dragScrollProjects(event, projectId) {
@@ -911,13 +963,43 @@ export default {
   background: linear-gradient(90deg, rgba(255, 255, 255, 0) 0%, rgb(179, 179, 179) 50%, rgb(130, 130, 130) 100%);
 }
 
+.unfolder {
+  position: absolute;
+  right: 3px;
+  bottom: 0px;
+  z-index: 9999;
+  background: lightgray;
+  width: 1.5em;
+  height: 1.5em;
+  text-align: center;
+  cursor: pointer;
+  opacity: 0.5;
+}
+.unfolder:hover {
+  opacity: 1;
+}
+
 .corpora-container {
   display: flex;
   height: 500px;
   flex-flow: column wrap;
   overflow-x: hidden;
-  resize: vertical;
+  /* resize: vertical; */
   user-select: none;
+}
+.corpora-container.onlyProject {
+  height: unset;
+  flex-flow: row wrap;
+}
+.corpora-container.onlyCorpus {
+  height: calc(100vh - 300px);
+  flex-flow: row wrap;
+}
+.corpora-container.manyCorpora {
+  height: 250px;
+}
+.corpora-container.noCorpus {
+  height: 0px;
 }
 
 .corpus-block {

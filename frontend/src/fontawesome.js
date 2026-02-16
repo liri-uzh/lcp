@@ -11,6 +11,7 @@ import {
   faCaretDown,
   faCaretLeft,
   faCaretRight,
+  faCaretUp,
   faCertificate,
   faChartSimple,
   faChartGantt,
@@ -74,6 +75,7 @@ library.add(faBarcode);
 library.add(faCaretDown);
 library.add(faCaretLeft);
 library.add(faCaretRight);
+library.add(faCaretUp);
 library.add(faChartSimple);
 library.add(faChartGantt);
 library.add(faCertificate);
