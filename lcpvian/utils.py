@@ -1040,6 +1040,15 @@ def _get_query_batches(
     return sorted(out, key=lambda x: x[-1])
 
 
+def are_prep_segs_ordered(config: dict) -> bool:
+    # For now this is a one-case exception, but the corpus config will include a flag in the future
+    return (
+        True
+        if config.get("isSwissdox") and config["schema_path"] == "swissdox_2"
+        else False
+    )
+
+
 def is_prepared_annotation(config: dict, layer: str) -> bool:
     tokname, segname = (config["firstClass"][x] for x in ("token", "segment"))
     if layer == segname:
@@ -1315,6 +1324,18 @@ def get_segment_meta_script(
         WHERE s1.{seg_id} = ANY(:sids)
         ORDER BY s2.char_range"""
     preps_annotations = ", preps.annotations" if annotations else ""
+
+    if are_prep_segs_ordered(config):
+        # Use order_n instead if it exists, it goes much faster than char_range
+        prep_cte = f"""SELECT DISTINCT ps.{seg_id}, ps.id_offset, ps.content{annotations}, s2.char_range
+            FROM {schema}.{seg_table_batch} s1
+            JOIN {schema}.{ctx_table} c ON c.char_range @> s1.char_range
+            JOIN {schema}.{prep_table} p ON p.{seg_id} = s1.{seg_id}
+            JOIN {schema}.{prep_table} p2 ON (p2.order_n = p.order_n - 1) OR (p2.order_n = p.order_n + 1) OR (p2.order_n = p.order_n)
+            JOIN {schema}.{seg_table} s2 ON s2.{seg_id} = p2.{seg_id} AND c.char_range @> s2.char_range
+            JOIN {schema}.{prep_table} ps ON ps.{seg_id} = s2.{seg_id}
+            WHERE s1.{seg_id} = ANY(:sids)
+            ORDER BY s2.char_range"""
 
     # META
     exclude_meta: dict[str, Any] = {
