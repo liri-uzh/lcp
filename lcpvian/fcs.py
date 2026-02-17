@@ -268,7 +268,7 @@ async def explain(app: LCPApplication, **extra_params) -> str:
     <sru:recordPacking>xml</sru:recordPacking>
     <sru:recordData>
       <zr:explain xmlns:zr="http://explain.z3950.org/dtd/2.0/">
-        <zr:serverInfo protocol="SRU" version="2.0" transport="http">
+        <zr:serverInfo protocol="SRU" version="1.2" transport="http">
           <zr:host>{FCS_HOST}</zr:host>
           <zr:port>{FCS_PORT}</zr:port>
           <zr:database>{FCS_DB}</zr:database>
