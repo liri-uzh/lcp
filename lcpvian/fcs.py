@@ -103,7 +103,7 @@ def _make_search_response(
 ) -> str:
     resp = """<?xml version='1.0' encoding='utf-8'?>
 <sru:searchRetrieveResponse xmlns:sru="http://www.loc.gov/zing/srw/">
-  <sru:version>2.0</sru:version>"""
+  <sru:version>1.2</sru:version>"""
     records: list[str] = []
     for rid, corpus in request_ids.items():
         if not corpus.get("done"):
@@ -182,7 +182,7 @@ def _make_search_response(
 async def search_retrieve(
     app: LCPApplication,
     operation: str = "searchRetrieve",
-    version: str = "2.0",
+    version: str = "1.2",
     query: str = "",
     queryType: str = "cql",
     maximumRecords: str | int = "",
@@ -262,7 +262,7 @@ async def search_retrieve(
 async def explain(app: LCPApplication, **extra_params) -> str:
     first_half: str = f"""<?xml version='1.0' encoding='utf-8'?>
 <sru:explainResponse xmlns:sru="http://www.loc.gov/zing/srw/">
-  <sru:version>2.0</sru:version>
+  <sru:version>1.2</sru:version>
   <sru:record>
     <sru:recordSchema>http://explain.z3950.org/dtd/2.0/</sru:recordSchema>
     <sru:recordPacking>xml</sru:recordPacking>
@@ -307,7 +307,7 @@ async def explain(app: LCPApplication, **extra_params) -> str:
         ]
         resources_str = "\n        ".join(resources_list)
         second_half = f"""  <sru:echoedExplainRequest>
-    <sru:version>2.0</sru:version>
+    <sru:version>1.2</sru:version>
     <sru:baseUrl>http://repos.example.org/fcs-endpoint</sru:baseUrl>
   </sru:echoedExplainRequest>
   <sru:extraResponseData>
