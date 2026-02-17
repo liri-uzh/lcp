@@ -1044,7 +1044,7 @@ def get_corpus_int_range(config: dict | CorpusConfig) -> str:
     # For now this is exception based, but the corpus config will include a flag in the future
     return (
         "int8range"
-        if re.match(r"^(swissdox_\d*|open_subtitles_en)$", config["schema_path"])
+        if re.match(r"^(swissdox_|open_subtitles_en)\d*$", config["schema_path"])
         else "int4range"
     )
 
