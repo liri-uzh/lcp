@@ -1040,7 +1040,16 @@ def _get_query_batches(
     return sorted(out, key=lambda x: x[-1])
 
 
-def are_prep_segs_ordered(config: dict) -> bool:
+def get_corpus_int_range(config: dict | CorpusConfig) -> str:
+    # For now this is exception based, but the corpus config will include a flag in the future
+    return (
+        "int8range"
+        if re.match(r"^(swissdox|open_subtitles)_\d*$", config["schema_path"])
+        else "int4range"
+    )
+
+
+def are_prep_segs_ordered(config: dict | CorpusConfig) -> bool:
     # For now this is a one-case exception, but the corpus config will include a flag in the future
     return (
         True
@@ -1307,7 +1316,7 @@ def get_segment_meta_script(
     ctx_table = sql_str(
         "{}", _get_table(context or doc, config, batch_name, lang).lower()
     )
-    irange: str = "int8range" if re.match(r"^swissdox_\d*$", schema) else "int4range"
+    irange: str = get_corpus_int_range(config)
     s2conds = (
         ""
         if context

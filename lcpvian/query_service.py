@@ -64,6 +64,7 @@ from .utils import (
     _format_config_query,
     _set_config,
     get_aligned_annotations,
+    get_corpus_int_range,
     hasher,
     literal_sql,
     sql_str,
@@ -255,9 +256,7 @@ class QueryService:
         """
         schema: str = config["schema_path"]
         col_name: str = "frame_range" if anchor == "time" else "char_range"
-        irange: str = (
-            "int8range" if re.match(r"^swissdox_\d*$", schema) else "int4range"
-        )
+        irange: str = get_corpus_int_range(config)
         from_cte: str = f"SELECT {irange}({rang[0]},{rang[1]}) AS {col_name}"
         aligned = get_aligned_annotations(
             cast(dict, config),
