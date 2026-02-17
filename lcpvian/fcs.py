@@ -331,19 +331,22 @@ async def get_fcs(request: web.Request) -> web.Response:
     resp: str = ""
     app = cast(LCPApplication, request.app)
     q = request.rel_url.query
-    operation = q.get("operation", "explain")
+    operation = q.get(
+        "operation",
+        "explain" if "x-fcs-endpoint-description" in q else "searchRetrieve",
+    )
+    query_content = (q.get("query") or "").strip()
     if operation == "explain":
         resp = await explain(app, **q)
-    elif operation == "searchRetrieve":
-        if not q.get("query", "").strip():
-            # http://clarin.eu/fcs/diagnostic/10
-            resp = """<diagnostics>
+    elif query_content:
+        resp = await search_retrieve(app, **q)
+    else:
+        # http://clarin.eu/fcs/diagnostic/10
+        resp = """<diagnostics>
         <diagnostic xmlns="info:srw/xmlns/1/sru-1-2-diagnostic">
             <uri>http://clarin.eu/fcs/diagnostic/10</uri>
             <details>10</details>
-            <message>No query found in the request.</message>
+            <message>No valid query found in the request.</message>
         </diagnostic>
     </diagnostics>"""
-        else:
-            resp = await search_retrieve(app, **q)
     return web.Response(body=resp, content_type="application/xml")
