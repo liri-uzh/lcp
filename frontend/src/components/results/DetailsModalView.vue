@@ -206,7 +206,7 @@ export default {
       char_range = [char_range[0] - 2, char_range[1] + 2];
       if (this.context != this.corpora.corpus.firstClass.segment && this.context in (this.meta[this.sentenceId] || {}))
         char_range = this.meta[this.sentenceId][this.context].char_range;
-      const sentenceIds = this.sentencesByStream.search(char_range).sort((x,y)=>x.low > y.low).map(x=>x.value);
+      const sentenceIds = this.sentencesByStream.search(char_range).sort((x,y)=>x.low - y.low).map(x=>x.value);
       return sentenceIds.filter(sid=>sid in this.sentences).map(sid=>{
         const ret = this.plainTokens(this.sentences[sid]);
         ret._char_range = this.sentences[sid].at(-1);

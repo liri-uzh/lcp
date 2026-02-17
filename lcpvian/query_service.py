@@ -60,12 +60,15 @@ from .typed import (
     JSONObject,
 )
 from .utils import (
+    _get_all_attributes,
     _format_config_query,
     _set_config,
     get_aligned_annotations,
+    get_corpus_int_range,
     hasher,
     literal_sql,
     sql_str,
+    SQLCorpus,
 )
 from .abstract_query.utils import _get_table, _get_mapping
 
@@ -102,7 +105,7 @@ class QueryService:
         """
         Fetch document id + info from DB.
         """
-        doc_layer = config.get("document", "document").lower()
+        doc_layer = config.get("document", "document")
         # info: name -> column
         info: dict[str, str] = {
             "name": "name",
@@ -111,14 +114,27 @@ class QueryService:
         }
         if kind == "image":
             info = {"xy_box": "xy_box"}
+        joins: dict = {}
+        layer_attrs = _get_all_attributes(doc_layer, config)
+        if "name" in layer_attrs:
+            sqlc = SQLCorpus(config, schema, next(x for x in config["_batches"]), "")
+            name_ref = sqlc.attribute("d", doc_layer, "name")
+            joins = name_ref.joins
+            info["name"] = name_ref.ref
         jsonb_info = (
             "jsonb_build_object("
             + ",".join(literal_sql(k) + "," + sql_str(v) for k, v in info.items())
             + ")"
         )
-        query = f"SELECT {doc_layer}_id, {jsonb_info} FROM " + sql_str(
-            "{}.{}", schema, doc_layer
+        query = (
+            f"SELECT {doc_layer.lower()}_id, {jsonb_info} FROM "
+            + sql_str("{}", schema)
+            + f".{doc_layer} d"
         )
+        for jtab, jconds in joins.items():
+            if not jconds:
+                continue
+            query += f" JOIN {jtab} ON " + " AND ".join(jconds)
         kwargs: DocIDArgs = {
             "user": user,
             "room": room,
@@ -240,9 +256,7 @@ class QueryService:
         """
         schema: str = config["schema_path"]
         col_name: str = "frame_range" if anchor == "time" else "char_range"
-        irange: str = (
-            "int8range" if re.match(r"^swissdox_\d*$", schema) else "int4range"
-        )
+        irange: str = get_corpus_int_range(config)
         from_cte: str = f"SELECT {irange}({rang[0]},{rang[1]}) AS {col_name}"
         aligned = get_aligned_annotations(
             cast(dict, config),

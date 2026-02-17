@@ -18,6 +18,11 @@ FCS_PORT = "443"
 FCS_DB = "LCP public corpora"
 PID_PREFIX = f"https://{FCS_HOST}/"
 DEFAULT_MAX_KWIC_LINES = os.getenv("DEFAULT_MAX_KWIC_LINES", 9999)
+SRU = {"1.2": "sru", "2.0": "sruResponse"}
+SRU_URL = {
+    "1.2": "http://www.loc.gov/zing/srw/",
+    "2.0": "http://docs.oasis-open.org/ns/search-ws/sruResponse",
+}
 
 
 def _get_cid_from_pid(pid: str) -> str:
@@ -98,12 +103,35 @@ async def _check_request_complete(
     return
 
 
+def _get_record_headers(version: str = "1.2", operation: str = "explain") -> str:
+    record_schema: str = (
+        "http://explain.z3950.org/dtd/2.0/"
+        if operation == "explain"
+        else "http://clarin.eu/fcs/resource"
+    )
+    first_line = (
+        f"<{SRU[version]}:recordSchema>{record_schema}</{SRU[version]}:recordSchema>"
+    )
+    second_line = (
+        f"<{SRU[version]}:recordPacking>xml</{SRU[version]}:recordPacking>"
+        if version == "1.2"
+        else f"<{SRU[version]}:recordXMLEscaping>xml</{SRU[version]}:recordXMLEscaping>"
+    )
+    return first_line + second_line
+
+
 def _make_search_response(
-    buffers, request_ids: dict[str, dict], startRecord: int = 0, requested: int = 50
+    buffers,
+    request_ids: dict[str, dict],
+    startRecord: int = 0,
+    requested: int = 50,
+    version: str = "2.0",
 ) -> str:
     resp = """<?xml version='1.0' encoding='utf-8'?>
-<sru:searchRetrieveResponse xmlns:sru="http://www.loc.gov/zing/srw/">
-  <sru:version>2.0</sru:version>"""
+<{sru}:searchRetrieveResponse xmlns:{sru}="{sru_url}">
+  <{sru}:version>{version}</{sru}:version>""".format(
+        version=version, sru=SRU[version], sru_url=SRU_URL[version]
+    )
     records: list[str] = []
     for rid, corpus in request_ids.items():
         if not corpus.get("done"):
@@ -152,10 +180,9 @@ def _make_search_response(
             ref = f"{PID_PREFIX}query/{cid}/{shortname}"
             records.append(
                 f"""
-    <sru:record>
-      <sru:recordSchema>http://clarin.eu/fcs/resource</sru:recordSchema>
-      <sru:recordPacking>xml</sru:recordPacking>
-      <sru:recordData>
+    <{SRU[version]}:record>
+      {_get_record_headers(version, 'searchRetrieve')}
+      <{SRU[version]}:recordData>
         <fcs:Resource xmlns:fcs="http://clarin.eu/fcs/resource" pid="{PID_PREFIX}{cid}/{lg}" ref="{ref}">
           <fcs:ResourceFragment ref="{ref}">
             <fcs:DataView type="application/x-clarin-fcs-hits+xml" ref="{ref}">
@@ -165,17 +192,17 @@ def _make_search_response(
             </fcs:DataView>
           </fcs:ResourceFragment>
         </fcs:Resource>
-      </sru:recordData>
-      <sru:recordPosition>{startRecord+rp}</sru:recordPosition>
-    </sru:record>"""
+      </{SRU[version]}:recordData>
+      <{SRU[version]}:recordPosition>{startRecord+rp}</{SRU[version]}:recordPosition>
+    </{SRU[version]}:record>"""
             )
             if len(records) >= requested:
                 break
     resp += f"""
-  <sru:numberOfRecords>{len(records)}</sru:numberOfRecords>
-  <sru:records>{''.join(records)}
-  </sru:records>
-</sru:searchRetrieveResponse>"""
+  <{SRU[version]}:numberOfRecords>{len(records)}</{SRU[version]}:numberOfRecords>
+  <{SRU[version]}:records>{''.join(records)}
+  </{SRU[version]}:records>
+</{SRU[version]}:searchRetrieveResponse>"""
     return resp
 
 
@@ -256,19 +283,20 @@ async def search_retrieve(
         request_ids,
         startRecord=startRecord,
         requested=requested,
+        version=version,
     )
 
 
 async def explain(app: LCPApplication, **extra_params) -> str:
+    version = extra_params.get("version", "2.0")
     first_half: str = f"""<?xml version='1.0' encoding='utf-8'?>
-<sru:explainResponse xmlns:sru="http://www.loc.gov/zing/srw/">
-  <sru:version>2.0</sru:version>
-  <sru:record>
-    <sru:recordSchema>http://explain.z3950.org/dtd/2.0/</sru:recordSchema>
-    <sru:recordPacking>xml</sru:recordPacking>
-    <sru:recordData>
+<{SRU[version]}:explainResponse xmlns:{SRU[version]}="{SRU_URL[version]}">
+  <{SRU[version]}:version>{version}</{SRU[version]}:version>
+  <{SRU[version]}:record>
+    {_get_record_headers(version, 'explain')}
+    <{SRU[version]}:recordData>
       <zr:explain xmlns:zr="http://explain.z3950.org/dtd/2.0/">
-        <zr:serverInfo protocol="SRU" version="2.0" transport="http">
+        <zr:serverInfo protocol="SRU" version="{version}" transport="http">
           <zr:host>{FCS_HOST}</zr:host>
           <zr:port>{FCS_PORT}</zr:port>
           <zr:database>{FCS_DB}</zr:database>
@@ -287,10 +315,10 @@ async def explain(app: LCPApplication, **extra_params) -> str:
           <zr:setting type="maximumRecords">{DEFAULT_MAX_KWIC_LINES}</zr:setting>
         </zr:configInfo>
       </zr:explain>
-    </sru:recordData>
-  </sru:record>"""
-    second_half = "</sru:explainResponse>"
-    if "x-fcs-endpoint-description" in extra_params:
+    </{SRU[version]}:recordData>
+  </{SRU[version]}:record>"""
+    second_half = f"</{SRU[version]}:explainResponse>"
+    if extra_params.get("x-fcs-endpoint-description") in (True, "true", "True", 1):
         authenticator = cast(Authentication, app["auth_class"](app))
         resources_list: list[str] = [
             f"""      <ed:Resource pid="{PID_PREFIX}{cid}/{lg}">
@@ -306,11 +334,11 @@ async def explain(app: LCPApplication, **extra_params) -> str:
             if authenticator.check_corpus_searchable(cid, {}, "lcp", get_all=False)
         ]
         resources_str = "\n        ".join(resources_list)
-        second_half = f"""  <sru:echoedExplainRequest>
-    <sru:version>2.0</sru:version>
-    <sru:baseUrl>http://repos.example.org/fcs-endpoint</sru:baseUrl>
-  </sru:echoedExplainRequest>
-  <sru:extraResponseData>
+        second_half = f"""  <{SRU[version]}:echoedExplainRequest>
+    <{SRU[version]}:version>{version}</{SRU[version]}:version>
+    <{SRU[version]}:baseUrl>http://repos.example.org/fcs-endpoint</{SRU[version]}:baseUrl>
+  </{SRU[version]}:echoedExplainRequest>
+  <{SRU[version]}:extraResponseData>
     <ed:EndpointDescription xmlns:ed="http://clarin.eu/fcs/endpoint-description" version="2">
       <ed:Capabilities>
         <ed:Capability>http://clarin.eu/fcs/capability/basic-search</ed:Capability>
@@ -322,8 +350,8 @@ async def explain(app: LCPApplication, **extra_params) -> str:
         {resources_str}
       </ed:Resources>
     </ed:EndpointDescription>
-  </sru:extraResponseData>
-</sru:explainResponse>"""
+  </{SRU[version]}:extraResponseData>
+</{SRU[version]}:explainResponse>"""
     return first_half + "\n" + second_half
 
 
@@ -331,19 +359,34 @@ async def get_fcs(request: web.Request) -> web.Response:
     resp: str = ""
     app = cast(LCPApplication, request.app)
     q = request.rel_url.query
-    operation = q.get("operation", "explain")
-    if operation == "explain":
-        resp = await explain(app, **q)
-    elif operation == "searchRetrieve":
-        if not q.get("query", "").strip():
-            # http://clarin.eu/fcs/diagnostic/10
-            resp = """<diagnostics>
+    query_content = (q.get("query") or "").strip()
+    operation = q.get("operation") or "explain"
+    if query_content:
+        operation = "searchRetrieve"
+    if "x-fcs-endpoint-description" in q:
+        operation = "explain"
+    version = q.get("version") or "2.0"
+    if version not in SRU:
+        resp = """<diagnostics>
         <diagnostic xmlns="info:srw/xmlns/1/sru-1-2-diagnostic">
             <uri>http://clarin.eu/fcs/diagnostic/10</uri>
             <details>10</details>
-            <message>No query found in the request.</message>
+            <message>Version {version} not supported.</message>
+        </diagnostic>
+    </diagnostics>""".format(
+            version=version
+        )
+    elif operation == "explain":
+        resp = await explain(app, **q)
+    elif operation == "searchRetrieve":
+        resp = await search_retrieve(app, **q)
+    else:
+        # http://clarin.eu/fcs/diagnostic/10
+        resp = """<diagnostics>
+        <diagnostic xmlns="info:srw/xmlns/1/sru-1-2-diagnostic">
+            <uri>http://clarin.eu/fcs/diagnostic/10</uri>
+            <details>10</details>
+            <message>No valid query found in the request.</message>
         </diagnostic>
     </diagnostics>"""
-        else:
-            resp = await search_retrieve(app, **q)
     return web.Response(body=resp, content_type="application/xml")

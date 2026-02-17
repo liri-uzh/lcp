@@ -37,7 +37,12 @@
       <div id="rotate-image-left" @click="rotateBy(-1)"><FontAwesomeIcon :icon="['fas', 'rotate-left']" /></div>
       <div id="rotate-image-right" @click="rotateBy(1)"><FontAwesomeIcon :icon="['fas', 'rotate-right']" /></div>
     </div>
-    <span>{{ imageLayer }} #{{ layerId }} ({{ filename.replace(/\.[^.]+$/,"") }})</span>
+    <span style="padding-left: 2em;">
+      {{ imageLayer }} #{{ layerId }} ({{ filename.replace(/\.[^.]+$/,"") }})
+      <span style="padding-left: 1em;">
+        Jump to <input type="text" v-model="tmpLayerId" /> <button @click="updateImageId(this.tmpLayerId)">Go</button>
+      </span>
+    </span>
     <div
       ref="imageContainer"
       class="image-container"
@@ -152,6 +157,7 @@ export default {
       imageWidth: 0,
       imageHeight: 0,
       layerId: this.image.layerId,
+      tmpLayerId: 0,
       name: this.image.name,
       dragStart: null,
       currentToken: null,
@@ -247,7 +253,8 @@ export default {
       this.zoom = Math.max(0.2, Math.min(2.0, this.zoom - e.deltaY/500));
     },
     updateImageId(id) {
-      if (id < 1) return;
+      id = parseInt(id);
+      if (isNaN(id) || id < 1) return;
       this.layerId = id;
       this.$emit("getImageAnnotations", this.imageLayer, id);
     },
@@ -358,7 +365,7 @@ export default {
     allPrepared() {
       const img = this.currentImage;
       if (!img) return [];
-
+      if (!this.meta.layer[this.corpus.segment]) return [];
       const prepared = [];
       const segments = this.meta.layer[this.corpus.segment].byStream.searchValue(img.char_range);
       for (let segment of segments.sort((a,b)=>a.char_range[0] - b.char_range[0])) {
@@ -449,8 +456,9 @@ export default {
       if (docs.length==0) return;
       const doc = docs[0];
       if (this.currentDocumentSelected && doc._id == this.currentDocumentSelected.value.id) return;
+      const documentOption = this.documentOptions.find(d=>d.value?.id == doc._id);
       this.currentDocumentSelected = {
-        name: this.corpus.document + " " + doc._id,
+        name: documentOption?.name || (this.corpus.document + " " + doc._id),
         value: {
           id: doc._id,
           xy_box: doc.xy_box
@@ -460,7 +468,7 @@ export default {
     documentIds() {
       this.documentOptions = Object.entries(this.documentIds)
         .map(([id,info])=>Object({
-          name: this.corpus.document + " " + id,
+          name: info.name || (this.corpus.document + " " + id),
           value: {id: id, xy_box: JSON.parse("["+info.xy_box.replace(/[()]+/g,"")+"]")}
         }));
       if (!this.currentDocumentSelected)
@@ -475,7 +483,10 @@ export default {
       if (!this.currentDocumentSelected) return;
       if (this.shouldFetchForDocument()) {
         this.layerId = null;
-        this.$emit("getImageAnnotations", this.imageLayer, this.currentDocumentSelected.value.xy_box);
+        const xy_box = [...this.currentDocumentSelected.value.xy_box];
+        xy_box[0] = xy_box[2] + 1;
+        xy_box[1] = xy_box[3] + 1;
+        this.$emit("getImageAnnotations", this.imageLayer, xy_box);
       }
     },
     nonSegments() {

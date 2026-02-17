@@ -346,7 +346,8 @@ class ResultsMaker:
         else:
             if center in self.r.set_objects:
                 raise ValueError(f"center cannot be set ({center})")
-            else:
+            # Only add if center is a token ref (could be a sequence ref)
+            elif self.r.label_layer.get(center, ("", None))[0] == self.token:
                 center_ref = sql.layer(center, self.token, pointer=True)
                 alias = center_ref.alias
                 formed = sql_str(f"{center_ref} AS {LR}", alias)
@@ -1080,15 +1081,16 @@ WHERE {ent_stream_ref} && {cont_tok_stream_ref}
             cast(str, window.get("leftSpan", "1")).strip(),
             cast(str, window.get("rightSpan", "1")).strip(),
         )
-        center_ph = "{center}"
+        center_left_ph = "{center_left}"
+        center_right_ph = "{center_right}"
         if "*" in a and "*" in b:
             return ""
         elif "*" not in a and "*" in b:  # *..5
-            return f">= {center_ph} + ({a})"
+            return f">= {center_right_ph} + ({a})"
         elif "*" in a and "*" not in b:  # 3..*
-            return f"<= {center_ph} + ({b})"
+            return f"<= {center_left_ph} + ({b})"
         else:  # 3..4
-            return f"BETWEEN {center_ph} + ({a}) AND {center_ph} + ({b})"
+            return f"BETWEEN {center_left_ph} + ({a}) AND {center_right_ph} + ({b})"
 
     def collocation(
         self,
@@ -1107,42 +1109,18 @@ WHERE {ent_stream_ref} && {cont_tok_stream_ref}
         space = cast(str, result.get("space", ""))
         center = cast(str | None, result.get("center"))
         assert not (space and center), "Only one of space/center allowed!"
-        if center and (token_meta := self.r.label_layer.get(center)):
-            seg_depth = 999  # start with a ridiculously deep value
-            # Use the label of the first segment layer found in label_layer as a fallback
-            seg_lab = next(
-                (
-                    l
-                    for l, p in self.r.label_layer.items()
-                    if p[0].lower() == self.segment.lower()
-                ),
-                "",
-            )
-            # Now go through the chain of center's "partOf"s and choose the highest parent segment
-            part_ofs: list[dict[str, str]] = cast(
-                list[dict[str, str]], token_meta[1].get("partOf", [])
-            )
-            while True:
-                if not part_ofs:
-                    break
-                new_part_ofs: list[dict[str, str]] = []
-                for part in part_ofs:
-                    part_of = next(x for x in part.values())
-                    if part_of not in self.r.label_layer:
-                        continue
-                    parent_meta = self.r.label_layer[part_of]
-                    if parent_meta[0].lower() == self.segment.lower():
-                        depth = cast(int, parent_meta[1].get("_depth", 999))
-                        if depth < seg_depth:
-                            seg_lab = part_of
-                            seg_depth = depth
-                    new_part_ofs += cast(
-                        list[dict[str, str]], parent_meta[1].get("partOf", [])
-                    )
-                part_ofs = new_part_ofs
+        center_is_seq = center and center in {
+            x.sequence.label for x in cast(list[SQLSequence], self.r.sqlsequences)
+        }
+        center_meta = self.r.label_layer.get(center or "")
+        assert (
+            not center or center_is_seq or center_meta and center_meta[0] == self.token
+        ), SyntaxError(
+            "The center of a collocation must refer to a token or a sequence of tokens"
+        )
 
         feat = cast(
-            str, cast(dict, result.get("attribute", {})).get("reference", "lemma")
+            str, cast(dict, result.get("attribute", {})).get("reference", "form")
         )
         token_attribs = _get_all_attributes(self.token, self.config, self.lang)
         assert feat in token_attribs, ReferenceError(
@@ -1176,7 +1154,24 @@ WHERE {ent_stream_ref} && {cont_tok_stream_ref}
                 f"{space}_{feat}",
             )
         elif center:
-            center_ref = self.r.sql.layer(center, self.token)
+            sql_center = sql.Identifier(center)
+            center_left = (
+                sql.Composed([sql_center, sql.SQL("[1]")])
+                if center_is_seq
+                else sql.Identifier(self.r.sql.layer(center, self.token).alias)
+            )
+            center_right = (
+                sql.Composed(
+                    [
+                        sql_center,
+                        sql.SQL("[array_length("),
+                        sql_center,
+                        sql.SQL(", 1)]"),
+                    ]
+                )
+                if center_is_seq
+                else center_left
+            )
             windowed = sql_str(
                 self._parse_window(
                     cast(
@@ -1184,12 +1179,35 @@ WHERE {ent_stream_ref} && {cont_tok_stream_ref}
                         result.get("window", {"leftSpan": "*", "rightSpan": "*"}),
                     ),
                 ),
-                center=sql.Identifier(center_ref.alias),
+                center_left=center_left,
+                center_right=center_right,
             )
             seg_id = self.segment.lower() + "_id"
-            center_seg = self.r.sql.not_attribute(center, self.token, seg_id)
+            if center_is_seq:
+                center_seq = next(
+                    x
+                    for x in cast(list[SQLSequence], self.r.sqlsequences)
+                    if x.sequence.label == center
+                )
+                first_fixed_token, *_ = next(t for t in center_seq.fixed_tokens)
+                center_seg = self.r.sql.not_attribute(
+                    first_fixed_token.label, self.token, seg_id
+                )
+                cte_wheres[sql_str(f"NOT {tok_ref} = ANY(match_list.{LR})", center)] = 1
+                # cte_wheres[
+                #     sql_str(
+                #         f"{tok_ref} < match_list.{LR} OR {tok_ref} > match_list.{LR}",
+                #         center_left,
+                #         center_right,
+                #     )
+                # ] = 1
+            else:
+                center_seg = self.r.sql.not_attribute(center, self.token, seg_id)
+                center_left_str = center_left._obj[0]  # dirty hack to retrieve str repr
+                cte_wheres[
+                    sql_str(f"{tok_ref} <> match_list.{LR}", center_left_str)
+                ] = 1
             self.r.selects.add(center_seg.ref + sql_str(" AS {}", center_seg.alias))
-            cte_wheres[sql_str(f"{tok_ref} <> match_list.{LR}", center_ref.alias)] = 1
             cte_wheres[
                 sql_str(
                     f"{LR}.{LR} = match_list.{LR}",

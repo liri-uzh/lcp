@@ -150,7 +150,9 @@ async def do_segment_and_meta(
     else:
         qi.qi["meta_labels"] = meta_labels
         squery_id = str(uuid4())
-        print(f"Running new segment query for {batch_name} -- {squery_id}")
+        print(
+            f"Running new segment query for {batch_name} -- {squery_id} ({len(needed_sids)} sids)"
+        )
         await qi.query(squery_id, script, params={"sids": [sid for sid in needed_sids]})
         if batch_name not in qi.segments_for_batch:
             qi.segments_for_batch[batch_name] = {}

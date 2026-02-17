@@ -1,0 +1,25 @@
+# test sequence-centered collocation
+
+Segment s
+
+sequence@s seq
+    Token t1
+        xpos2 = "ART"
+    Token t2
+        xpos2 = "ADJ"
+    Token t3
+        xpos2 = "SUBST"
+
+kwic => plain
+    context
+        s
+    entities
+        t3
+
+col => collocation
+    center
+        seq
+    window
+        -2..+2
+    attribute
+        lemma
