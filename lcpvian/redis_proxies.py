@@ -88,7 +88,9 @@ class RedisDict(dict):
         return key in self.keys()
 
     def __iter__(self):
-        return iter(k for k in self.keys())
+        # Get all the keys now in case the dict changes in redis memory between iterations
+        keys = [k for k in self.keys()]
+        return iter(keys)
 
     def __delete__(self, pointer_key: str = ""):
         pointers = RedisDict(self._redis, f"{self._redis_key}::pointers")
@@ -183,7 +185,9 @@ class RedisList(list):
         return len(self) > 0
 
     def __iter__(self):
-        return iter(self.__getitem__(n) for n in range(len(self)))
+        # Get all the values now in case the list changes in redis memory between iterations
+        values = [self.__getitem__(n) for n in range(len(self))]
+        return iter(values)
 
     def __delete__(self, pointer_key: str = ""):
         pointers = RedisDict(self._redis, f"{self._prefix}::pointers")
@@ -309,10 +313,10 @@ class RedisList(list):
         value = self.__getitem__(index)
         # Remove the element
         self._redis.delete(self._entry_key(index))
+        # Decrement length
+        self._redis.set(self._length_key, length - 1)
         # Shift subsequent entries
         for i in range(index + 1, length):
             data: Any = self._redis.get(self._entry_key(i))  # type: ignore
             self._redis.set(self._entry_key(i - 1), data)
-        # Decrement length
-        self._redis.set(self._length_key, length - 1)
         return value
