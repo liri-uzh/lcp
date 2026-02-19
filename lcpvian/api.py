@@ -80,6 +80,10 @@ async def search(request: web.Request) -> web.Response:
         data_to_process["to_export"] = request_data["to_export"]
     (req, qi, job) = process_query(cast(LCPApplication, request.app), data_to_process)
 
+    # No job means no query is being run: delete the request
+    if job is None and qi.has_request(req):
+        qi.delete_request(req)
+
     while 1:
         await asyncio.sleep(0.5)
         if not qi.has_request(req):
