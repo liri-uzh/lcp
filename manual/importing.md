@@ -36,7 +36,7 @@ Once you have prepared your corpus files, you can upload them to a collection in
 3. Once you have your API key and secret, you can start converting and uploading your corpus by running the following command:
 
 ```
-lcpcli -i $CONLLU_FOLDER -o $OUTPUT_FOLDER -m upload -k $API_KEY -s $API_SECRET -p $COLLECTION --live
+lcpcli -i $CONLLU_FOLDER -o $OUTPUT_FOLDER -k $API_KEY -s $API_SECRET -p $COLLECTION --live
 ```
 
 - `$CONLLU_FOLDER` should point to the folder that contains your CONLLU files.
