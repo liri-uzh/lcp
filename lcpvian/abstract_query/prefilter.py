@@ -1,7 +1,14 @@
 from typing import Any, Sequence, cast
 
 from .typed import JSON, LabelLayer, QueryPart, JSONObject
-from .utils import Config, SUFFIXES, _get_underlang, arg_sort_key, literal_sql
+from .utils import (
+    Config,
+    SUFFIXES,
+    _get_underlang,
+    _is_prefix,
+    arg_sort_key,
+    literal_sql,
+)
 
 from typing import Self
 
@@ -453,27 +460,3 @@ class Prefilter:
         final = set([x for i, x in enumerate(prefilters) if i not in removable])
 
         return " & ".join(sorted(final))
-
-
-def _is_prefix(query: str, op: str = "=", typ: str = "string") -> bool:
-    """
-    Can a query be treated as a prefix in a prefilter? regex like ^a.* for example
-    """
-    if op not in ("=", "!="):
-        return False
-    if typ == "string":
-        return True
-    if query.startswith("^") and query.lstrip("^").rstrip("$").isalnum():
-        return True
-    for pattern in sorted(SUFFIXES, key=len, reverse=True):
-        if not query.rstrip().rstrip("$").endswith(pattern):
-            continue
-        query = query.rstrip().rstrip("$")
-        query = query[: -len(pattern)]
-        query = query.lstrip().lstrip("^")
-        if not query or any(
-            i in query for i in ".^$*+-?[]{}\\/()|"
-        ):  # there remain regex characters in the rest of the pattern
-            continue
-        return True
-    return False

@@ -10,6 +10,7 @@ from .utils import (
     _get_underlang,
     _get_mapping,
     _get_table,
+    _is_prefix,
     arg_sort_key,
     QueryData,
     SQLCorpus,
@@ -613,6 +614,15 @@ class Constraint:
                 left = f"({left})::text" if left_type == "string" else left
                 right = f"({right})::text" if right_type == "string" else right
                 formed_condition = f"{left} {op} {right}"
+                if right_type == "regex" and _is_prefix(right[1:-1], self.op, "regex"):
+                    # Increase performance with prefixes if applicable
+                    right_no_prefix = right.lstrip("'^")
+                    rgx_suffix = re.search(r"[*.]", right_no_prefix)
+                    idx_suffix = (
+                        rgx_suffix.span()[0] if rgx_suffix else len(right_no_prefix) - 1
+                    )
+                    like_pattern = right_no_prefix[:idx_suffix]
+                    formed_condition = f"{left} {'NOT ' if op.startswith('!') else ''}LIKE '{like_pattern}%' AND {formed_condition}"
             elif "label" in (left_type, right_type):
                 pass
 
