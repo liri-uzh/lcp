@@ -3,14 +3,15 @@ cqp_to_json.py: parse and convert to JSON a CQPWeb Query Language query
 as defined in the CQPWeb manual at https://cwb.sourceforge.io/files/CQP_Manual/2.html
 """
 
-from typing import Any
+from typing import Any, cast
 from lark import Lark
 from lark.lexer import Token
 
 import os
 import re
 
-from .utils import _get_all_labels
+from .typed import CorpusConfig
+from .utils import _get_all_labels, _layer_contains
 
 PARSER_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "parser"))
 PARSER_FILES = [os.path.join(PARSER_PATH, f) for f in sorted(os.listdir(PARSER_PATH))]
@@ -145,16 +146,51 @@ def process_brackets(node: Any) -> dict:
     return {}
 
 
-def process_node(node: Any, members: list, conf: dict[str, Any] = {}) -> None:
+def process_node(
+    node: Any, members: list, conf: dict[str, Any] = {}, container: str = ""
+) -> None:
 
     token_layer: str = conf.get("firstClass", {}).get("token", "Token")
 
-    token: dict[str, Any] = {"unit": {"layer": token_layer}}
+    unit: dict[str, Any] = {"unit": {"layer": token_layer}}
+    if container:
+        unit["unit"]["partOf"] = [{"partOfStream": container}]
     range: list[int] = [1, 1]
     label: Any = nget(node, "label")
     quantifier: Any = None
 
-    if node.data == "fake_brackets":
+    if node.data == "xml":
+        opener, content, closer = node.children
+        assert opener.children[0] == closer.children[0], SyntaxError(
+            f"Mismatch in tag names: <{opener.children[0]}> does not match </{closer.children[0]}>"
+        )
+        layer = str(opener.children[0])
+        label = f"{layer}-{len(members)}"
+        unit = {"unit": {"layer": layer, "label": label}}
+        if len(opener.children) > 1:
+            conditions = opener.children[1]
+            json_conditions = process_brackets(conditions)
+            for coordination in conditions.children:
+                if coordination.data != "vp":
+                    continue
+                coord_conditions = process_brackets(coordination)
+                if not coord_conditions:
+                    continue
+                operator = "OR" if coordination.children[0].data == "or_" else "AND"
+                json_conditions = {
+                    "logicalExpression": {
+                        "naryOperator": operator,
+                        "args": [json_conditions, coord_conditions],
+                    }
+                }
+            if json_conditions:
+                unit["unit"]["constraints"] = [json_conditions]
+        members.append(unit)
+        for cn in content.children:
+            process_node(cn, members, conf, label)
+        return
+
+    elif node.data == "fake_brackets":
         tmp_members: list = []
         disjuncts: list[Any] = [x for x in node.children if x.data != "or_"]
         for d in disjuncts:
@@ -179,10 +215,10 @@ def process_node(node: Any, members: list, conf: dict[str, Any] = {}) -> None:
         if len(tmp_members) == 0:
             return
         elif len(tmp_members) == 1 and range == [1, 1]:
-            token = tmp_members[0]
+            unit = tmp_members[0]
             if label:
-                token["unit"]["label"] = get_leaf_value(label)
-            members.append(token)
+                unit["unit"]["label"] = get_leaf_value(label)
+            members.append(unit)
             return
         else:
             s: dict = {"sequence": {"members": tmp_members}}
@@ -199,7 +235,7 @@ def process_node(node: Any, members: list, conf: dict[str, Any] = {}) -> None:
     elif node.data == "node":
 
         if label:
-            token["unit"]["label"] = get_leaf_value(label)
+            unit["unit"]["label"] = get_leaf_value(label)
 
         empty_node: Any = nget(node, "empty_node")
         string_node: Any = nget(node, "string_node")
@@ -208,7 +244,7 @@ def process_node(node: Any, members: list, conf: dict[str, Any] = {}) -> None:
         if string_node:
             comp: str = get_leaf_value(string_node)
             comp = f"^{comp[1:-1]}$"
-            token["unit"]["constraints"] = [
+            unit["unit"]["constraints"] = [
                 {
                     "comparison": {
                         "left": {"reference": "form"},
@@ -224,18 +260,18 @@ def process_node(node: Any, members: list, conf: dict[str, Any] = {}) -> None:
 
         elif bracket_node:
             constraints: dict = process_brackets(bracket_node)
-            token["unit"]["constraints"] = [constraints]
+            unit["unit"]["constraints"] = [constraints]
             quantifier = nget(bracket_node, "quantifier")
 
         range = process_quantifier(quantifier, range)
 
         if range == [1, 1]:
-            members.append(token)
+            members.append(unit)
         else:
             members.append(
                 {
                     "sequence": {
-                        "members": [token],
+                        "members": [unit],
                         "repetition": {
                             "min": str(range[0]),
                             "max": "*" if range[1] == -1 else str(range[1]),
@@ -245,7 +281,7 @@ def process_node(node: Any, members: list, conf: dict[str, Any] = {}) -> None:
             )
 
 
-def cqp_to_json(cqp: str, conf: dict[str, Any] = {}) -> dict:
+def cqp_to_json(cqp: str, conf: dict[str, Any] = {}) -> tuple[dict, list[dict]]:
     """
     Take a CQP string and generate just the sequence (or single token) part
     """
@@ -255,45 +291,57 @@ def cqp_to_json(cqp: str, conf: dict[str, Any] = {}) -> dict:
     members: list = []
     nodes = cqp_parsed.children[0].children  # expr > _
 
+    token_layer: str = conf.get("firstClass", {}).get("token", "Token")
+
     for n in nodes:
         process_node(n, members, conf=conf)
 
+    token_members = [
+        m for m in members if m.get("unit", {}).get("layer") == token_layer
+    ]
+    non_token_members = [m for m in members if m not in token_members]
+
     out: dict = {}
-    if len(members) == 1:
-        out = members[0]
-    elif len(members) > 1:
-        out = {"sequence": {"members": members}}
+    if len(token_members) == 1:
+        out = token_members[0]
+    elif len(token_members) > 1:
+        out = {"sequence": {"members": token_members}}
 
-    return out
+    return (out, non_token_members)
 
 
-def make_part_of(query_json: dict | list, label: str):
+def make_part_of(query_json: dict | list, label: str, layers: dict[str, int]):
     if isinstance(query_json, dict):
         uors = next((x for x in ("unit", "sequence") if x in query_json), "")
-        if uors and not query_json[uors].get("partOf"):
+        if (
+            uors
+            and query_json[uors].get("layer", "") in layers
+            and not query_json[uors].get("partOf")
+        ):
             query_json[uors]["partOf"] = [{"partOfStream": label}]
 
     for x in list(query_json):  # prevent error re. edit during iteration
         v = query_json[x] if isinstance(query_json, dict) else x
         if not isinstance(v, (dict, list)):
             continue
-        make_part_of(v, label)
+        make_part_of(v, label, layers)
 
 
 def full_cqp_to_json(cqp: str, conf: dict[str, Any] = {}):
     """
     Take a CQP string and generate the query+result JSON
     """
-    query_json = cqp_to_json(cqp, conf)
+    query_json, containers = cqp_to_json(cqp, conf)
     all_labels = _get_all_labels(query_json)
 
+    tok_layer: str = conf.get("firstClass", {}).get("token", "Token")
     seg_layer: str = conf.get("firstClass", {}).get("segment", "Segment")
     seg_label, counter = "s", 0
     while seg_label in all_labels:
         counter += 1
         seg_label = f"s{counter}"
 
-    make_part_of(query_json, seg_label)
+    make_part_of(query_json, seg_label, {seg_layer: 1, tok_layer: 1})
 
     obj_label: str = next(
         l for l in ("sequence", "logicalExpression", "unit") if l in query_json
@@ -314,7 +362,28 @@ def full_cqp_to_json(cqp: str, conf: dict[str, Any] = {}):
         "resultsPlain": {"context": ["s"], "entities": [label]},
     }
 
+    segment_unit: dict[str, Any] = {"unit": {"layer": seg_layer, "label": seg_label}}
+    query_list = [segment_unit, {obj_label: obj}]
+
+    if containers:
+        query_list = [*containers, *query_list]
+        corpus_conf = cast(CorpusConfig, conf)
+        parent_unit = next(
+            (
+                u.get("unit", {})
+                for u in containers
+                if _layer_contains(
+                    corpus_conf, u.get("unit", {}).get("layer", ""), seg_layer
+                )
+            ),
+            None,
+        )
+        if parent_unit:
+            segment_unit["unit"]["partOf"] = [
+                {"partOfStream": parent_unit.get("label", "")}
+            ]
+
     return {
-        "query": [{"unit": {"layer": seg_layer, "label": seg_label}}, {obj_label: obj}],
+        "query": query_list,
         "results": [res],
     }

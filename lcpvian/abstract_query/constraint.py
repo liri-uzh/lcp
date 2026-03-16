@@ -617,7 +617,7 @@ class Constraint:
                 if right_type == "regex" and _is_prefix(right[1:-1], self.op, "regex"):
                     # Increase performance with prefixes if applicable
                     right_no_prefix = right.lstrip("'^")
-                    rgx_suffix = re.search(r"[*.]", right_no_prefix)
+                    rgx_suffix = re.search(r"[*.$]", right_no_prefix)
                     idx_suffix = (
                         rgx_suffix.span()[0] if rgx_suffix else len(right_no_prefix) - 1
                     )
