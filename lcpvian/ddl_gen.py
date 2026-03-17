@@ -684,7 +684,10 @@ class CTProcessor:
                 table_cols.append(Column(attr, "date", nullable=nullable))
 
             elif typ == "number":
-                table_cols.append(Column(attr, "int", nullable=nullable))
+                if vals.get("subtype", "") == "float":
+                    table_cols.append(Column(attr, "real", nullable=nullable))
+                else:
+                    table_cols.append(Column(attr, "int", nullable=nullable))
 
             elif typ == "image":
                 table_cols.append(Column(attr, "text", nullable=nullable))
