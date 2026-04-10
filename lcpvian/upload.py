@@ -208,6 +208,7 @@ async def upload(request: web.Request) -> web.Response:
     gui_mode = request.rel_url.query.get("gui", False)
 
     job: Job
+    # Pass corpus_super in the payload as a super admin to be able to add files in a later step
     corpus_super: dict = cast(dict, request.rel_url.query.get("corpus_super", {}))
     is_super_admin = cast(dict, user_data["user"]).get("superAdmin")
     if corpus_super:
@@ -259,7 +260,9 @@ async def upload(request: web.Request) -> web.Response:
     # room = request.rel_url.query.get("room", None)
 
     if not project_id:
-        return web.json_response({"status": "failed"})
+        return web.json_response(
+            {"status": "failed", "error": "Could not find a corresponding project ID"}
+        )
 
     data = await request.multipart()
     has_file = False
@@ -517,8 +520,17 @@ async def make_schema(request: web.Request) -> web.Response:
         if "meta" in i
         and _sanitize_corpus_name(i["meta"]["name"]) == corpus_name
         and proj_id in i.get("projects", [])  # only corpora from the same project
-        # and str(i["meta"]["version"]) == str(corpus_version)
     ]
+
+    if sames and not request_data.get("overwrite"):
+        return web.json_response(
+            {
+                "status": "failed",
+                "project": proj_id,
+                "user_id": user_id,
+                "error": f"A corpus named '{corpus_name}' already exists in the collection '{existing_project.get('title', '')}'.",
+            }
+        )
 
     corpus_version = (max(int(x["current_version"]) for x in sames) if sames else 0) + 1
     template["meta"] = template.get("meta", {})
