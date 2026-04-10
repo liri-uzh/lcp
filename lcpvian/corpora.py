@@ -181,6 +181,7 @@ async def corpora_meta_update(request: web.Request) -> web.Response:
     """
     authenticator = request.app["auth_class"](request.app)
     user_data: dict = await authenticator.user_details(request)
+    user: dict = user_data.get("user") or {}
 
     corpora_id: int = int(request.match_info["corpora_id"])
     request_data: JSONObject = await request.json()
@@ -193,13 +194,19 @@ async def corpora_meta_update(request: web.Request) -> web.Response:
         user_data,
         "lcp",
     ):
-        raise PermissionError("This user is not authorized to modify this corpus")
+        raise PermissionError("This user is not authorized to access this corpus")
+
+    projects_admin_ids: list[str] = await authenticator.get_corpus_admin_ids(
+        request, corpora_id
+    )
+    user_in_admins = user.get("id") in projects_admin_ids
+    if not user.get("superAdmin") and not user_in_admins:
+        raise PermissionError("User is not authorized to edit this corpus")
 
     # When apiAccessToken is hidden (less then 20 chars), get the original one from the config
     swissubase = metadata.get("swissubase", {})
     if len(swissubase.get("apiAccessToken") or "") < 20:
-        corpora = request.app["config"]
-        corpus = corpora.get(str(corpora_id))
+        corpus: dict = request.app["config"].get(str(corpora_id))
         access_token = (
             corpus.get("meta", {}).get("swissubase", {}).get("apiAccessToken")
             if corpus
@@ -244,11 +251,6 @@ async def corpora_meta_update(request: web.Request) -> web.Response:
 
     jobs_payload = [str(job_meta.id), str(job_desc.id)]
     if "projects" in request_data:
-        user: dict = user_data.get("user") or {}
-        if not user.get("superAdmin"):
-            raise PermissionError(
-                "User is not authorized to update the project of this corpus"
-            )
         pids = request_data["projects"] or ["00000000-0000-0000-0000-000000000000"]
         job_update_projects: Job = request.app["query_service"].update_projects(
             corpora_id, pids
@@ -267,6 +269,7 @@ async def corpora_overwrite(request: web.Request) -> web.Response:
     """
     authenticator = request.app["auth_class"](request.app)
     user_data: dict = await authenticator.user_details(request)
+    user: dict = user_data.get("user") or {}
 
     corpora_id: int = int(request.match_info["corpora_id"])
     request_data: JSONObject = await request.json()
@@ -279,6 +282,17 @@ async def corpora_overwrite(request: web.Request) -> web.Response:
             "lcp",
         )
         for cid in (corpora_id, overwrite_id)
+    ):
+        raise PermissionError(
+            f"This user is not authorized to access this pair of corpora ({corpora_id}, {overwrite_id})"
+        )
+    corpus_admin_ids, overwrite_admin_ids = [
+        await authenticator.get_corpus_admin_ids(request, cid)
+        for cid in (corpora_id, overwrite_id)
+    ]
+    if (
+        user.get("id") not in corpus_admin_ids
+        or user.get("id") not in overwrite_admin_ids
     ):
         raise PermissionError(
             f"This user is not authorized to modify this pair of corpora ({corpora_id}, {overwrite_id})"

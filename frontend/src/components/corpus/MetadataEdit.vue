@@ -1,11 +1,11 @@
 <template>
-  <!-- <div id="corpus-warning">
+  <div v-if="warning">
     <div class="row">
       <div class="col-12" style="font-style: italic;">
-        {{ $t('modal-meta-warning-before') }} {{ getUserLocale().name }}{{ $t('modal-meta-warning-after') }}
+        {{ warning }}
       </div>
     </div>
-  </div> -->
+  </div>
   <div class="nav nav-tabs mt-3" id="nav-main-tab" role="tablist">
     <button class="nav-link" :class="{ active: activeMainTab === 'metadata' }" id="nav-metadata-tab"
       data-bs-toggle="tab" data-bs-target="#nav-metadata" type="button" role="tab" aria-controls="nav-metadata"
@@ -26,7 +26,6 @@
       class="nav-link ms-auto" :class="{ active: activeMainTab === 'group' }" id="nav-group-tab"
       data-bs-toggle="tab" data-bs-target="#nav-group" type="button" role="tab" aria-controls="nav-group"
       aria-selected="false" @click="activeMainTab = 'group'"
-      v-if="isSuperAdmin"
     >
       {{ $t('modal-meta-group') }}
     </button>
@@ -529,7 +528,6 @@
       :class="{ active: activeMainTab === 'group', show: activeMainTab === 'group' }"
       id="nav-group"
       role="tabpanel" aria-labelledby="nav-group-tab"
-      v-if="isSuperAdmin"
     >
       <div class="row">
         <div class="col-6">
@@ -544,7 +542,7 @@
           ></multiselect>
         </div>
       </div>
-      <div class="row overwrite-corpus" v-if="isSuperAdmin">
+      <div class="row overwrite-corpus">
         <div class="col-6">
           <span>Overwrite corpus:</span>
           <multiselect
@@ -645,6 +643,7 @@ export default {
     if (corpusData.projects.length == 0)
       corpusData.projects.push(corpusData.project_id);
     const ownProjects = this.allProjects ? this.allProjects.filter(p=>corpusData.projects.includes(p.id)) : [];
+    console.log("ownProjects", ownProjects);
     return {
       activeMainTab: "metadata",
       activeSwissUbaseTab: "project",
@@ -655,6 +654,7 @@ export default {
       overwriteCorpus: null,
       SWISSUbaseSubmissionCheck: false,
       currentTitleLang: 'en', // Default language for dataset title
+      warning: ""
     }
   },
   computed: {
@@ -678,7 +678,9 @@ export default {
       }
     },
     allCorpora() {
-      const corpora = this.corpora.map(c=>Object({
+      const adminProjects = Object.fromEntries(this.allProjects.filter(p=>p.isAdmin).map(p=>[p.id,p]));
+      let corpora = this.isSuperAdmin ? this.corpora : this.corpora.filter(c=>c.projects.every(pid=>pid in adminProjects));
+      corpora = corpora.map(c=>Object({
         name: `${c.meta.name} (#${c.meta.id}; ${
           (
             this.allProjects.find(p=>c.project==p.id || c.project_id==p.id || c.projects.includes(p.id))
@@ -765,7 +767,16 @@ export default {
     userLicense() {
       this.corpusData.meta.userLicense = btoa(this.userLicense);
     },
-    projects() {
+    projects(newValue, oldValue) {
+      const newProjects = newValue.filter(p=>!oldValue.includes(p));
+      const ineligibleProjects = newProjects.filter(
+        p => this.corpora.find(c=>this.corpusData.meta.name == c.meta?.name && (c.projects || []).includes(p.id))
+      );
+      console.log("ineligibleProjects", ineligibleProjects, "allCorpora", this.corpora);
+      if (ineligibleProjects.length) {
+        this.warning = `A corpus named ${this.corpusData.meta.name} already exists in ${ineligibleProjects.map(p=>p.title).join(', ')}.`;
+        this.projects = newValue.filter(p=>!ineligibleProjects.includes(p));
+      }
       while (this.corpusData.projects.length)
         this.corpusData.projects.pop();
       this.corpusData.projects.push(...this.projects.map(p=>p.id));

@@ -285,7 +285,7 @@
         <div class="modal-content">
           <div class="modal-header">
             <h5 class="modal-title" id="corpusEditModalLabel" v-if="corpusModal">
-              {{ $t('platform-general-corpus-settings') }} - <em>{{ corpusModal.meta.name }}</em>
+              #{{ corpusModal.meta.id }} - <em>{{ corpusModal.meta.name }}</em>
             </h5>
             <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
           </div>
@@ -611,17 +611,15 @@ export default {
         }
       }
     },
-    async saveModalCorpus(){
+    async saveModalCorpus() {
       const meta = {
         corpusId: this.corpusModal.corpus_id,
         metadata: this.corpusModal.meta,
         descriptions: this.corpusModal.layer,
         globals: this.corpusModal.globalAttributes
       };
-      const isSuperAdmin = useUserStore().isSuperAdmin;
-      if (isSuperAdmin)
-        meta.projects = this.corpusModal.projects;
-      let retval = await useCorpusStore().updateMeta(meta);
+      meta.projects = this.corpusModal.projects;
+      let retval = useCorpusStore().updateMeta(meta);
       if (retval && retval.status == false)
         useNotificationStore().add({
           type: "error",
@@ -631,7 +629,7 @@ export default {
       const overwriteCorpus = metadataedit.overwriteCorpus;
       if ([null, undefined].includes(overwriteCorpus))
         return;
-      retval = await useCorpusStore().overwriteCorpus(this.corpusModal.corpus_id, overwriteCorpus.id);
+      retval = useCorpusStore().overwriteCorpus(this.corpusModal.corpus_id, overwriteCorpus.id);
       if (retval && retval.status == false)
         useNotificationStore().add({
           type: "error",
@@ -757,7 +755,9 @@ export default {
       return sortedProjects;
     },
     getUniqueProjects() {
-      return this.projects.filter((p, n) => !this.projects.slice(n+1, ).find(p2 => p2.id == p.id))
+      const isSuperAdmin = useUserStore().isSuperAdmin;
+      const uniqueProjects = this.projects.filter((p, n) => !this.projects.slice(n+1, ).find(p2 => p2.id == p.id));
+      return uniqueProjects.filter(p=>isSuperAdmin || p.isAdmin);
     },
   },
   mounted() {
@@ -967,7 +967,7 @@ export default {
   position: absolute;
   right: 3px;
   bottom: 0px;
-  z-index: 9999;
+  z-index: 999;
   background: lightgray;
   width: 1.5em;
   height: 1.5em;
