@@ -222,6 +222,8 @@ class DDL:
         """
         method returning indented lines with comma at end for printing
         """
+        if not args:
+            return ""
         return (
             self.nl
             + self.nl.join(map(lambda x: x + ",", args[:-1]))

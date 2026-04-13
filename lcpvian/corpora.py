@@ -15,6 +15,7 @@ from aiohttp import web
 from aiohttp.client_exceptions import ClientOSError
 from json.decoder import JSONDecodeError
 from rq.job import Job
+from rq.exceptions import NoSuchJobError
 from typing import cast
 
 from .email import send_email
@@ -64,7 +65,7 @@ async def corpora(request: web.Request) -> web.Response:
         corpora = request.app["config"]
 
     # Create a copy of the corpora before removing any sensitive data
-    corpora = copy.deepcopy(corpora)
+    corpora = copy.deepcopy({cid: c for cid, c in corpora.items() if c.get("enabled")})
     corpora = _remove_sensitive_fields_from_corpora(corpora)
     return web.json_response({"config": corpora})
 
@@ -265,15 +266,43 @@ async def corpora_meta_update(request: web.Request) -> web.Response:
 
 async def corpora_overwrite(request: web.Request) -> web.Response:
     """
-    Updates metadata for a given corpus
+    Replace corpus #overwrite with corpus #corpora_id
     """
     authenticator = request.app["auth_class"](request.app)
     user_data: dict = await authenticator.user_details(request)
     user: dict = user_data.get("user") or {}
 
+    try:
+        # Try to process as a GET request
+        job_id = request.match_info["job_id"]
+        if job_id:
+            job = Job.fetch(job_id, connection=request.app["redis"])
+            job_status = job.get_status(refresh=True)
+            status_response: dict[str, str] = {"status": job_status}
+            if job_status == "failed":
+                try:
+                    status_response["error"] = str(job.latest_result().exc_string)  # type: ignore
+                except:
+                    status_response["error"] = "Unknownn error."
+                return web.json_response(status_response)
+            return web.json_response(job_status)
+    except NoSuchJobError:
+        return web.json_response(
+            {"error": f"Could not find a job with id {job_id}.", "status": 500}
+        )
+    except:
+        # proceed as an upload PUT request
+        pass
+
     corpora_id: int = int(request.match_info["corpora_id"])
     request_data: JSONObject = await request.json()
     overwrite_id: int = int(cast(int, request_data.get("overwrite", -1)) or -1)
+
+    corpora = request.app["config"]
+    corpus = corpora.get(str(corpora_id))
+    assert corpus, ReferenceError(f"Could not find corpus id {corpora_id}")
+    to_be_overwritten = corpora.get(str(overwrite_id))
+    assert to_be_overwritten, ReferenceError(f"Could not find corpus id {overwrite_id}")
 
     if any(
         not authenticator.check_corpus_allowed(
@@ -297,12 +326,6 @@ async def corpora_overwrite(request: web.Request) -> web.Response:
         raise PermissionError(
             f"This user is not authorized to modify this pair of corpora ({corpora_id}, {overwrite_id})"
         )
-
-    corpora = request.app["config"]
-    corpus = corpora.get(str(corpora_id))
-    assert corpus, ReferenceError(f"Could not find corpus id {corpora_id}")
-    to_be_overwritten = corpora.get(str(overwrite_id))
-    assert to_be_overwritten, ReferenceError(f"Could not find corpus id {overwrite_id}")
 
     args_overwrite = (corpora_id, overwrite_id)
     job_overwrite: Job = request.app["query_service"].overwrite_corpus(*args_overwrite)

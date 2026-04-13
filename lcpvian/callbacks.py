@@ -706,8 +706,8 @@ def _config(
     msg_id = str(uuid4())
     for tup in result:
         made = _row_to_value(tup)
-        if not made.get("enabled"):
-            continue
+        # if not made.get("enabled"):
+        #     continue
         fixed[str(made["corpus_id"])] = made
 
     for conf in fixed.values():

@@ -22,13 +22,14 @@ async def _get_user(request: web.Request, authenticator) -> dict:
     return user_data
 
 
-async def list_coprora(request: web.Request) -> web.Response:
+async def list_corprora(request: web.Request) -> web.Response:
     authenticator = request.app["auth_class"](request.app)
     user_data = await _get_user(request, authenticator)
     corpora = {
         cid: conf
         for cid, conf in request.app["config"].items()
         if authenticator.check_corpus_allowed(cid, user_data, "lcp", get_all=False)
+        and conf.get("enabled")
     }
     return web.json_response(corpora)
 

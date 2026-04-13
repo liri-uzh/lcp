@@ -475,7 +475,10 @@ async def _set_config(payload: JSONObject, app: web.Application) -> None:
     """
     # assert needed for mypy
     assert isinstance(payload["config"], dict)
-    print(f"Config loaded: {len(payload['config'])} corpora")
+    n_enabled = len(
+        [x for x in payload["config"].values() if cast(dict, x).get("enabled")]
+    )
+    print(f"Config loaded: {n_enabled} / {len(payload['config'])} corpora")
     cast(LCPApplication, app).addkey("config", Config, payload["config"])
     payload["action"] = "update_config"
     await push_msg(app["websockets"], "", payload)

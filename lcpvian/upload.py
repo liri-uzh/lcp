@@ -95,6 +95,8 @@ async def _status_check(request: web.Request, job_id: str) -> web.Response:
         "info": " ".join(msg.split()),
         "project": project,
     }
+    if job.result:
+        ret["corpus_id"] = job.result[0]
     if progress:
         ret["progress"] = "/".join(str(x) for x in progress)
     return web.json_response(ret)
@@ -514,13 +516,14 @@ async def make_schema(request: web.Request) -> web.Response:
 
     corpus_name = _sanitize_corpus_name(template["meta"]["name"])
 
-    sames = [
-        i
-        for i in request.app["config"].values()
+    sames = {
+        cid: i
+        for cid, i in request.app["config"].items()
         if "meta" in i
         and _sanitize_corpus_name(i["meta"]["name"]) == corpus_name
         and proj_id in i.get("projects", [])  # only corpora from the same project
-    ]
+        and i.get("enabled")
+    }
 
     if sames and not request_data.get("overwrite"):
         return web.json_response(
@@ -529,10 +532,13 @@ async def make_schema(request: web.Request) -> web.Response:
                 "project": proj_id,
                 "user_id": user_id,
                 "error": f"A corpus named '{corpus_name}' already exists in the collection '{existing_project.get('title', '')}'.",
+                "corpus_id": next(s for s in sames),
             }
         )
 
-    corpus_version = (max(int(x["current_version"]) for x in sames) if sames else 0) + 1
+    corpus_version = (
+        max(int(x["current_version"]) for x in sames.values()) if sames else 0
+    ) + 1
     template["meta"] = template.get("meta", {})
     template["meta"]["version"] = corpus_version
 

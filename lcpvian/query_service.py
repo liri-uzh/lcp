@@ -480,7 +480,7 @@ class QueryService:
         job_id = "app_config"
 
         query = _format_config_query(
-            "SELECT {selects} FROM main.corpus mc {join} WHERE mc.enabled = true;"
+            "SELECT {selects} FROM main.corpus mc {join}"  # WHERE mc.enabled = true;"
         )
 
         redis: RedisConnection[bytes] = self.app["redis"]

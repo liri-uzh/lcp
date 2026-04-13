@@ -74,6 +74,9 @@ class Lama(Authentication):
     ) -> bool:
         """Check that the user is subscribed to a collection containing this corpus"""
 
+        if corpus_id not in self.app["config"]:
+            return False
+
         corpus: CorpusConfig = self.app["config"][corpus_id]
 
         ids: set[str] = set()

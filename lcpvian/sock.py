@@ -319,13 +319,11 @@ LCP"""
         conf: CorpusConfig = cast(CorpusConfig, payload["entry"])
         conf["_batches"] = _get_batches(conf)
         ids_to_names: list[tuple[str, str]] = [
-            (sid, c.get("shortname", "")) for sid, c in app["config"].items()
+            (sid, c.get("shortname", ""))
+            for sid, c in app["config"].items()
+            if c.get("enabled")
         ]
         id_str = str(payload["id"])
-        for sid, name in ids_to_names:
-            if name != conf.get("shortname", "") or int(sid) >= int(id_str):
-                continue
-            app["config"].pop(sid, {})
         app["config"][id_str] = conf
         if payload.get("gui"):
             filt = _filter_corpora(authenticator, app["config"], app_type, user_data)

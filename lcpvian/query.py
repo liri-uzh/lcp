@@ -278,6 +278,9 @@ def process_query(
         f"Received new POST request: {request.id} ; {request.offset} -- {request.requested}"
     )
     config = app["config"][request.corpus]
+    assert config.get("enabled"), RuntimeError(
+        "Tried to query a corpus that has been disabled."
+    )
     try:
         json_query = json.loads(request.query)
     except json.JSONDecodeError:
