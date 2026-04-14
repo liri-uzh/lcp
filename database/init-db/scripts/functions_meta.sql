@@ -270,6 +270,7 @@ AS $$
       UPDATE main.corpus
          SET created_at      = upd.created_at
            , current_version = upd.current_version
+           , enabled         = TRUE
            , corpus_template = upd.corpus_template
            , description     = upd.description
            , mapping         = upd.mapping

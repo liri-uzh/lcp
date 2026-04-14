@@ -284,8 +284,7 @@ async def corpora_overwrite(request: web.Request) -> web.Response:
                     status_response["error"] = str(job.latest_result().exc_string)  # type: ignore
                 except:
                     status_response["error"] = "Unknownn error."
-                return web.json_response(status_response)
-            return web.json_response(job_status)
+            return web.json_response(status_response)
     except NoSuchJobError:
         return web.json_response(
             {"error": f"Could not find a job with id {job_id}.", "status": 500}
