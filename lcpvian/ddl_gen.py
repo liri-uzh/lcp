@@ -11,6 +11,7 @@ import sys
 from collections import abc, defaultdict
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
+from psycopg import sql
 from textwrap import dedent
 from typing import Any, cast
 
@@ -1000,7 +1001,7 @@ class CTProcessor:
         [token_tbl] = (x for x in self.globals.tables if x.name == tok_tbl + "0")
         rel_cols = ", ".join(
             [
-                x.name
+                sql.Identifier(x.name).as_string()
                 for x in token_tbl.cols
                 if not (x.constrs.get("primary_key") or x.type in ("int4range", "box"))
             ]
@@ -1100,7 +1101,9 @@ class CTProcessor:
 
         json_joins_str = "JOIN " + f"\n                LEFT JOIN ".join(json_joins)
         json_sel = (
-            "\n                      , ".join(rel_cols_names)
+            "\n                      , ".join(
+                [sql.Identifier(cn).as_string() for cn in rel_cols_names]
+            )
             + f"\n                     ) AS toks\n                FROM {{batch}}\n                "
             + json_joins_str
         )
