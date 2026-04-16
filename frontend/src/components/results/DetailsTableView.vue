@@ -4,8 +4,8 @@
       <tbody>
         <tr>
           <td v-if="sentences.length > 2" key="annotations"></td>
-          <td v-for="(header, index) in filteredColumnHeaders" :key="`tr-header-${index}`">
-            <th>{{ header }}</th>
+          <td v-for="(index) in filteredColumnHeadersIdx" :key="`tr-header-${index}`">
+            <th>{{ columnHeaders[index] }}</th>
           </td>
         </tr>
         <tr v-for="(token, tIndex) in sentences[1]" :key="`tr-token-${tIndex}`" :class="rowClasses(tIndex)">
@@ -14,8 +14,8 @@
             v-html="annotations(tIndex, sentences)"
             key="annotations"
           ></td>
-          <td v-for="(column, cIndex) in filteredColumnHeaders" :key="`td-${tIndex}-${cIndex}`">
-            <span v-if="column == 'head'" v-html="headToken(token, tIndex)"> </span>
+          <td v-for="(cIndex) in filteredColumnHeadersIdx" :key="`td-${tIndex}-${cIndex}`">
+            <span v-if="columnHeaders[cIndex] == 'head'" v-html="headToken(token, tIndex)"> </span>
             <span
               v-else-if="isJson(token[cIndex])"
               :class="objectClasses(token[cIndex])"
@@ -38,7 +38,7 @@
             </span>
             <span
               v-else
-              :class="textClasses(column)"
+              :class="textClasses(columnHeaders[cIndex])"
               v-html="token[cIndex]"
             > </span>
           </td>
@@ -132,7 +132,7 @@ export default {
         'Definite', 'Foreign', 'Reflex', 'Number', 'Abbr', 'Voice', 'Poss', 'PronType',
         'Case', 'Degree', 'Style', 'Person', 'Gender'
       ],
-      filteredColumnHeaders: this.columnHeaders.filter(ch=>ch!="spaceAfter")
+      filteredColumnHeadersIdx: this.columnHeaders.map((ch,i)=>ch=="spaceAfter"?-1:i).filter(i=>i>=0)
     }
   },
   methods: {
@@ -156,16 +156,6 @@ export default {
         }
       }
       return token;
-    },
-    calcColumnHeaders() {
-      let partitions = this.corpora.corpus.partitions
-        ? this.corpora.corpus.partitions.values
-        : [];
-      let columns = this.corpora.corpus["mapping"]["layer"][this.corpora.corpus["segment"]];
-      if (partitions.length) {
-        columns = columns["partitions"][partitions[0]];
-      }
-      return columns["prepared"]["columnHeaders"].filter( (column) => column!="spaceAfter" );
     },
     textClasses(item) {
       let classes = [];

@@ -11,8 +11,9 @@ class TokenToDisplay {
       throw Error(`Invalid groups (${JSON.stringify(groups)}) for token ${JSON.stringify(tokenArray)}`);
     groups = groups.map(g=>g instanceof Array ? g : [g]);
     columnHeaders.forEach( (header,i) => this[header] = tokenArray[i] );
-    const ta = JSON.parse(JSON.stringify(tokenArray));
-    const ch = columnHeaders.filter(ch=>ch!= 'spaceAfter');
+    const spaceAfterIdx = columnHeaders.findIndex(ch=>ch=="spaceAfter");
+    const ta = JSON.parse(JSON.stringify(tokenArray)).filter((x,n)=>n != spaceAfterIdx);
+    const ch = columnHeaders.filter((x,n)=>n != spaceAfterIdx);
     for (let [annotation_name, annotation_occurences] of Object.entries(annotations||{})) {
       for (let [ann_start_idx, ann_num_toks, annotation] of annotation_occurences) {
         if (index < ann_start_idx || index > (ann_start_idx+(ann_num_toks-1)))

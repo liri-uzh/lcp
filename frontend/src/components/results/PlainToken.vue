@@ -9,7 +9,7 @@
         (currentToken && columnHeaders && currentToken[columnHeaders.indexOf('head')] == token.index ? 'highlight' : ''),
         (token.group >= 0 ? `text-bold color-group-${token.group}` : '')
         ]">{{ token.form }}</span>
-        <span class="space" v-if="token.spaceAfter !== 0">&nbsp;</span>
+        <span class="space" v-if="token.spaceAfter !== 0 && token.spaceAfter !== '0'">&nbsp;</span>
     </span>
 </template>
 
