@@ -15,6 +15,10 @@ from typing import Self
 MATCHES_ALL = {".*", ".+", ".*?", ".?", ".+?"}
 
 
+def fts_seq(it):
+    return " <1> ".join((x if x else "(1a|!1a)") for x in it)
+
+
 class SingleNode:
     """
     Store a query like pos=NOUN , whether it can be prefiltered, and its realisation as prefilter
@@ -221,7 +225,7 @@ class Prefilter:
                         and stripped_c not in conjuncts
                     ):
                         conjuncts.append(stripped_c)
-        formed_prefilters = self._tsquery(" <1> ".join(prefilters))
+        formed_prefilters = self._tsquery(fts_seq(prefilters))
         stringified = f"vec.vector @@  {formed_prefilters}"
         if len(conjuncts) > 1:
             # Including the single terms aside their sequence makes queries much faster
@@ -394,7 +398,7 @@ class Prefilter:
         Create a prefilter string with everything but the column-conversion
         """
         if isinstance(item, Conjuncted):
-            return " <1> ".join(self._stringify_nodes([item]))
+            return fts_seq(self._stringify_nodes([item]))
         elif isinstance(item, SingleNode):
             return item.as_prefilter(self._col_data)
         raise NotImplementedError("should not be here")
@@ -414,9 +418,7 @@ class Prefilter:
             single = []
             if isinstance(prefilt, Disjunction):
                 disj = " | ".join(
-                    " <1> ".join(
-                        self._as_string(u) for u in units if self._as_string(u)
-                    )
+                    fts_seq(self._as_string(u) for u in units if self._as_string(u))
                     for units in prefilt.units
                 )
                 all_made.append(f"({disj})")
@@ -440,7 +442,7 @@ class Prefilter:
             else:
                 if connective == "NOT":
                     single[0] = "!" + single[0]
-                joined = " <1> ".join(single)
+                joined = fts_seq(single)
 
             if len(single) > 1:
                 joined = f"({joined})"
