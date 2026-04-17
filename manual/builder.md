@@ -55,8 +55,8 @@ c = Corpus("my great corpus")
 
 c.Document(
     c.Segment(
-        c.Word("hello"),
-        c.Word("world")
+        c.Token("hello"),
+        c.Token("world")
     )
 )
 
