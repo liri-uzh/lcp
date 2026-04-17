@@ -127,6 +127,15 @@ const Utils = {
           continue;
         if (replaceYesNo && typeof(dict[k])=="string" && dict[k].match(/^(yes|no)$/i))
           val = dict[k].replace(/yes/i,"+").replace(/no/i,"-") + k;
+        if (typeof(val) == "object") {
+          try {
+            const json_str_val = JSON.stringify(val);
+            if (json_str_val && json_str_val[0] == "{")
+              val = json_str_val;
+          } catch {
+            // pass
+          }
+        }
         if (addTitles)
           val = `<abbr title="${k}">${val}</abbr>`;
         vals.push(val);
