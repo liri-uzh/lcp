@@ -196,10 +196,15 @@ class Constraints:
                     [c for c in member._conditions if c.strip()]
                 )
                 conjunction = " AND ".join(stripped_conditions)
-                if len(stripped_conditions) > 1 and self.conj.upper() != "AND":
-                    out[f"({conjunction})"] = None
-                elif stripped_conditions:
+                if self.conj.upper() == "OR":
+                    if len(stripped_conditions) > 1:
+                        out[f"({conjunction})"] = None
+                elif self.conj.upper() == "AND":
                     out[conjunction] = None
+                else:
+                    # unary: negation
+                    out[f"NOT ({conjunction})"] = None
+
         if not out:
             return formed_out
         formed_conj: str
@@ -934,13 +939,16 @@ def _get_constraint(
         obj = cast(dict[str, Any], next(iter(constraint.values())))
         # the default operator is AND, and it can be missing
         operator = "AND"
+        constraints: JSONObject = obj.get("args", [])
         if "unaryOperator" in obj:
-            operator = obj["naryOperator"]
+            operator = obj["unaryOperator"]
+            constr = obj.get("arg", None)
+            constraints = cast(JSONObject, [constr] if constr else [])
         elif "naryOperator" in obj:
             operator = obj["naryOperator"]
 
         return _get_constraints(
-            obj.get("args", []),
+            constraints,
             cast(str, obj.get("layer", layer)),  # todo: which layer is correct?
             cast(str, obj.get("label", label)),
             conf,
