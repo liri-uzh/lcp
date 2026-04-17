@@ -40,7 +40,7 @@ from lcpcli.builder import Corpus
 c = Corpus("my great corpus", document="Book", segment="Sentence", token="Word")
 ```
 
-## Instance methods
+### Instance methods
 
 An instance of the `Corpus` class has an open set of methods, which should all start with a capital letter, and which will create and return an entity in the corpus with the passed attributes (an instance of the class `Layer`)
 
@@ -63,11 +63,11 @@ c.Document(
 c.make("path/to/output/")
 ```
 
-### `make`
+#### `make`
 
 Writes all the CSV files and the configuration JSON file of the corpus to the passed directory.
 
-The `make` method is the only valid method that starts with a non-capital letter.
+The `make` method is the only valid method on a `Corpus` instance that starts with a non-capital letter.
 
 Arguments:
 
@@ -76,11 +76,52 @@ Arguments:
 
 ## `Layer` class
 
+This class is never instantiated explicitly (as in `Layer(...)`). Instances of the `Layer` class are returned by calling a method that starts with a capital letter on an instance of `Corpus`, or on another `Layer` instance.
+
+Upon instantiation, pass named arguments to create corresponding attributes on the entity, as in `corpus.Document(title="my document", year=2026)`. There are three special instantiation cases:
+
+1. When instantiating **tokens**, you should pass a string as the sole unnamed argument to represent the form, as in `corpus.Token("is", lemma="be")`.
+2. When instantiating **segments**, you can pass token instances as unnamed arguments, as in `document.Segment(corpus.Token("hello"), corpus.Token("world"))`.
+3. You can pass a dictionary as the sole unnamed argument (and _no_ named argument) to create a `GlobalAttribute` instance instead of a `Layer` instance, as in `corpus.Speaker({"id": "johndoe", "firstname": "John", "lastname": "Doe"})`
+
 ### Instance methods
+
+Just like `Corpus` instances, `Layer` instances have an open set of methods, which should all start with a capital letter, and which will create and return a new `Layer` instance.
+
+In addition, `Layer` instances come with the methods listed below.
 
 #### `make`
 
+If called with **no argument**: makes the instance in the destination corpus and will clear it from memory as soon as possible.
+
+If call with **multiple unnamed arguments**: each argument should be a `Layer` instance with at least one attribute that points to another `Layer` instance. This is typically used for token dependency relation in a segment, as in:
+
+```python
+t1 = c.Token("the")
+t2 = c.Token("cat")
+s = c.Segment(t1, t2)
+s.make()
+c.DepRel.make(
+    c.DepRel(dependent=t3, udep="root"),
+    c.DepRel(head=t2, dependent=t1, udep="detj")
+)
+```
+
 #### `add`
+
+Adds a `Layer` instance as a child of the current instance.
+
+Arguments:
+
+ - `child`: a `Layer` instance
+
+Example:
+
+```python
+s = c.Segment()
+t = c.Token("hello")
+s.add(t)
+```
 
 #### `set_media`
 
@@ -95,3 +136,5 @@ Arguments:
 #### `set_xy`
 
 #### `get_xy`
+
+## `GlobalAttribute` class
