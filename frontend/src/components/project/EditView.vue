@@ -301,6 +301,7 @@ import config from "@/config";
 export default {
   name: 'ProjectEditView',
   props: ["project"],
+  emits: ["updated"],
   data() {
     let currentProject = { ...this.project };
     currentProject.startDate = new Date(currentProject.startDate)
