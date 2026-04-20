@@ -140,7 +140,6 @@ export default {
   props: ["query", "defaultQuery", "corpora", "invalidError", "errorList"],
   watch: {
     defaultQuery(){
-      console.log('Default changed!');
       editor.getModel().setValue(this.defaultQuery);
     },
     corpora: {
