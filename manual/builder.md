@@ -74,6 +74,8 @@ Arguments:
  - `destination` (`str`, mandatory) is a path where to place the output files
  - `is_global` (`dict`, optional, default `{}`) maps layers to attribute names whose possible values are defined globally, such as the [`upos` on tokens](https://universaldependencies.org/u/pos/)
 
+Returns `None`
+
 ## `Layer` class
 
 This class is never instantiated explicitly (as in `Layer(...)`). Instances of the `Layer` class are returned by calling a method that starts with a capital letter on an instance of `Corpus`, or on another `Layer` instance.
@@ -92,9 +94,30 @@ In addition, `Layer` instances come with the methods listed below.
 
 #### `make`
 
-If called with **no argument**: makes the instance in the destination corpus and will clear it from memory as soon as possible.
+If called with **no argument**: makes the instance (and its children) in the destination corpus and will clear it from memory as soon as possible.
 
-If call with **multiple unnamed arguments**: each argument should be a `Layer` instance with at least one attribute that points to another `Layer` instance. This is typically used for token dependency relation in a segment, as in:
+If call with **multiple unnamed arguments**: each argument should be a `Layer` instance with at least one attribute that points to another `Layer` instance. This is typically used for token dependency relations in a segment (see example below).
+
+Arguments:
+
+ - `child`: (`Layer`, mandatory) a `Layer` instance to add as a child of the current instance.
+
+
+Returns:
+
+ - the same `Layer` instance it was called on
+
+
+Examples:
+
+_Normal layer_
+
+```python
+s = c.Segment(c.Token("hello"), c.Token("world"))
+s.make() # makes the segment and the tokens
+```
+
+_Dependency realtions_
 
 ```python
 t1 = c.Token("the")
@@ -102,10 +125,11 @@ t2 = c.Token("cat")
 s = c.Segment(t1, t2)
 s.make()
 c.DepRel.make(
-    c.DepRel(dependent=t3, udep="root"),
+    c.DepRel(dependent=t1, udep="root"),
     c.DepRel(head=t2, dependent=t1, udep="detj")
 )
 ```
+
 
 #### `add`
 
@@ -114,6 +138,10 @@ Adds a `Layer` instance as a child of the current instance.
 Arguments:
 
  - `child`: (`Layer`, mandatory) a `Layer` instance to add as a child of the current instance.
+
+Returns:
+
+ - the same `Layer` instance it was called on
 
 Example:
 
@@ -131,7 +159,11 @@ Call this on a `Layer` instance at the document level to associate with a media 
 Arguments:
 
  - `name` (`str`, mandatory) is an arbitrary name for the media field
- - `filename` (`str`, mandatory) is the filename of the media file associated with the current document
+ - `filename` (`str`, mandatory) is the filename of the media file associated with the current document. It can be an audio or a video file.
+
+Returns:
+
+ - the same `Layer` instance it was called on
 
 Example:
 
@@ -139,6 +171,7 @@ Example:
 d = c.Document(title="Interview with the vampire")
 d.set_media("interview", "vampire.mp4")
 ```
+
 
 #### `set_char`
 
@@ -149,12 +182,16 @@ Arguments:
  - `left` (`int`) is the index of the left anchor on the character axis
  - `right` (`int`) is the index of the right anchor on the character axis
 
+Returns:
+
+ - the same `Layer` instance it was called on
+
 Example:
 
 ```python
 forms = " ".split("the LCP corpus")
-tokens = [c.Token(f for f in forms)]
-s = Segment(*tokens)
+tokens = [c.Token(f) for f in forms]
+s = c.Segment(*tokens)
 # making the segment anchors the tokens
 s.make()
 ne = c.NamedEntity(form=forms[1])
@@ -172,7 +209,7 @@ Example:
 
 ```python
 forms = " ".split("the LCP corpus")
-tokens = [c.Token(f for f in forms)]
+tokens = [c.Token(f) for f in forms]
 s = c.Segment(*tokens)
 # making the segment anchors the tokens
 s.make()
@@ -189,6 +226,10 @@ Arguments:
 
  - `start` (`int`) is the index of the left anchor on the time axis (in seconds times 25)
  - `end` (`int`) is the index of the right anchor on the time axis (in seconds times 25)
+
+Returns:
+
+ - the same `Layer` instance it was called on
 
 Example:
 
@@ -247,7 +288,11 @@ Arguments:
  - `x1` (`int`) is the left-most point of the annotation area
  - `y1` (`int`) is the top-most point of the annotation area
  - `x2` (`int`) is the right-most point of the annotation area
- - `y1` (`int`) is the bottom-most point of the annotation area
+ - `y2` (`int`) is the bottom-most point of the annotation area
+
+Returns:
+
+ - the same `Layer` instance it was called on
 
 Example:
 
@@ -280,7 +325,7 @@ p.set_xy(offset + 0, 0, offset + 100, 50)
 
 ## `GlobalAttribute` class
 
-Pass a dictionary as the sole unnamed argument (and _no_ named argument) of a layer method to create a `GlobalAttribute` instance. You can then pass this an attribute of multiple layers.
+Pass a dictionary as the sole unnamed argument (and _no_ named argument) of a new-layer method to create a `GlobalAttribute` instance instead. You can then pass this an attribute of multiple layers.
 
 Arguments:
 
@@ -293,6 +338,8 @@ jane = c.Speaker({"firstname": "Jane", "lastname": "Doe"})
 john = c.Speaker({"firstname": "John", "lastname": "Doe"})
 s1 = doc.Segment(c.Token("Hello"), c.Token("world"), speaker=jane)
 s2 = doc.Segment(c.Token("Bye"), c.Token("people"), speaker=john)
+s3 = doc.Segment(c.Token("So"), c.Token("long"), speaker=john)
 s1.make()
 s2.make()
+s3.make()
 ```
