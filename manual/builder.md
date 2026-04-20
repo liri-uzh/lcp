@@ -113,28 +113,186 @@ Adds a `Layer` instance as a child of the current instance.
 
 Arguments:
 
- - `child`: a `Layer` instance
+ - `child`: (`Layer`, mandatory) a `Layer` instance to add as a child of the current instance.
 
 Example:
 
 ```python
 s = c.Segment()
 t = c.Token("hello")
+# Add the token as a child of the segment
 s.add(t)
 ```
 
 #### `set_media`
 
+Call this on a `Layer` instance at the document level to associate with a media file.
+
+Arguments:
+
+ - `name` (`str`, mandatory) is an arbitrary name for the media field
+ - `filename` (`str`, mandatory) is the filename of the media file associated with the current document
+
+Example:
+
+```python
+d = c.Document(title="Interview with the vampire")
+d.set_media("interview", "vampire.mp4")
+```
+
 #### `set_char`
+
+Sets the character anchoring of the current instance. It is usually not necessary to call this manually, since the character axis is determined by the forms in the token sequence of the corpus; however, one can use `set_char` to add _parallel_ annotations on that axis.
+
+Arguments:
+
+ - `left` (`int`) is the index of the left anchor on the character axis
+ - `right` (`int`) is the index of the right anchor on the character axis
+
+Example:
+
+```python
+forms = " ".split("the LCP corpus")
+tokens = [c.Token(f for f in forms)]
+s = Segment(*tokens)
+# making the segment anchors the tokens
+s.make()
+ne = c.NamedEntity(form=forms[1])
+# set the named entity to overlap with the "LCP" token
+ne.set_char(tokens[1].get_char())
+```
 
 #### `get_char`
 
+Returns the left and right anchors of the current layer entity on the character axis.
+
+Return type: `tuple[int, int]`
+
+Example:
+
+```python
+forms = " ".split("the LCP corpus")
+tokens = [c.Token(f for f in forms)]
+s = c.Segment(*tokens)
+# making the segment anchors the tokens
+s.make()
+ne = c.NamedEntity(form=forms[1])
+# set the named entity to overlap with the "LCP" token
+ne.set_char(tokens[1].get_char())
+```
+
 #### `set_time`
+
+Sets the time anchoring of the current instance.
+
+Arguments:
+
+ - `start` (`int`) is the index of the left anchor on the time axis (in seconds times 25)
+ - `end` (`int`) is the index of the right anchor on the time axis (in seconds times 25)
+
+Example:
+
+```python
+transcript = [
+    {
+        "form": "hello",
+        "start": 0.0,
+        "end": 0.4
+    },
+    {
+        "form": "world",
+        "start": 0.45,
+        "end": 0.8
+    },
+]
+tokens = []
+for t in transcript:
+    token = c.Token(t['form'])
+    token.set_time(int(t['start'] * 25), int(t['end'] * 25))
+s = c.Segment(*token)
+s.make() # inherits the start and end time anchors from the tokens
+```
 
 #### `get_time`
 
+Returns the start and end time anchors of the current layer entity (in seconds times 25).
+
+Return type: `tuple[int, int]`
+
+Example:
+
+```python
+# store the end time of the current document in offset
+_, offset = doc.get_time()
+# create a new document
+doc = c.Document(name="Second Document")
+doc.set_media("interview", "vampire.mp4")
+hello = c.Token("hello")
+world = c.Token("world")
+hello.set_time(offset + 0, offset + 10)
+world.set_time(offset + 11, offset + 20)
+s = doc.Segment(hello, world)
+s.make() # inherits the start and end time anchors from the tokens
+doc.make() # inherits the start and end time anchors from the sentence
+```
+
 #### `set_xy`
+
+Sets the (X1,Y1,X2,Y2) plane anchoring of the current instance, typically used to map annotations to areas of images.
+
+Take care of offsetting the annotations of separate documents so they do not overlap, on the horizontal axis, on the vertical axis, or both.
+
+Arguments:
+
+ - `x1` (`int`) is the left-most point of the annotation area
+ - `y1` (`int`) is the top-most point of the annotation area
+ - `x2` (`int`) is the right-most point of the annotation area
+ - `y1` (`int`) is the bottom-most point of the annotation area
+
+Example:
+
+```python
+p = c.Page(name="Page 1", image="file.png")
+p._attributes["image"]._type = "image" # force an image type on this attribute
+p.set_xy(0, 0, 100, 50) # a 100x50px document
+s = p.Segment()
+hello = s.Token("hello")
+world = s.Token("world")
+hello.set_xy(10, 10, 33, 40)
+world.set_xy(50, 10, 90, 40)
+s.make() # s inherits the plane anchoring from its tokens 
+p.make() # the page's anchors were explicitly set above
+```
 
 #### `get_xy`
 
+Returns the (X1,Y1,X2,Y2) plane anchors of the current instance.
+
+Return type: `tuple[int, int, int, int]`
+
+Example:
+
+```python
+_, _, offset, _ = p.get_xy() # horizontal offset
+p = c.Page(name="Page 2", image="file2.png")
+p.set_xy(offset + 0, 0, offset + 100, 50)
+```
+
 ## `GlobalAttribute` class
+
+Pass a dictionary as the sole unnamed argument (and _no_ named argument) of a layer method to create a `GlobalAttribute` instance. You can then pass this an attribute of multiple layers.
+
+Arguments:
+
+ - `attributes` (`dict`) is a key-value dictionary of the global attribute's sub-attributes.
+
+Example:
+
+```python
+jane = c.Speaker({"firstname": "Jane", "lastname": "Doe"})
+john = c.Speaker({"firstname": "John", "lastname": "Doe"})
+s1 = doc.Segment(c.Token("Hello"), c.Token("world"), speaker=jane)
+s2 = doc.Segment(c.Token("Bye"), c.Token("people"), speaker=john)
+s1.make()
+s2.make()
+```
