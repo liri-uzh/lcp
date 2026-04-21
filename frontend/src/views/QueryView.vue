@@ -270,7 +270,7 @@
                   :image="image"
                   :corpus="selectedCorpora.corpus"
                   :meta="WSDataMeta"
-                  :sentences="WSDataSentences || {}"
+                  :sentences="WSDataSentences"
                   :documentIds="documentIds"
                   @getImageAnnotations="getImageAnnotations"
                   @switchToQueryTab="setMainTab"
@@ -307,31 +307,31 @@
                   </div>
                   <div class="col-12" id="results">
                     <div class="row mb-4">
-                      <div class="col">
-                        <p class="mb-1">
-                          {{ $t('common-number-results') }}:
-                          <span class="text-bold" v-html="WSDataResults.total_results_so_far"></span>
-                        </p>
-                      </div>
-                      <div class="col">
-                        <p class="mb-1">
-                          {{ $t('common-projected-results') }}:
-                          <span class="text-bold" v-html="WSDataResults.projected_results"></span>
-                        </p>
-                      </div>
-                      <div class="col">
-                        <p class="mb-1">
-                          {{ $t('common-batch-done') }}:
-                          <span class="text-bold" v-html="WSDataResults.batches_done"></span>
-                        </p>
-                      </div>
-                      <div class="col">
-                        <p class="mb-1">
-                          {{ $t('common-status') }}:
-                          <!-- <span class="text-bold" v-html="WSDataResults.status"></span> -->
-                          <span class="text-bold" v-html="queryStatus"></span>
-                        </p>
-                      </div>
+                     <div class="col">
+                         <p class="mb-1">
+                           {{ $t('common-number-results') }}:
+                           <span class="text-bold" v-html="WSDataResults.total_results_so_far"></span>
+                         </p>
+                       </div>
+                       <div class="col">
+                         <p class="mb-1">
+                           {{ $t('common-projected-results') }}:
+                           <span class="text-bold" v-html="WSDataResults.projected_results"></span>
+                         </p>
+                       </div>
+                       <div class="col">
+                         <p class="mb-1">
+                           {{ $t('common-batch-done') }}:
+                           <span class="text-bold" v-html="WSDataResults.batches_done"></span>
+                         </p>
+                       </div>
+                       <div class="col">
+                         <p class="mb-1">
+                           {{ $t('common-status') }}:
+                           <!-- <span class="text-bold" v-html="WSDataResults.status"></span> -->
+                           <span class="text-bold" v-html="WSDataResults.isSatisfied() ? 'satisfied' : WSDataResults.isFinished() ? 'finished' : queryStatus"></span>
+                         </p>
+                       </div>
                     </div>
                   </div>
                 </div>
@@ -365,18 +365,18 @@
                   </div>
                 </div>
 
-                <div v-if="percentageDone == 100 && Object.keys(WSDataSentences || {}).length == 0"
-                  style="text-align: center" class="mb-3 mt-2">
-                  <div v-if="noResults">
-                    {{ $t('common-no-results') }}!
-                  </div>
-                  <div v-else>
-                    {{ $t('common-loading-results') }}...
-                  </div>
-                </div>
+                 <div v-if="percentageDone == 100 && Object.keys(WSDataSentences).length == 0"
+                   style="text-align: center" class="mb-3 mt-2">
+                   <div v-if="noResults || WSDataResults.isEmpty()">
+                     {{ $t('common-no-results') }}!
+                   </div>
+                   <div v-else>
+                     {{ $t('common-loading-results') }}...
+                   </div>
+                 </div>
                 <div class="mt-2">
                   <div class="row">
-                    <div class="col-12" v-if="WSDataResults && WSDataResults.result">
+                    <div class="col-12" v-if="Object.keys(WSDataResults.result).length">
                       <div
                         v-if="queryStatus && userData.user.anon != true && !noResults"
                         @click="[setExportFilename(),openModal('export')]"
@@ -395,10 +395,9 @@
                       </div>
                       <nav>
                         <div class="nav nav-tabs" id="nav-results-tabs" role="tablist">
-                          <template
-                            v-for="(resultSet, index) in WSDataResults.result['0']
-                              .result_sets"
-                          >
+                           <template
+                             v-for="(resultSet, index) in WSDataResults.getResultSets()"
+                           >
                             <button
                               class="nav-link"
                               :class="index == 0 ? 'active' : ''"
@@ -413,7 +412,7 @@
                               :key="`result-btn-${index}`"
                               v-if="
                                 (resultSet.type == 'plain' &&
-                                  Object.keys(WSDataSentences || {}).length) ||
+                                  Object.keys(WSDataSentences).length) ||
                                 resultSet.type != 'plain'
                               ">
                               <FontAwesomeIcon v-if="resultSet.type == 'plain'" :icon="['fas', 'barcode']" />
@@ -423,9 +422,7 @@
                               {{ resultSet.name }}
                               <small>
                                 <span>{{
-                                  WSDataResults && WSDataResults.result[index + 1]
-                                    ? WSDataResults.result[index + 1].length
-                                    : 0
+                                  WSDataResults.getResultData(index + 1).length
                                 }}</span>
                               </small
                               >
@@ -436,11 +433,11 @@
                       <div class="tab-content" id="nav-results-tabsContent">
                         <div class="tab-pane fade show pt-3" :class="index == 0 ? 'active' : ''"
                           :id="`nav-results-${index}`" role="tabpanel" :aria-labelledby="`nav-results-${index}-tab`"
-                          v-for="(resultSet, index) in WSDataResults.result['0'].result_sets"
+                          v-for="(resultSet, index) in WSDataResults.getResultSets()"
                           :key="`result-tab-${index}`">
                           <span v-if="
                             resultSet.type == 'plain' &&
-                            Object.keys(WSDataSentences||{}).length
+                            Object.keys(WSDataSentences).length
                           ">
                             <div class="btn-group mt-2 btn-group-sm mb-3">
                               <a href="#" @click.stop.prevent="plainType = 'table'" class="btn" :class="plainType == 'table' || resultContainsSet(resultSet)
@@ -457,38 +454,38 @@
                                 KWIC
                               </a>
                             </div>
-                            <ResultsPlainTableView
-                              v-if="plainType == 'table' || resultContainsSet(resultSet)"
-                              :data="WSDataResults.result[index + 1] || []"
-                              :sentences="WSDataSentences || {}"
-                              :sentencesByStream="WSDataSentencesByStream"
-                              :languages="selectedLanguages"
-                              :meta="WSDataMeta.bySegment"
-                              :metaByLayer="WSDataMeta.layer"
-                              :attributes="resultSet.attributes"
-                              :corpora="selectedCorpora"
-                              @updatePage="updatePage"
-                              @playMedia="playMedia"
-                              @hoverResultLine="hoverResultLine"
-                              @showImage="showImage"
-                              :resultsPerPage="resultsPerPage"
-                              :loading="loading"
-                            />
-                            <ResultsKWICView
-                              v-else-if="resultContainsSet(resultSet) == false"
-                              :data="WSDataResults.result[index + 1] || []"
-                              :sentences="WSDataSentences || {}"
-                              :languages="selectedLanguages"
-                              :meta="WSDataMeta.bySegment"
-                              :attributes="resultSet.attributes"
-                              :corpora="selectedCorpora"
-                              @updatePage="updatePage"
-                              :resultsPerPage="resultsPerPage"
-                              :loading="loading"
-                            />
+                             <ResultsPlainTableView
+                               v-if="plainType == 'table' || resultContainsSet(resultSet)"
+                               :data="WSDataResults.getResultData(index) || []"
+                               :sentences="WSDataSentences"
+                               :sentencesByStream="WSDataSentencesByStream"
+                               :languages="selectedLanguages"
+                               :meta="WSDataMeta.bySegment"
+                               :metaByLayer="WSDataMeta.layer"
+                               :attributes="resultSet.attributes"
+                               :corpora="selectedCorpora"
+                               @updatePage="updatePage"
+                               @playMedia="playMedia"
+                               @hoverResultLine="hoverResultLine"
+                               @showImage="showImage"
+                               :resultsPerPage="resultsPerPage"
+                               :loading="loading"
+                             />
+                             <ResultsKWICView
+                               v-else-if="resultContainsSet(resultSet) == false"
+                               :data="WSDataResults.getResultData(index)"
+                               :sentences="WSDataSentences"
+                               :languages="selectedLanguages"
+                               :meta="WSDataMeta.bySegment"
+                               :attributes="resultSet.attributes"
+                               :corpora="selectedCorpora"
+                               @updatePage="updatePage"
+                               :resultsPerPage="resultsPerPage"
+                               :loading="loading"
+                             />
                           </span>
                           <ResultsTableView v-else-if="resultSet.type != 'plain'"
-                            :data="WSDataResults.result[index + 1]" :languages="selectedLanguages"
+                            :data="WSDataResults.getResultData(index + 1)" :languages="selectedLanguages"
                             :attributes="resultSet.attributes" :meta="WSDataMeta.bySegment" :resultsPerPage="resultsPerPage"
                             :total="resultSet.total || []"
                             :type="resultSet.type" :corpora="selectedCorpora" />
@@ -753,7 +750,6 @@ import ResultsTableView from "@/components/results/TableView.vue";
 import ResultsKWICView from "@/components/results/KWICView.vue";
 import ResultsPlainTableView from "@/components/results/PlainTableView.vue";
 import EditorView from "@/components/EditorView.vue";
-// import CorpusGraphView from "@/components/CorpusGraphView.vue";
 import CorpusGraphViewNew from "@/components/CorpusGraphViewNew.vue";
 import PlayerComponent from "@/components/PlayerComponent.vue";
 import ExportModal from "@/components/query/ExportModal.vue";
@@ -764,6 +760,7 @@ import { setTooltips, removeTooltips } from "@/tooltips";
 import Utils from "@/utils";
 import { IntervalTree } from "@/intervaltrees";
 import config from "@/config";
+import WSDataResults from "@/classes/WSDataResults";
 
 export default {
   name: "QueryView",
@@ -778,7 +775,7 @@ export default {
       wsConnected: false,
       selectedCorpora: null,
       isQueryValidData: null,
-      WSDataResults: "",
+      WSDataResults: new WSDataResults(),
       WSDataMeta: {"layer": {}, "bySegment": {}},
       WSDataSentences: {},
       WSDataSentencesByStream: new IntervalTree(),
@@ -851,7 +848,6 @@ export default {
     ResultsTableView,
     EditorView,
     CorpusDetailsModal,
-    // CorpusGraphView,
     CorpusGraphViewNew,
     PlayerComponent,
     ImageViewer,
@@ -950,7 +946,7 @@ export default {
         this.loading = false;
         this.requestId = null;
         this.querySatisfied = "";
-        this.WSDataResults = {};
+        this.WSDataResults = new WSDataResults();
         this.WSDataMeta = {"layer": {}, "bySegment": {}};
         this.WSDataSentences = {};
         this.nameExport = "";
@@ -958,35 +954,24 @@ export default {
     },
     WSDataResults() {
       if (this.WSDataResults) {
-        if (this.WSDataResults.percentage_done) {
-          this.percentageDone = this.WSDataResults.percentage_done;
+        // Use the class methods for cleaner access
+        this.percentageDone = this.WSDataResults.getPercentageDone();
+        this.percentageWordsDone = this.WSDataResults.percentage_words_done || 0;
+        this.percentageTotalDone = this.WSDataResults.getTotalPercentageDone();
+
+        // Use class methods for status checks
+        if (this.WSDataResults.isFinished()) {
+          this.percentageDone = 100;
+          this.percentageTotalDone = 100;
+          this.loading = false;
         }
-        if (this.WSDataResults.percentage_words_done) {
-          this.percentageWordsDone = this.WSDataResults.percentage_words_done;
+        if (this.WSDataResults.isSatisfied()) {
+          this.percentageDone = 100;
+          this.loading = false;
         }
-        if (
-          this.WSDataResults.total_results_so_far &&
-          this.WSDataResults.projected_results
-        ) {
-          this.percentageTotalDone =
-            (this.WSDataResults.total_results_so_far /
-              this.WSDataResults.projected_results) *
-            100;
-        }
-        // if (["finished"].includes(this.WSDataResults.status)) {
-        //   this.percentageDone = 100;
-        //   this.percentageTotalDone = 100;
-        //   this.loading = false;
-        // }
-        // if (["satisfied", "overtime"].includes(this.WSDataResults.status)) {
-        //   // this.percentageDone = this.WSDataResults.hit_limit/this.WSDataResults.projected_results*100.
-        //   this.percentageDone = 100;
-        //   this.loading = false;
-        // }
-        // console.log("XXX", this.percentageTotalDone, this.percentageDone);
       }
 
-      if (this.WSDataResults.percentage_done >= 100) {
+      if (this.WSDataResults.getPercentageDone() >= 100) {
         this.loading = false;
         this.requestId = null;
       }
@@ -1271,17 +1256,18 @@ export default {
     },
     updateLoading(status) {
       this.queryStatus = status;
-      if (["finished"].includes(status)) {
+      this.WSDataResults.status = status;
+
+      if (this.WSDataResults.isFinished()) {
         this.percentageDone = 100;
         this.percentageTotalDone = 100;
         this.loading = false;
         this.requestId = null;
       }
-      if (["satisfied", "overtime"].includes(status)) {
+      if (this.WSDataResults.isSatisfied()) {
         this.percentageDone = 100;
         this.loading = false;
         this.requestId = null;
-        this.querySatisfied = this.currentQuery;
       }
     },
     updatePage(currentPage) {
@@ -1300,7 +1286,7 @@ export default {
         this.WSDataResults.more_data_available
       );
       if (
-        newNResults > allActiveResults && this.WSDataSentences && this.WSDataResults.more_data_available
+        newNResults > allActiveResults && this.WSDataResults.more_data_available
       ) {
         // console.log("Submit");
         this.nResults = newNResults;
@@ -1629,14 +1615,6 @@ export default {
             this.WSDataSentences[sid] = v;
           }
           this.updateSentencesByStream();
-          if (data.full) {
-            if (this.WSDataResults) {
-              if (!this.WSDataResults.result)
-                this.WSDataResults.result = {};
-              if (!this.WSDataResults.result["0"] || !this.WSDataResults.result["0"].result_sets)
-                this.WSDataResults.result["0"] = { result_sets: [] };
-            }
-          }
           this.WSDataSentences = {...this.WSDataSentences};
           // if (["satisfied", "overtime"].includes(this.WSDataResults.status)) {
           //   this.loading = false;
@@ -1690,7 +1668,7 @@ export default {
         data["n_results"] = this.allResults.length;
         delete data["result"];
         data["percentage_done"] += this.percentageDone;
-        this.WSDataResults = data;
+        this.WSDataResults = WSDataResults.fromWebSocketMessage(data);
       }
     },
     resizeGraph(container) {
@@ -1740,7 +1718,7 @@ export default {
         this.failedStatus = false;
         this.stop();
         if (cleanResults == true)
-          this.WSDataResults = {};
+          this.WSDataResults.clear();
       }
       let data = {
         corpus: this.selectedCorpora.value,
@@ -1935,7 +1913,7 @@ export default {
       })).filter((q) => q.query?.query_type === this.currentTab);
     },
     nKwics() {
-      const kwic_keys = ((this.WSDataResults.result[0]||{}).result_sets||[])
+      const kwic_keys = this.WSDataResults.getResultSets()
         .map((rs,n)=>rs.type=="plain"?n+1:-1)
         .filter(n=>n>0);
       return Object.fromEntries(
@@ -1978,7 +1956,7 @@ export default {
         !this.selectedLanguages
     },
     noResults() {
-      const dr = JSON.parse(JSON.stringify(this.WSDataResults)) || {};
+      const dr = JSON.parse(JSON.stringify(this.WSDataResults.toObject())) || {};
       dr.result = dr.result || {};
       return Object.entries(dr.result).every(([k,v])=>k==0 || !v || v.length==0);
     }

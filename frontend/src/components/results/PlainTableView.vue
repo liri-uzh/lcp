@@ -36,7 +36,11 @@
               <FontAwesomeIcon :icon="['fas', 'thumb-tack']" />
               Unpin
             </div>
-            <span :title="$t('common-copy-clipboard')" @click="copyToClip(item)" class="action-button">
+            <span
+              :title="$t('common-copy-clipboard')"
+              @click="copyToClip(sentences[data[item.id][0]][1])"
+              class="action-button"
+            >
               <FontAwesomeIcon :icon="['fas', 'copy']" />
             </span>
             <span
@@ -507,6 +511,9 @@ export default {
     FontAwesomeIcon
 },
   methods: {
+    /**
+     * Return a series of ordered segments.
+     */
     segmentSidSeries(sid) {
       if (!(sid in this.sentences)) return [];
       const sentence = this.sentences[sid];
