@@ -114,6 +114,8 @@ class QueryService:
         }
         if kind == "image":
             info = {"xy_box": "xy_box"}
+        elif kind == "plain":
+            info = {"char_range": "char_range"}
         joins: dict = {}
         layer_attrs = _get_all_attributes(doc_layer, config)
         if "name" in layer_attrs:

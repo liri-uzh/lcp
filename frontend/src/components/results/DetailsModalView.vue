@@ -11,6 +11,7 @@
           role="tab"
           aria-controls="nav-context"
           aria-selected="true"
+          v-if="showContext"
         >
           {{ $t('modal-results-tab-context') }}
         </button>
@@ -29,6 +30,7 @@
         </button>
         <button
           class="nav-link"
+          :class="hideContext ? ['active'] : []"
           id="nav-details-tab"
           data-bs-toggle="tab"
           data-bs-target="#nav-details"
@@ -47,6 +49,7 @@
         id="nav-context"
         role="tabpanel"
         aria-labelledby="nav-dependency-context"
+        v-if="showContext"
       >
         <div>
         Context:
@@ -95,9 +98,10 @@
       </div>
       <div
         class="tab-pane fade"
+        :class="hideContext ? ['show','active'] : []"
         id="nav-details"
         role="tabpanel"
-        aria-labelledby="nav-details-tab  "
+        aria-labelledby="nav-details-tab"
       >
         <DetailsTableView :data="data" :sentences="sentence" :columnHeaders="columnHeaders" :corpora="corpora" :isModal="true" />
       </div>
@@ -146,7 +150,7 @@ import Utils from "@/utils.js";
 
 export default {
   name: "ResultsDetailsModalView",
-  props: ["data", "sentences", "sentencesByStream", "meta", "metaByLayer", "languages", "corpora"],
+  props: ["data", "sentences", "sentencesByStream", "meta", "metaByLayer", "languages", "corpora", "hideContext"],
   data() {
     let lang = (this.languages||[])[0];
     let segment = this.corpora.corpus.segment;
@@ -160,7 +164,8 @@ export default {
       context: this.corpora.corpus.firstClass.segment,
       hasDepRel: deprel,
       columnHeaders: columnHeaders,
-      annotationsFetched: {}
+      annotationsFetched: {},
+      showContext: this.hideContext ? false : true
     }
   },
   methods: {
@@ -207,12 +212,15 @@ export default {
       if (this.context != this.corpora.corpus.firstClass.segment && this.context in (this.meta[this.sentenceId] || {}))
         char_range = this.meta[this.sentenceId][this.context].char_range;
       const sentenceIds = this.sentencesByStream.search(char_range).sort((x,y)=>x.low - y.low).map(x=>x.value);
-      return sentenceIds.filter(sid=>sid in this.sentences).map(sid=>{
-        const ret = this.plainTokens(this.sentences[sid]);
-        ret._char_range = this.sentences[sid].at(-1);
-        ret._sid = sid;
-        return ret;
-      });
+      return sentenceIds
+        .filter(sid=>sid in this.sentences)
+        .filter( (sid,i,ar) => i+1>=ar.length || sid != ar[i+1] ) // filter duplicates
+        .map( sid => {
+          const ret = this.plainTokens(this.sentences[sid]);
+          ret._char_range = this.sentences[sid].at(-1);
+          ret._sid = sid;
+          return ret;
+        });
     },
   },
   watch: {

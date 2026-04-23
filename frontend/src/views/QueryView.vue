@@ -74,20 +74,6 @@
                     <div></div>
                   </div>
                 </button>
-                <!-- <button
-                  class="nav-link"
-                  :class="{ active: activeMainTab === 'explore' }"
-                  id="nav-explore-tab"
-                  data-bs-toggle="tab"
-                  data-bs-target="#nav-explore"
-                  type="button"
-                  role="tab"
-                  aria-controls="nav-explore"
-                  aria-selected="false"
-                  v-if="showExploreTab()"
-                >
-                  Explore
-                </button> -->
               </div>
             </nav>
             <div class="tab-content" id="nav-main-tabContent">
@@ -256,7 +242,7 @@
               <div class="tab-pane fade" :class="{ active: activeMainTab === 'data', show: activeMainTab === 'data' }"
                 id="nav-data" role="tabpanel" aria-labelledby="nav-data-tab">
                 <PlayerComponent
-                  v-if="showExploreTab()"
+                  v-if="showMediaTab()"
                   :key="selectedCorpora"
                   :meta="WSDataMeta"
                   :selectedCorpora="selectedCorpora"
@@ -275,6 +261,18 @@
                   @getImageAnnotations="getImageAnnotations"
                   @switchToQueryTab="setMainTab"
                   ref="imageViewer"
+                />
+                <PlainDocumentViewer
+                  v-else
+                  :corpus="selectedCorpora.corpus"
+                  :meta="WSDataMeta"
+                  :metaByLayer="WSDataMeta.layer"
+                  :sentences="WSDataSentences"
+                  :sentencesByStream="WSDataSentencesByStream"
+                  :documentIds="documentIds"
+                  :minimize="queryStatus"
+                  @switchToQueryTab="setMainTab"
+                  ref="documentViewer"
                 />
                 <hr>
                 <div class="mt-5 row" v-if="querySubmitted">
@@ -744,6 +742,7 @@ import { useUserStore } from "@/stores/userStore";
 import { useWsStore } from "@/stores/wsStore";
 
 import ImageViewer from "@/components/ImageViewer.vue";
+import PlainDocumentViewer from "@/components/PlainDocumentViewer.vue";
 import CorpusDetailsModal from "@/components/corpus/DetailsModal.vue";
 import Title from "@/components/TitleComponent.vue";
 import ResultsTableView from "@/components/results/TableView.vue";
@@ -813,7 +812,7 @@ export default {
       selectedQuery: null,
       userQueries: [],
 
-      activeMainTab: ['soundscript', 'videoscope'].includes(config.appType) || this.shouldImageViewer() ? "data" : "query",
+      activeMainTab: "data",
       graphIndex: 0,
       appType: config.appType,
       querySubmitted: false,
@@ -851,6 +850,7 @@ export default {
     CorpusGraphViewNew,
     PlayerComponent,
     ImageViewer,
+    PlainDocumentViewer,
     ExportModal,
     SaveQueryModal,
     DeleteQueryModal,
@@ -918,8 +918,7 @@ export default {
       }
     },
     selectedCorpora() {
-      this.activeMainTab = ['soundscript', 'videoscope'].includes(config.appType) ? "data" : "query";
-      if (this.shouldImageViewer()) this.activeMainTab = "data";
+      this.activeMainTab = "data";
       this.querySubmitted = false
       this.queryStatus = null
       this.checkAuthUser();
@@ -1193,7 +1192,7 @@ export default {
       this.nameExport = this.nameExport.replace(/\/+/g,"-").replace(/,+/g,"");
     },
     setMainTab() {
-      this.activeMainTab = 'query'
+      this.activeMainTab = 'query';
     },
     setTab(tab) {
       this.selectedQuery = null;
@@ -1240,7 +1239,7 @@ export default {
       return found;
     },
     corpusDataType: Utils.corpusDataType,
-    showExploreTab() {
+    showMediaTab() {
       return this.selectedCorpora
         && ['audio', 'video'].includes(Utils.corpusDataType(this.selectedCorpora.corpus))
         && config.appType != "catchphrase"
@@ -1430,14 +1429,6 @@ export default {
 
         if (data["action"] == "image_annotations" || is_doc) {
           const annotations = is_doc ? data.document : data.annotations;
-          // if (!annotations || annotations.length == 0) {
-          //   console.log("data", data);
-          //   useNotificationStore().add({
-          //     type: "error",
-          //     text: "No annotations for this document",
-          //   });
-          //   return;
-          // }
           const meta = [], ids = [];
           this.WSDataSentences = this.WSDataSentences || {};
           for (let [row] of annotations) {
@@ -1748,8 +1739,8 @@ export default {
       }
 
       // console.log(document.querySelector("button#nav-results-tab"))
-      this.querySubmitted = true
-      this.activeMainTab = 'data'
+      this.querySubmitted = true;
+      this.activeMainTab = 'data';
       nextTick(() => {
         const section = document.getElementById("results");
         if (section) {
@@ -1936,7 +1927,7 @@ export default {
        return !this.currentQuery || this.currentQuery.match(/^\s*$/);
     },
     dataTabEmpty() {
-      if (this.selectedCorpora && this.showExploreTab())
+      if (this.selectedCorpora && this.showMediaTab())
         return false;
       if (this.querySubmitted)
         return false;

@@ -196,22 +196,19 @@ class Constraints:
                     [c for c in member._conditions if c.strip()]
                 )
                 conjunction = " AND ".join(stripped_conditions)
-                if self.conj.upper() == "OR":
-                    if len(stripped_conditions) > 1:
-                        out[f"({conjunction})"] = None
-                elif self.conj.upper() == "AND":
-                    out[conjunction] = None
+                if len(stripped_conditions) > 1 and self.conj.upper() != "AND":
+                    # Use brackets only if NOT in a conjunction
+                    out[f"({conjunction})"] = None
                 else:
-                    # unary: negation
-                    out[f"NOT ({conjunction})"] = None
+                    out[conjunction] = None
 
         if not out:
             return formed_out
         formed_conj: str
         if len(out) == 1:
             formed_conj = list(out)[0]
-            if self.conj == "NOT":
-                formed_conj = "NOT " + formed_conj
+            if self.conj.upper() not in ("AND", "OR"):
+                formed_conj = f"NOT ({formed_conj})"
         else:
             formed_conj = "(" + f" {self.conj.upper()} ".join(out) + ")"
         formed_out = f"{formed_out} AND {formed_conj}" if formed_out else formed_conj

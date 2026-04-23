@@ -68,7 +68,7 @@
 }
 .object-column {
   display: block;
-  height: 1.5em;
+  height: max-content;
   position: relative;
   white-space: nowrap;
   padding-right: 25px;
@@ -99,6 +99,9 @@
 .object-column.unfolded .whenUnfolded {
   display: block;
   white-space: pre;
+}
+.object-column span {
+  float: right;
 }
 .object-column .ufeat-info-button {
   position: absolute;
@@ -132,7 +135,17 @@ export default {
         'Definite', 'Foreign', 'Reflex', 'Number', 'Abbr', 'Voice', 'Poss', 'PronType',
         'Case', 'Degree', 'Style', 'Person', 'Gender'
       ],
-      filteredColumnHeadersIdx: this.columnHeaders.map((ch,i)=>ch=="spaceAfter"?-1:i).filter(i=>i>=0)
+      filteredColumnHeadersIdx: this.columnHeaders
+        .map((ch,i)=>ch=="spaceAfter"?-1:i)
+        .filter(i=>i>=0)
+        .sort((i,j)=>{
+          // Make sure form and lemma always appear left-most
+          const colI = this.columnHeaders[i];
+          const colJ = this.columnHeaders[j];
+          if (colI == "form") return -1;
+          if (colI == "lemma" && colJ != "form") return -1;
+          return 1;
+        })
     }
   },
   methods: {
