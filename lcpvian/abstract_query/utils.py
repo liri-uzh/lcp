@@ -659,3 +659,27 @@ def literal_sql(s: str) -> str:
         )
         ret = f"concat({concat_args_formed})"
     return ret
+
+
+def _is_prefix(query: str, op: str = "=", typ: str = "string") -> bool:
+    """
+    Can a query be treated as a prefix in a prefilter? regex like ^a.* for example
+    """
+    if op not in ("=", "!="):
+        return False
+    if typ == "string":
+        return True
+    if query.startswith("^") and query.lstrip("^").rstrip("$").isalnum():
+        return True
+    for pattern in sorted(SUFFIXES, key=len, reverse=True):
+        if not query.rstrip().rstrip("$").endswith(pattern):
+            continue
+        query = query.rstrip().rstrip("$")
+        query = query[: -len(pattern)]
+        query = query.lstrip().lstrip("^")
+        if not query or any(
+            i in query for i in ".^$*+-?[]{}\\/()|"
+        ):  # there remain regex characters in the rest of the pattern
+            continue
+        return True
+    return False

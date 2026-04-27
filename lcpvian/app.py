@@ -42,9 +42,8 @@ from .utils import (
 
 load_env()
 
-from .api import list_coprora, get_corpus, search
+from .api import list_corprora, get_corpus, search
 from .check_file_permissions import check_file_permissions
-from .configure import CorpusConfig
 from .corpora import (
     corpora,
     corpora_meta_update,
@@ -77,7 +76,7 @@ from .query_service import QueryService
 from .sock import listen_to_redis, sock, ws_cleanup
 from .store import fetch_queries, store_query, delete_query
 from .swissubase import swissubase_check_api, swissubase_submit
-from .typed import Endpoint, Task, Websockets
+from .typed import Config, Endpoint, Task, Websockets
 from .upload import make_schema, upload
 from .lama import handle_lama_error
 from .video import video
@@ -246,13 +245,13 @@ async def create_app(test: bool = False) -> web.Application:
     app.addkey("websockets", Websockets, ws)
     app.addkey("_debug", bool, DEBUG)
     app.addkey("auth_class", Type, AUTH_CLASS)
-    app.addkey("config", CorpusConfig, {})
+    app.addkey("config", Config, {})
 
     # app["auth"] = Authenticator(app)
 
     endpoints: list[tuple[str, str, Endpoint]] = [
         ("/annotations", "POST", annotations),
-        ("/api/corpora", "GET", list_coprora),
+        ("/api/corpora", "GET", list_corprora),
         ("/api/corpora/{corpus_id}", "GET", get_corpus),
         ("/api/corpora/{corpus_id}/search", "POST", search),
         ("/check-file-permissions", "GET", check_file_permissions),
@@ -263,6 +262,7 @@ async def create_app(test: bool = False) -> web.Application:
         ("/corpora/{corpus_id}/request/discard", "DELETE", discard_invites),
         ("/corpora/{corpora_id}/meta/update", "PUT", corpora_meta_update),
         ("/corpora/{corpora_id}/overwrite", "PUT", corpora_overwrite),
+        ("/corpora/{job_id}/overwrite", "GET", corpora_overwrite),
         ("/create", "POST", make_schema),
         ("/document/{doc_id}", "POST", document),
         ("/document/{doc_id}/clip", "POST", clip_media),

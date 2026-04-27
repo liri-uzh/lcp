@@ -72,6 +72,10 @@ class Lama(Authentication):
         app_type: str = "lcp",
         get_all: bool = False,
     ) -> bool:
+        """Check that the user is subscribed to a collection containing this corpus"""
+
+        if corpus_id not in self.app["config"]:
+            return False
 
         corpus: CorpusConfig = self.app["config"][corpus_id]
 
@@ -143,6 +147,26 @@ class Lama(Authentication):
         if user.get("swissdoxUser") or user["id"] in SUPER_ADMINS:
             return True
         return False
+
+    ## Helpers
+    async def get_corpus_admin_ids(self, request: web.Request, corpus_id: int | str):
+        corpus: dict = request.app["config"].get(str(corpus_id))
+        projects_admin_ids: list[str] = []
+        for pid in corpus.get("projects", []):
+            try:
+                project_users = await self.project_users(request, pid)
+                registered_users = project_users.get("registred", [])
+                if not registered_users or not isinstance(registered_users, list):
+                    continue
+                admins: list[str] = [
+                    str(u.get("id", ""))
+                    for u in registered_users
+                    if isinstance(u, dict) and u.get("isAdmin")
+                ]
+                projects_admin_ids += admins
+            except:
+                pass
+        return projects_admin_ids
 
     ## JSON responses to GET requests
 

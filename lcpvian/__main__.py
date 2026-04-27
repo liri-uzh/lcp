@@ -9,7 +9,7 @@ import sys
 
 from .ddl_gen import main
 from .dqd_parser import cmdline
-from .cqp_to_json import cqp_to_json
+from .cqp_to_json import full_cqp_to_json
 from .project import refresh_config
 
 COMMANDS = {
@@ -57,7 +57,7 @@ elif command == "cqp":
             break
         cqp_ar = [i, *cqp_ar]
 
-    print(cqp_to_json(" ".join(cqp_ar)))
+    print(full_cqp_to_json(" ".join(cqp_ar)))
 
 elif command == "ddl":
     print("Creating DDL...")

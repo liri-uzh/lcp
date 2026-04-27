@@ -87,11 +87,17 @@ AS $$
       template          jsonb;
    BEGIN
 
-      SELECT coalesce(max(c.current_version), 0) + 1
-        FROM main.corpus AS c
-       WHERE c.schema_path ~ format('^%s_\d+', $2)
-        INTO next_version
-           ;
+      SELECT coalesce(max(cch.v), 0) + 1
+        FROM (
+             SELECT c.current_version AS v
+               FROM main.corpus AS c
+              WHERE c.schema_path ~ format('^%s_\d+', $2)
+              UNION ALL
+             SELECT (ch.initial_state).current_version AS v
+               FROM main.corpus_history AS ch
+              WHERE (ch.initial_state).schema_path ~ format('^%s_\d+', $2)
+           ) cch
+        INTO next_version;
 
       SELECT format('%s_%s', $2, next_version)
         INTO new_schema_name

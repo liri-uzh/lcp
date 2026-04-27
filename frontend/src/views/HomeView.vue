@@ -88,13 +88,11 @@
                   </div>
                 </div>
               </div>
-              <div class="project-settings" v-if="project.isAdmin || true">
+              <div class="project-settings" v-if="project.isAdmin">
                 <button
                   type="button"
                   class="btn btn-sm btn-light"
-                  data-bs-toggle="modal"
-                  data-bs-target="#editProjectModal"
-                  @click="[modalIndexKey++,currentProject=project]"
+                  @click="openModal('projectEdit', {project: project})"
                 >
                   <FontAwesomeIcon :icon="['fas', 'gear']" />
                 </button>
@@ -224,111 +222,40 @@
         type="button"
         class="btn btn-secondary btn-sm tooltips"
         :title="$t('common-add-group')"
-        data-bs-toggle="modal"
-        data-bs-target="#newProjectModal"
-        @click="modalIndexKey++"
+        @click="openModal('newProject')"
       >
         <FontAwesomeIcon :icon="['fas', 'circle-plus']" class="me-1" />
       </button>
     </div>
 
-    <!-- Modals -->
-    <div class="modal fade" id="newProjectModal" tabindex="-1" aria-labelledby="newProjectModalLabel" aria-hidden="true"
-      ref="vuemodal">
-      <div class="modal-dialog modal-lg">
+    <!-- Single reusable modal -->
+    <div class="modal fade" id="reusableModal" tabindex="-1" aria-hidden="true" ref="reusableModal">
+      <div class="modal-dialog" :class="modalSizeClass">
         <div class="modal-content">
           <div class="modal-header">
-            <h5 class="modal-title" id="newProjectModalLabel">{{ $t('modal-project-new') }}</h5>
+            <h5 class="modal-title">{{ modalTitle }}</h5>
             <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
           </div>
           <div class="modal-body text-start">
-            <ProjectNewView @updated="updateProjectModalData" :key="modalIndexKey" />
-          </div>
-          <div class="modal-footer">
-            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
-              {{ $t('common-close') }}
-            </button>
-            <button type="button" class="btn btn-primary" data-bs-dismiss="modal" @click="saveModalProject"
-              :disabled="!allowProjectModalSave">
-              {{ $t('common-save') }}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div class="modal fade" id="corpusDetailsModal" tabindex="-1" aria-labelledby="corpusDetailsModalLabel"
-      aria-hidden="true" ref="vuemodaldetails">
-      <div class="modal-dialog modal-xl">
-        <div class="modal-content">
-          <div class="modal-header">
-            <h5 class="modal-title" id="corpusDetailsModalLabel">
-              {{ $t('platform-general-corpus-details') }}
-            </h5>
-            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-          </div>
-          <div class="modal-body text-start" v-if="corpusDetailsModal">
-            <CorpusDetailsModal :corpusModal="corpusDetailsModal" :key="modalIndexKey" />
-          </div>
-          <div class="modal-footer">
-            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
-              {{ $t('common-close') }}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div class="modal fade" id="corpusEditModal" tabindex="-1" aria-labelledby="corpusEditModalLabel"
-      aria-hidden="true" ref="vuemodal">
-      <div class="modal-dialog modal-xl">
-        <div class="modal-content">
-          <div class="modal-header">
-            <h5 class="modal-title" id="corpusEditModalLabel" v-if="corpusModal">
-              {{ $t('platform-general-corpus-settings') }} - <em>{{ corpusModal.meta.name }}</em>
-            </h5>
-            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-          </div>
-          <div class="modal-body text-start fit-body" v-if="corpusModal">
-            <MetadataEdit
-              :corpus="corpusModal"
+            <component
+              :is="modalComponent"
+              v-bind="modalProps"
               :key="modalIndexKey"
-              @submitSWISSUbase="submitModalSWISSUbase"
-              :allProjects="getUniqueProjects"
-              ref="metadataedit"
-             />
+              @updated="handleModalUpdated"
+            />
           </div>
-          <div class="modal-footer">
-            <button type="button" class="btn btn-primary" data-bs-dismiss="modal" @click="saveModalCorpus">
-              {{ $t('common-save') }}
-            </button>
+          <div class="modal-footer" v-if="showModalFooter">
             <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
               {{ $t('common-close') }}
             </button>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div class="modal fade" id="editProjectModal" tabindex="-1" aria-labelledby="projectEditModalLabel"
-      aria-hidden="true" ref="vuemodal">
-      <div class="modal-dialog modal-xl">
-        <div class="modal-content">
-          <div class="modal-header">
-            <h5 class="modal-title" id="projectEditModalLabel">
-              <b v-if="currentProject">{{ currentProject.title }}</b> {{ $t('common-group-settings').toLowerCase() }}
-            </h5>
-            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-          </div>
-          <div class="modal-body text-start" v-if="currentProject && currentProject.id">
-            <ProjectEdit :project="currentProject" :key="modalIndexKey" @updated="updateProjectModalData" />
-          </div>
-          <div class="modal-footer">
-            <button type="button" class="btn btn-primary" data-bs-dismiss="modal" @click="saveModalEditProject" :disabled="!allowProjectModalSave">
+            <button
+              v-if="showSaveButton"
+              type="button"
+              class="btn btn-primary"
+              :disabled="!allowSave"
+              @click="handleModalSave"
+            >
               {{ $t('common-save') }}
-            </button>
-            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
-              {{ $t('common-close') }}
             </button>
           </div>
         </div>
@@ -388,6 +315,15 @@ export default {
       })),
       dragScrolling: [],
       unfolded: {},
+      // Reusable modal properties
+      currentModal: null,
+      modalTitle: '',
+      modalComponent: null,
+      modalProps: {},
+      modalSizeClass: 'modal-lg',
+      showModalFooter: true,
+      showSaveButton: false,
+      allowSave: false,
     };
   },
   components: {
@@ -541,16 +477,11 @@ export default {
     },
     openCorpusDetailsModal(corpus) {
       this.corpusDetailsModal = { ...corpus };
-      let modal = new Modal(document.getElementById('corpusDetailsModal'));
-      this.modalIndexKey++
-      modal.show()
+      this.openModal('corpusDetails', { corpus });
     },
     openCorpusEdit(corpus) {
       this.corpusModal = { ...corpus };
-      // let tab = Tab.getInstance(this.$refs);
-      this.modalIndexKey++
-      let modal = new Modal(document.getElementById('corpusEditModal'));
-      modal.show();
+      this.openModal('corpusEdit', { corpus });
     },
     openQueryWithCorpus(corpus) {
       if (this.scrollProjectTimeout) return;
@@ -573,6 +504,96 @@ export default {
     updateProjectModalData(valid, data) {
       this.allowProjectModalSave = valid;
       this.modalProjectData = data;
+    },
+
+    openModal(modalType, props = {}) {
+      this.allowSave = false; // start with disabled save button
+      // Close existing modal if open
+      const existingModal = Modal.getInstance(document.getElementById('reusableModal'));
+      if (existingModal) existingModal.hide();
+
+      // Set up the new modal configuration
+      this.currentModal = modalType;
+      this.modalIndexKey++;
+
+      // Configure based on modal type
+      switch(modalType) {
+        case 'newProject':
+          this.modalTitle = this.$t('modal-project-new');
+          this.modalComponent = 'ProjectNewView';
+          this.modalProps = {
+            ...props,
+            '@updated': this.handleModalUpdated
+          };
+          this.modalSizeClass = 'modal-lg';
+          this.showModalFooter = true;
+          this.showSaveButton = true;
+          break;
+
+        case 'corpusDetails':
+          this.modalTitle = this.$t('platform-general-corpus-details');
+          this.modalComponent = 'CorpusDetailsModal';
+          this.modalProps = {
+            corpusModal: props.corpus,
+            key: this.modalIndexKey
+          };
+          this.modalSizeClass = 'modal-xl';
+          this.showModalFooter = true;
+          this.showSaveButton = false;
+          break;
+
+        case 'corpusEdit':
+          this.modalTitle = `#${props.corpus.meta.id} - ${props.corpus.meta.name}`;
+          this.modalComponent = 'MetadataEdit';
+          this.modalProps = {
+            corpus: props.corpus,
+            key: this.modalIndexKey,
+            '@submitSWISSUbase': this.submitModalSWISSUbase,
+            '@updated': this.handleModalUpdated,
+            allProjects: this.getUniqueProjects
+          };
+          this.modalSizeClass = 'modal-xl';
+          this.showModalFooter = true;
+          this.showSaveButton = true;
+          break;
+
+        case 'projectEdit':
+          this.modalTitle = `${props.project.title} ${this.$t('common-group-settings').toLowerCase()}`;
+          this.modalComponent = 'ProjectEdit';
+          this.modalProps = {
+            project: props.project,
+            key: this.modalIndexKey,
+            '@updated': this.handleModalUpdated
+          };
+          this.modalSizeClass = 'modal-xl';
+          this.showModalFooter = true;
+          this.showSaveButton = true;
+          break;
+      }
+
+      // Show the modal
+      this.$nextTick(() => {
+        const modal = new Modal(document.getElementById('reusableModal'));
+        modal.show();
+      });
+    },
+
+    handleModalUpdated(valid, data) {
+      this.allowSave = valid;
+      this.modalProjectData = data;
+    },
+
+    handleModalSave() {
+      const existingModal = Modal.getInstance(document.getElementById('reusableModal'));
+      if (existingModal) existingModal.hide();
+      switch(this.currentModal) {
+        case 'newProject':
+          return this.saveModalProject();
+        case 'corpusEdit':
+          return this.saveModalCorpus();
+        case 'projectEdit':
+          return this.saveModalEditProject();
+      }
     },
     async saveModalProject() {
       let retval = await useProjectStore().create(this.modalProjectData);
@@ -611,32 +632,27 @@ export default {
         }
       }
     },
-    async saveModalCorpus(){
+    async saveModalCorpus() {
       const meta = {
         corpusId: this.corpusModal.corpus_id,
         metadata: this.corpusModal.meta,
         descriptions: this.corpusModal.layer,
         globals: this.corpusModal.globalAttributes
       };
-      const isSuperAdmin = useUserStore().isSuperAdmin;
-      if (isSuperAdmin)
-        meta.projects = this.corpusModal.projects;
+      meta.projects = this.corpusModal.projects;
       let retval = await useCorpusStore().updateMeta(meta);
-      if (retval && retval.status == false)
+      if (retval && retval.status != false)
+        useNotificationStore().add({
+          type: "success",
+          text: `Corpus ${this.corpusModal.meta.name} successfully updated.`,
+        });
+      else
         useNotificationStore().add({
           type: "error",
-          text: retval.msg,
+          text: retval ? retval.msg : "Server communication issue",
         });
-      const metadataedit = this.$refs.metadataedit;
-      const overwriteCorpus = metadataedit.overwriteCorpus;
-      if ([null, undefined].includes(overwriteCorpus))
-        return;
-      retval = await useCorpusStore().overwriteCorpus(this.corpusModal.corpus_id, overwriteCorpus.id);
-      if (retval && retval.status == false)
-        useNotificationStore().add({
-          type: "error",
-          text: retval.msg,
-        });
+      // Note: The metadataedit ref is now handled within the component itself
+      // The component emits events for save actions
     },
     async submitModalSWISSUbase() {
       await this.saveModalCorpus();
@@ -757,7 +773,9 @@ export default {
       return sortedProjects;
     },
     getUniqueProjects() {
-      return this.projects.filter((p, n) => !this.projects.slice(n+1, ).find(p2 => p2.id == p.id))
+      const isSuperAdmin = useUserStore().isSuperAdmin;
+      const uniqueProjects = this.projects.filter((p, n) => !this.projects.slice(n+1, ).find(p2 => p2.id == p.id));
+      return uniqueProjects.filter(p=>isSuperAdmin || p.isAdmin);
     },
   },
   mounted() {
@@ -967,7 +985,7 @@ export default {
   position: absolute;
   right: 3px;
   bottom: 0px;
-  z-index: 9999;
+  z-index: 999;
   background: lightgray;
   width: 1.5em;
   height: 1.5em;

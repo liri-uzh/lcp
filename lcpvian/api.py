@@ -22,13 +22,14 @@ async def _get_user(request: web.Request, authenticator) -> dict:
     return user_data
 
 
-async def list_coprora(request: web.Request) -> web.Response:
+async def list_corprora(request: web.Request) -> web.Response:
     authenticator = request.app["auth_class"](request.app)
     user_data = await _get_user(request, authenticator)
     corpora = {
         cid: conf
         for cid, conf in request.app["config"].items()
         if authenticator.check_corpus_allowed(cid, user_data, "lcp", get_all=False)
+        and conf.get("enabled")
     }
     return web.json_response(corpora)
 
@@ -79,6 +80,10 @@ async def search(request: web.Request) -> web.Response:
     if "to_export" in request_data:
         data_to_process["to_export"] = request_data["to_export"]
     (req, qi, job) = process_query(cast(LCPApplication, request.app), data_to_process)
+
+    # No job means no query is being run: delete the request
+    if job is None and qi.has_request(req):
+        qi.delete_request(req)
 
     while 1:
         await asyncio.sleep(0.5)

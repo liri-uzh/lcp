@@ -39,6 +39,7 @@ WITH RECURSIVE fixed_parts AS
      AND "t2_lemma"."lemma_id" = "t2"."lemma_id"
      AND "t3"."token_id" - "t2"."token_id" = 1
      AND "t3_lemma"."lemma_id" = "t3"."lemma_id"
+     AND ("d"."meta"->>'classCode')::text LIKE 'S%'
      AND ("d"."meta"->>'classCode')::text ~ '^S' ),
                gather AS
   (SELECT "d",

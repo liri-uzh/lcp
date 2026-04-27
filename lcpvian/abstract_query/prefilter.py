@@ -1,11 +1,22 @@
 from typing import Any, Sequence, cast
 
 from .typed import JSON, LabelLayer, QueryPart, JSONObject
-from .utils import Config, SUFFIXES, _get_underlang, arg_sort_key, literal_sql
+from .utils import (
+    Config,
+    SUFFIXES,
+    _get_underlang,
+    _is_prefix,
+    arg_sort_key,
+    literal_sql,
+)
 
 from typing import Self
 
 MATCHES_ALL = {".*", ".+", ".*?", ".?", ".+?"}
+
+
+def fts_seq(it):
+    return " <1> ".join((x if x else "(1a|!1a)") for x in it)
 
 
 class SingleNode:
@@ -214,7 +225,7 @@ class Prefilter:
                         and stripped_c not in conjuncts
                     ):
                         conjuncts.append(stripped_c)
-        formed_prefilters = self._tsquery(" <1> ".join(prefilters))
+        formed_prefilters = self._tsquery(fts_seq(prefilters))
         stringified = f"vec.vector @@  {formed_prefilters}"
         if len(conjuncts) > 1:
             # Including the single terms aside their sequence makes queries much faster
@@ -387,7 +398,7 @@ class Prefilter:
         Create a prefilter string with everything but the column-conversion
         """
         if isinstance(item, Conjuncted):
-            return " <1> ".join(self._stringify_nodes([item]))
+            return fts_seq(self._stringify_nodes([item]))
         elif isinstance(item, SingleNode):
             return item.as_prefilter(self._col_data)
         raise NotImplementedError("should not be here")
@@ -407,9 +418,7 @@ class Prefilter:
             single = []
             if isinstance(prefilt, Disjunction):
                 disj = " | ".join(
-                    " <1> ".join(
-                        self._as_string(u) for u in units if self._as_string(u)
-                    )
+                    fts_seq(self._as_string(u) for u in units if self._as_string(u))
                     for units in prefilt.units
                 )
                 all_made.append(f"({disj})")
@@ -433,7 +442,7 @@ class Prefilter:
             else:
                 if connective == "NOT":
                     single[0] = "!" + single[0]
-                joined = " <1> ".join(single)
+                joined = fts_seq(single)
 
             if len(single) > 1:
                 joined = f"({joined})"
@@ -453,27 +462,3 @@ class Prefilter:
         final = set([x for i, x in enumerate(prefilters) if i not in removable])
 
         return " & ".join(sorted(final))
-
-
-def _is_prefix(query: str, op: str = "=", typ: str = "string") -> bool:
-    """
-    Can a query be treated as a prefix in a prefilter? regex like ^a.* for example
-    """
-    if op not in ("=", "!="):
-        return False
-    if typ == "string":
-        return True
-    if query.startswith("^") and query.lstrip("^").rstrip("$").isalnum():
-        return True
-    for pattern in sorted(SUFFIXES, key=len, reverse=True):
-        if not query.rstrip().rstrip("$").endswith(pattern):
-            continue
-        query = query.rstrip().rstrip("$")
-        query = query[: -len(pattern)]
-        query = query.lstrip().lstrip("^")
-        if not query or any(
-            i in query for i in ".^$*+-?[]{}\\/()|"
-        ):  # there remain regex characters in the rest of the pattern
-            continue
-        return True
-    return False

@@ -15,7 +15,7 @@ RANGE_MAX            : NUMBER
 RANGE_EXACT          : NUMBER
 range                : "{" ( RANGE_MIN? "," RANGE_MAX? | RANGE_EXACT ) "}"
 quantifier           : ANY_AMOUNT | ONE_OR_MORE | ZERO_OR_ONE | range
-attribute            : /[a-z_-][a-z0-9_-]{0,18}/
+attribute            : /[a-z_-][a-zA-Z0-9_-]{0,18}/
 query                : attribute inner_relation DOUBLE_QUOTED_STRING modifier?
 vp                   : (and_ | or_ ) ( query | node_section ) // can delete query | and brackets here?
 node_section         : not_? "(" node_section vp* ")" | query vp* // !( x="yy"%c )
@@ -26,7 +26,10 @@ string_node          : DOUBLE_QUOTED_STRING quantifier?
 node                 : label? ( bracket_node | empty_node | string_node )
 brackets             : label? "(" ( expr | node+ or_ node+ ) ")" quantifier?
 fake_brackets        : (node | brackets)+ ( or_ (node | brackets)+ )+
-expr                 : ( node | brackets | fake_brackets )+
+opening_tag          : "<" INTAG node_section? ">"
+closing_tag          : "</" INTAG ">"
+xml                  : label? opening_tag (expr) closing_tag quantifier?
+expr                 : ( node | brackets | fake_brackets | xml )+
 top                  : expr
 
 DOUBLE_QUOTED_STRING : /"[^"\n]*"/
@@ -34,6 +37,7 @@ SINGLE_QUOTED_STRING : /'[^'\n]*'/
 STRING               : /[^\/]+/
 NEWLINE              : "\n"
 COMMENT              : /#[^\n]*($|\n)/
+INTAG                : /[a-zA-Z]+/
 
 %import common.NUMBER
 %import common.WS

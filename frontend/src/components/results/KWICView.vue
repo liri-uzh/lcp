@@ -45,7 +45,7 @@
                 v-for="(token, tokenIndex) in item[groupIndex * 2]"
                 :key="`rc-${tokenIndex}`"
                 :class="[
-                  (columnHeaders && token[columnHeaders.indexOf('spaceAfter')]===0 ? 'nospace' : ''),
+                  (columnHeaders && token[columnHeaders.indexOf('spaceAfter')] in {0:0} ? 'nospace' : ''),
                   ...bgCheck(resultIndex, groupIndex, tokenIndex, item, 1)
                 ]"
                 @mousemove="showPopover(token, resultIndex, $event)"
@@ -60,7 +60,7 @@
                 v-for="(token, tokenIndex) in item[groupIndex * 2 + 1]"
                 :key="`form-${tokenIndex}`"
                 :class="[
-                  (columnHeaders && token[columnHeaders.indexOf('spaceAfter')]===0 ? 'nospace' : ''),
+                  (columnHeaders && token[columnHeaders.indexOf('spaceAfter')] in {0:0} ? 'nospace' : ''),
                   ...bgCheck(resultIndex, groupIndex, tokenIndex, item, 2)
                 ]"
                 @mousemove="showPopover(token, resultIndex, $event)"
@@ -76,7 +76,7 @@
               v-for="(token, tokenIndex) in item[groups.length * 2]"
               :key="`lt-${tokenIndex}`"
               :class="[
-                (columnHeaders && token[columnHeaders.indexOf('spaceAfter')]===0 ? 'nospace' : ''),
+                (columnHeaders && token[columnHeaders.indexOf('spaceAfter')] in {0:0} ? 'nospace' : ''),
                 bgCheck(resultIndex, groups.length - 1, tokenIndex, item, 3)
               ]"
               @mousemove="showPopover(token, resultIndex, $event)"

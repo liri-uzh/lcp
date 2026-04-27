@@ -69,6 +69,10 @@ class Authentication:
             corpus_id, user_data, app_type=app_type, get_all=get_all
         )
 
+    ## Helpers
+    async def get_corpus_admin_ids(self, request: web.Request, corpus_id: int | str):
+        return [USER["id"]]
+
     ## JSON responses to GET requests
 
     async def user_details(self, request: web.Request) -> JSONObject:
@@ -89,12 +93,8 @@ class Authentication:
 
     ## Handle creation, update and removal of projects and users
 
-    async def project_check_title(
-        self, request: web.Request, title: str
-    ) -> JSONObject:
-        ret: JSONObject = cast(
-            JSONObject, {"exists": False, "msg": ""}
-        )
+    async def project_check_title(self, request: web.Request, title: str) -> JSONObject:
+        ret: JSONObject = cast(JSONObject, {"exists": False, "msg": ""})
         return ret
 
     async def project_create(

@@ -198,12 +198,17 @@ def _make_search_response(
             )
             if len(records) >= requested:
                 break
-    resp += f"""
+    if len(records) == 0:
+        resp += f"""
+  <{SRU[version]}:numberOfRecords>0</{SRU[version]}:numberOfRecords>
+"""
+    else:
+        resp += f"""
   <{SRU[version]}:numberOfRecords>{len(records)}</{SRU[version]}:numberOfRecords>
   <{SRU[version]}:records>{''.join(records)}
   </{SRU[version]}:records>
-</{SRU[version]}:searchRetrieveResponse>"""
-    return resp
+"""
+    return resp + f"</{SRU[version]}:searchRetrieveResponse>"
 
 
 async def search_retrieve(
@@ -231,6 +236,7 @@ async def search_retrieve(
         )
         if (not resources or ((cid, lg) in resources))
         and authenticator.check_corpus_searchable(cid, {}, "lcp", get_all=False)
+        and conf.get("enabled")
     ]
     try:
         requested: int = int(maximumRecords)
@@ -275,6 +281,9 @@ async def search_retrieve(
                 "n_results": 0,
                 "done": False,
             }
+            # No job means no request is running: delete it
+            if job is None and qi.has_request(req):
+                qi.delete_request(req)
             tg.create_task(
                 _check_request_complete(qi, req, app, request_ids, requested)
             )
@@ -332,6 +341,7 @@ async def explain(app: LCPApplication, **extra_params) -> str:
                 "values", [conf.get("meta", {}).get("language", "")]
             )
             if authenticator.check_corpus_searchable(cid, {}, "lcp", get_all=False)
+            and conf.get("enabled")
         ]
         resources_str = "\n        ".join(resources_list)
         second_half = f"""  <{SRU[version]}:echoedExplainRequest>

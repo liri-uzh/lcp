@@ -36,7 +36,11 @@
               <FontAwesomeIcon :icon="['fas', 'thumb-tack']" />
               Unpin
             </div>
-            <span :title="$t('common-copy-clipboard')" @click="copyToClip(item)" class="action-button">
+            <span
+              :title="$t('common-copy-clipboard')"
+              @click="copyToClip(sentences[data[item.id][0]][1])"
+              class="action-button"
+            >
               <FontAwesomeIcon :icon="['fas', 'copy']" />
             </span>
             <span
@@ -507,16 +511,21 @@ export default {
     FontAwesomeIcon
 },
   methods: {
+    /**
+     * Return a series of ordered segments.
+     */
     segmentSidSeries(sid) {
       if (!(sid in this.sentences)) return [];
       const sentence = this.sentences[sid];
       const range = sentence.find(x=>x instanceof Array && x.length == 2 && x.every(y=>typeof(y)=="number"));
       if (!range) return [sid];
-      return this.sentencesByStream
+      const filtered = this.sentencesByStream
         .search(range.map((x,i)=>x + (i==0?-1:1) * this.segmentWindow))
         .sort((x,y)=>x.low > y.low)
         .map(x=>x.value)
-        .filter(s=>s in this.sentences);
+        .filter(s=>s in this.sentences)
+        .filter((s,i,a)=>a.slice(i+1,).indexOf(s)<0);
+      return filtered;
     },
     selectLine(index, detach) {
       if (detach && (this.showAudio(index) || this.showVideo(index) || this.imageLayerAttribute[0]))
@@ -878,7 +887,8 @@ export default {
         })
         // Sort by range
         .sort((x,y)=>(this.sentences[x.sentenceId]||[0]).at(-1) > (this.sentences[y.sentenceId]||[0]).at(-1));
-      return ret;
+      const filtered = ret.filter(item=>item.sentenceId && item.sentenceId in this.meta);
+      return filtered;
     },
     columnHeaders() {
       let partitions = this.corpora.corpus.partitions

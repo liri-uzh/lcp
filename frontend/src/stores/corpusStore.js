@@ -61,7 +61,7 @@ export const useCorpusStore = defineStore("corpusData", {
         return response.data;
       });
     },
-    updateMeta(data) {
+    async updateMeta(data) {
       const lg = getUserLocale().value;
       const corpus = this.corpora.find(c=>c.corpus_id == data.corpusId);
       const descriptions = {};
@@ -83,9 +83,8 @@ export const useCorpusStore = defineStore("corpusData", {
       const toSend = {lg: lg, metadata: data.metadata, descriptions: descriptions, globals: data.globals}
       if ("projects" in data)
         toSend.projects = data.projects;
-      httpApi.put(`/corpora/${data.corpusId}/meta/update`, toSend).then((response) => {
-        return response.data;
-      });
+      const response = await httpApi.put(`/corpora/${data.corpusId}/meta/update`, toSend);
+      return response.data;
     },
     overwriteCorpus(corpusId, toBeOverwritten) {
       httpApi.put(`/corpora/${corpusId}/overwrite`, {overwrite: toBeOverwritten}).then((response) => {
@@ -157,7 +156,6 @@ export const useCorpusStore = defineStore("corpusData", {
     },
     fetchAnnotations(data) {
       if (!(data.anchor in {stream: 1, time: 1}) && !(data.range instanceof Array)) return;
-      console.log("data for fetchAnnotations", data);
       httpApi.post("/annotations", data).then((response) => {
         return response.data;
       });

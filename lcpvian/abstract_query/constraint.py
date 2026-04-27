@@ -10,6 +10,7 @@ from .utils import (
     _get_underlang,
     _get_mapping,
     _get_table,
+    _is_prefix,
     arg_sort_key,
     QueryData,
     SQLCorpus,
@@ -196,16 +197,18 @@ class Constraints:
                 )
                 conjunction = " AND ".join(stripped_conditions)
                 if len(stripped_conditions) > 1 and self.conj.upper() != "AND":
+                    # Use brackets only if NOT in a conjunction
                     out[f"({conjunction})"] = None
-                elif stripped_conditions:
+                else:
                     out[conjunction] = None
+
         if not out:
             return formed_out
         formed_conj: str
         if len(out) == 1:
             formed_conj = list(out)[0]
-            if self.conj == "NOT":
-                formed_conj = "NOT " + formed_conj
+            if self.conj.upper() not in ("AND", "OR"):
+                formed_conj = f"NOT ({formed_conj})"
         else:
             formed_conj = "(" + f" {self.conj.upper()} ".join(out) + ")"
         formed_out = f"{formed_out} AND {formed_conj}" if formed_out else formed_conj
@@ -613,6 +616,15 @@ class Constraint:
                 left = f"({left})::text" if left_type == "string" else left
                 right = f"({right})::text" if right_type == "string" else right
                 formed_condition = f"{left} {op} {right}"
+                if right_type == "regex" and _is_prefix(right[1:-1], self.op, "regex"):
+                    # Increase performance with prefixes if applicable
+                    right_no_prefix = right.lstrip("'^")
+                    rgx_suffix = re.search(r"[*.$]", right_no_prefix)
+                    idx_suffix = (
+                        rgx_suffix.span()[0] if rgx_suffix else len(right_no_prefix) - 1
+                    )
+                    like_pattern = right_no_prefix[:idx_suffix]
+                    formed_condition = f"{left} {'NOT ' if op.startswith('!') else ''}LIKE '{like_pattern}%' AND {formed_condition}"
             elif "label" in (left_type, right_type):
                 pass
 
@@ -924,13 +936,16 @@ def _get_constraint(
         obj = cast(dict[str, Any], next(iter(constraint.values())))
         # the default operator is AND, and it can be missing
         operator = "AND"
+        constraints: JSONObject = obj.get("args", [])
         if "unaryOperator" in obj:
-            operator = obj["naryOperator"]
+            operator = obj["unaryOperator"]
+            constr = obj.get("arg", None)
+            constraints = cast(JSONObject, [constr] if constr else [])
         elif "naryOperator" in obj:
             operator = obj["naryOperator"]
 
         return _get_constraints(
-            obj.get("args", []),
+            constraints,
             cast(str, obj.get("layer", layer)),  # todo: which layer is correct?
             cast(str, obj.get("label", label)),
             conf,

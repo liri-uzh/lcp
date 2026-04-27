@@ -232,6 +232,7 @@ async def document_ids(request: web.Request) -> web.Response:
     config: Config = request.app["config"]
     schema = config[corpus_id]["schema_path"]
     kind: str = request_data.get("kind", "audio")
+    language: str = request_data.get("language", "")
 
     if not authenticator.check_corpus_allowed(
         corpus_id,
@@ -242,7 +243,13 @@ async def document_ids(request: web.Request) -> web.Response:
 
     if "doc_ids" not in config[corpus_id]:
         job = request.app["query_service"].document_ids(
-            schema, int(corpus_id), user, room, config[corpus_id], kind=kind
+            schema,
+            int(corpus_id),
+            user,
+            room,
+            config[corpus_id],
+            kind=kind,
+            language=language,
         )
         info: dict[str, str] = {"status": "started", "job": job.id}
         return web.json_response(info)

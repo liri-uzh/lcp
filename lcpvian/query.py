@@ -246,15 +246,15 @@ def schedule_next_batch(
             qi.running_batch = ""
             return None
     next_batch = qi.decide_next_batch(previous_batch_name)
-    if not next_batch:
-        qi.running_batch = ""
-        return None
     min_offset = min(r.offset for r in qi.requests) if qi.requests else 0
-    while min_offset > 0 and next_batch[0] in qi.done_batches:
+    while next_batch and min_offset > 0 and next_batch[0] in qi.done_batches:
         lines_before_batch, lines_next_batch = qi.get_lines_batch(next_batch[0])
         if min_offset <= lines_before_batch + lines_next_batch:
             break
         next_batch = qi.decide_next_batch(next_batch[0])
+    if not next_batch:
+        qi.running_batch = ""
+        return None
     return qi.enqueue(do_batch, qhash, list(next_batch), callback=batch_callback)
 
 
@@ -278,6 +278,9 @@ def process_query(
         f"Received new POST request: {request.id} ; {request.offset} -- {request.requested}"
     )
     config = app["config"][request.corpus]
+    assert config.get("enabled"), RuntimeError(
+        "Tried to query a corpus that has been disabled."
+    )
     try:
         json_query = json.loads(request.query)
     except json.JSONDecodeError:

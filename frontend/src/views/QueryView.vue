@@ -8,7 +8,7 @@
             <div
               v-if="selectedCorpora && selectedCorpora.corpus"
               class="details-button icon-3 tooltips"
-              @click.stop="openCorpusDetailsModal(selectedCorpora.corpus)"
+              @click.stop="openModal('corpusDetails', { corpus: selectedCorpora.corpus })"
               title="See corpus details"
             >
               <FontAwesomeIcon :icon="['fas', 'circle-info']" />
@@ -74,20 +74,6 @@
                     <div></div>
                   </div>
                 </button>
-                <!-- <button
-                  class="nav-link"
-                  :class="{ active: activeMainTab === 'explore' }"
-                  id="nav-explore-tab"
-                  data-bs-toggle="tab"
-                  data-bs-target="#nav-explore"
-                  type="button"
-                  role="tab"
-                  aria-controls="nav-explore"
-                  aria-selected="false"
-                  v-if="showExploreTab()"
-                >
-                  Explore
-                </button> -->
               </div>
             </nav>
             <div class="tab-content" id="nav-main-tabContent">
@@ -197,14 +183,12 @@
                         {{ loading == "resubmit" ? $t('common-resubmit') : $t('common-submit') }}
                       </button>
 
-                      <button
-                        type="button"
-                        class="btn btn-primary me-2 mb-2"
-                        v-if="queryStatus && userData.user.anon != true && !noResults"
-                        data-bs-toggle="modal"
-                        data-bs-target="#exportModal"
-                        @click="setExportFilename()"
-                      >
+                       <button
+                         type="button"
+                         class="btn btn-primary me-2 mb-2"
+                         v-if="queryStatus && userData.user.anon != true && !noResults"
+                         @click="[setExportFilename(),openModal('export')]"
+                       >
                         <FontAwesomeIcon :icon="['fas', 'file-export']" />
                         {{ $t('common-export') }}
                       </button>
@@ -220,19 +204,19 @@
                         {{ $t('common-stop') }}
                       </button>
 
-                      <button type="button" v-if="!loading && userData.user.anon != true && userQueryVisible()"
-                        :disabled="saveQueryDisabled" class="btn btn-primary me-2 mb-2"
-                        style="float: right;"
-                        data-bs-toggle="modal" data-bs-target="#saveQueryModal">
-                        <FontAwesomeIcon :icon="['fas', 'file-export']" />
-                        {{ $t('common-save-query') }}
-                      </button>
-                      <button type="button" v-if="!loading && userQueryVisible() && selectedQuery"
-                        :disabled="(isQueryValidData && isQueryValidData.valid != true)"
-                        class="btn btn-danger me-2 mb-2" data-bs-toggle="modal" data-bs-target="#deleteQueryModal">
-                        <FontAwesomeIcon :icon="['fas', 'trash']" />
-                        {{ $t('common-delete-query') }}
-                      </button>
+                       <button type="button" v-if="!loading && userData.user.anon != true && userQueryVisible()"
+                         :disabled="saveQueryDisabled" class="btn btn-primary me-2 mb-2"
+                         style="float: right;"
+                         @click="openModal('saveQuery')">
+                         <FontAwesomeIcon :icon="['fas', 'file-export']" />
+                         {{ $t('common-save-query') }}
+                       </button>
+                       <button type="button" v-if="!loading && userQueryVisible() && selectedQuery"
+                         :disabled="(isQueryValidData && isQueryValidData.valid != true)"
+                         class="btn btn-danger me-2 mb-2" @click="openModal('deleteQuery')">
+                         <FontAwesomeIcon :icon="['fas', 'trash']" />
+                         {{ $t('common-delete-query') }}
+                       </button>
                       <div v-if="userQueryVisible()">
                         <multiselect v-model="selectedQuery" :options="processedSavedQueries" :searchable="true"
                           :clear-on-select="false" :close-on-select="true" :placeholder="$t('common-select-saved-queries')"
@@ -244,18 +228,21 @@
                     </div>
                   </div>
                   <div class="col-12 col-md-6">
-                    <div class="corpus-graph mt-3" v-if="selectedCorpora">
-                      <FontAwesomeIcon :icon="['fas', 'expand']" @click="openGraphInModal" data-bs-toggle="modal"
-                        data-bs-target="#corpusGraphModal" />
-                      <CorpusGraphViewNew :corpus="selectedCorpora.corpus" :key="graphIndex" v-if="showGraph == 'main'" />
-                    </div>
+                     <div class="corpus-graph mt-3" v-if="selectedCorpora">
+                       <FontAwesomeIcon :icon="['fas', 'expand']" @click="openModal('corpusGraph')" />
+                       <CorpusGraphViewNew
+                        :corpus="selectedCorpora.corpus"
+                        :key="graphIndex"
+                        v-if="showGraph == 'main'"
+                      />
+                     </div>
                   </div>
                 </div>
               </div>
               <div class="tab-pane fade" :class="{ active: activeMainTab === 'data', show: activeMainTab === 'data' }"
                 id="nav-data" role="tabpanel" aria-labelledby="nav-data-tab">
                 <PlayerComponent
-                  v-if="showExploreTab()"
+                  v-if="showMediaTab()"
                   :key="selectedCorpora"
                   :meta="WSDataMeta"
                   :selectedCorpora="selectedCorpora"
@@ -269,11 +256,24 @@
                   :image="image"
                   :corpus="selectedCorpora.corpus"
                   :meta="WSDataMeta"
-                  :sentences="WSDataSentences || {}"
+                  :sentences="WSDataSentences"
                   :documentIds="documentIds"
                   @getImageAnnotations="getImageAnnotations"
                   @switchToQueryTab="setMainTab"
                   ref="imageViewer"
+                />
+                <PlainDocumentViewer
+                  v-else
+                  :corpus="selectedCorpora.corpus"
+                  :meta="WSDataMeta"
+                  :metaByLayer="WSDataMeta.layer"
+                  :sentences="WSDataSentences"
+                  :sentencesByStream="WSDataSentencesByStream"
+                  :documentIds="documentIds"
+                  :minimize="queryStatus"
+                  :language="selectedLanguages ? selectedLanguages[0] : ''"
+                  @switchToQueryTab="setMainTab"
+                  ref="documentViewer"
                 />
                 <hr>
                 <div class="mt-5 row" v-if="querySubmitted">
@@ -306,31 +306,31 @@
                   </div>
                   <div class="col-12" id="results">
                     <div class="row mb-4">
-                      <div class="col">
-                        <p class="mb-1">
-                          {{ $t('common-number-results') }}:
-                          <span class="text-bold" v-html="WSDataResults.total_results_so_far"></span>
-                        </p>
-                      </div>
-                      <div class="col">
-                        <p class="mb-1">
-                          {{ $t('common-projected-results') }}:
-                          <span class="text-bold" v-html="WSDataResults.projected_results"></span>
-                        </p>
-                      </div>
-                      <div class="col">
-                        <p class="mb-1">
-                          {{ $t('common-batch-done') }}:
-                          <span class="text-bold" v-html="WSDataResults.batches_done"></span>
-                        </p>
-                      </div>
-                      <div class="col">
-                        <p class="mb-1">
-                          {{ $t('common-status') }}:
-                          <!-- <span class="text-bold" v-html="WSDataResults.status"></span> -->
-                          <span class="text-bold" v-html="queryStatus"></span>
-                        </p>
-                      </div>
+                     <div class="col">
+                         <p class="mb-1">
+                           {{ $t('common-number-results') }}:
+                           <span class="text-bold" v-html="WSDataResults.total_results_so_far"></span>
+                         </p>
+                       </div>
+                       <div class="col">
+                         <p class="mb-1">
+                           {{ $t('common-projected-results') }}:
+                           <span class="text-bold" v-html="WSDataResults.projected_results"></span>
+                         </p>
+                       </div>
+                       <div class="col">
+                         <p class="mb-1">
+                           {{ $t('common-batch-done') }}:
+                           <span class="text-bold" v-html="WSDataResults.batches_done"></span>
+                         </p>
+                       </div>
+                       <div class="col">
+                         <p class="mb-1">
+                           {{ $t('common-status') }}:
+                           <!-- <span class="text-bold" v-html="WSDataResults.status"></span> -->
+                           <span class="text-bold" v-html="WSDataResults.isSatisfied() ? 'satisfied' : WSDataResults.isFinished() ? 'finished' : queryStatus"></span>
+                         </p>
+                       </div>
                     </div>
                   </div>
                 </div>
@@ -364,23 +364,21 @@
                   </div>
                 </div>
 
-                <div v-if="percentageDone == 100 && Object.keys(WSDataSentences || {}).length == 0"
-                  style="text-align: center" class="mb-3 mt-2">
-                  <div v-if="noResults">
-                    {{ $t('common-no-results') }}!
-                  </div>
-                  <div v-else>
-                    {{ $t('common-loading-results') }}...
-                  </div>
-                </div>
+                 <div v-if="percentageDone == 100 && Object.keys(WSDataSentences).length == 0"
+                   style="text-align: center" class="mb-3 mt-2">
+                   <div v-if="noResults || WSDataResults.isEmpty()">
+                     {{ $t('common-no-results') }}!
+                   </div>
+                   <div v-else>
+                     {{ $t('common-loading-results') }}...
+                   </div>
+                 </div>
                 <div class="mt-2">
                   <div class="row">
-                    <div class="col-12" v-if="WSDataResults && WSDataResults.result">
+                    <div class="col-12" v-if="Object.keys(WSDataResults.result).length">
                       <div
                         v-if="queryStatus && userData.user.anon != true && !noResults"
-                        data-bs-toggle="modal"
-                        data-bs-target="#exportModal"
-                        @click="setExportFilename()"
+                        @click="[setExportFilename(),openModal('export')]"
                         class="export btn btn-primary me-1 mb-1"
                         :title="$t('common-export')"
                       >
@@ -396,10 +394,9 @@
                       </div>
                       <nav>
                         <div class="nav nav-tabs" id="nav-results-tabs" role="tablist">
-                          <template
-                            v-for="(resultSet, index) in WSDataResults.result['0']
-                              .result_sets"
-                          >
+                           <template
+                             v-for="(resultSet, index) in WSDataResults.getResultSets()"
+                           >
                             <button
                               class="nav-link"
                               :class="index == 0 ? 'active' : ''"
@@ -414,7 +411,7 @@
                               :key="`result-btn-${index}`"
                               v-if="
                                 (resultSet.type == 'plain' &&
-                                  Object.keys(WSDataSentences || {}).length) ||
+                                  Object.keys(WSDataSentences).length) ||
                                 resultSet.type != 'plain'
                               ">
                               <FontAwesomeIcon v-if="resultSet.type == 'plain'" :icon="['fas', 'barcode']" />
@@ -424,9 +421,7 @@
                               {{ resultSet.name }}
                               <small>
                                 <span>{{
-                                  WSDataResults && WSDataResults.result[index + 1]
-                                    ? WSDataResults.result[index + 1].length
-                                    : 0
+                                  WSDataResults.getResultData(index + 1).length
                                 }}</span>
                               </small
                               >
@@ -437,11 +432,11 @@
                       <div class="tab-content" id="nav-results-tabsContent">
                         <div class="tab-pane fade show pt-3" :class="index == 0 ? 'active' : ''"
                           :id="`nav-results-${index}`" role="tabpanel" :aria-labelledby="`nav-results-${index}-tab`"
-                          v-for="(resultSet, index) in WSDataResults.result['0'].result_sets"
+                          v-for="(resultSet, index) in WSDataResults.getResultSets()"
                           :key="`result-tab-${index}`">
                           <span v-if="
                             resultSet.type == 'plain' &&
-                            Object.keys(WSDataSentences||{}).length
+                            Object.keys(WSDataSentences).length
                           ">
                             <div class="btn-group mt-2 btn-group-sm mb-3">
                               <a href="#" @click.stop.prevent="plainType = 'table'" class="btn" :class="plainType == 'table' || resultContainsSet(resultSet)
@@ -458,38 +453,38 @@
                                 KWIC
                               </a>
                             </div>
-                            <ResultsPlainTableView
-                              v-if="plainType == 'table' || resultContainsSet(resultSet)"
-                              :data="WSDataResults.result[index + 1] || []"
-                              :sentences="WSDataSentences || {}"
-                              :sentencesByStream="WSDataSentencesByStream"
-                              :languages="selectedLanguages"
-                              :meta="WSDataMeta.bySegment"
-                              :metaByLayer="WSDataMeta.layer"
-                              :attributes="resultSet.attributes"
-                              :corpora="selectedCorpora"
-                              @updatePage="updatePage"
-                              @playMedia="playMedia"
-                              @hoverResultLine="hoverResultLine"
-                              @showImage="showImage"
-                              :resultsPerPage="resultsPerPage"
-                              :loading="loading"
-                            />
-                            <ResultsKWICView
-                              v-else-if="resultContainsSet(resultSet) == false"
-                              :data="WSDataResults.result[index + 1] || []"
-                              :sentences="WSDataSentences || {}"
-                              :languages="selectedLanguages"
-                              :meta="WSDataMeta.bySegment"
-                              :attributes="resultSet.attributes"
-                              :corpora="selectedCorpora"
-                              @updatePage="updatePage"
-                              :resultsPerPage="resultsPerPage"
-                              :loading="loading"
-                            />
+                             <ResultsPlainTableView
+                               v-if="plainType == 'table' || resultContainsSet(resultSet)"
+                               :data="WSDataResults.getResultData(index) || []"
+                               :sentences="WSDataSentences"
+                               :sentencesByStream="WSDataSentencesByStream"
+                               :languages="selectedLanguages"
+                               :meta="WSDataMeta.bySegment"
+                               :metaByLayer="WSDataMeta.layer"
+                               :attributes="resultSet.attributes"
+                               :corpora="selectedCorpora"
+                               @updatePage="updatePage"
+                               @playMedia="playMedia"
+                               @hoverResultLine="hoverResultLine"
+                               @showImage="showImage"
+                               :resultsPerPage="resultsPerPage"
+                               :loading="loading"
+                             />
+                             <ResultsKWICView
+                               v-else-if="resultContainsSet(resultSet) == false"
+                               :data="WSDataResults.getResultData(index)"
+                               :sentences="WSDataSentences"
+                               :languages="selectedLanguages"
+                               :meta="WSDataMeta.bySegment"
+                               :attributes="resultSet.attributes"
+                               :corpora="selectedCorpora"
+                               @updatePage="updatePage"
+                               :resultsPerPage="resultsPerPage"
+                               :loading="loading"
+                             />
                           </span>
                           <ResultsTableView v-else-if="resultSet.type != 'plain'"
-                            :data="WSDataResults.result[index + 1]" :languages="selectedLanguages"
+                            :data="WSDataResults.getResultData(index + 1)" :languages="selectedLanguages"
                             :attributes="resultSet.attributes" :meta="WSDataMeta.bySegment" :resultsPerPage="resultsPerPage"
                             :total="resultSet.total || []"
                             :type="resultSet.type" :corpora="selectedCorpora" />
@@ -510,205 +505,44 @@
       </div>
     </div>
 
-    <!-- Modal -->
-    <div class="modal fade" id="exportModal" tabindex="-1" aria-labelledby="exportModalLabel" aria-hidden="true">
-      <div class="modal-dialog modal-xl">
+    <!-- Single reusable modal -->
+    <div class="modal fade" id="reusableModalQuery" tabindex="-1" aria-hidden="true" ref="reusableModalQuery">
+      <div class="modal-dialog" :class="modalSizeClass">
         <div class="modal-content">
           <div class="modal-header">
-            <h5 class="modal-title" id="exportModalLabel">{{ $t('common-export-results') }}</h5>
+            <h5 class="modal-title">{{ modalTitle }}</h5>
             <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
           </div>
           <div class="modal-body text-start">
-            <div class="form-floating mb-3">
-              <!-- <nav>
-                <div class="nav nav-tabs justify-content-end" id="nav-export-tab" role="tablist">
-                  <button
-                    class="nav-link active"
-                    id="nav-exportxml-tab"
-                    data-bs-toggle="tab"
-                    data-bs-target="#nav-exportxml"
-                    type="button"
-                    role="tab"
-                    aria-controls="nav-exportxml"
-                    aria-selected="false"
-                    @click="(exportTab = 'xml') && setExportFilename()"
-                  >
-                    XML
-                  </button>
-                  <button
-                    class="nav-link"
-                    id="nav-exportswissdox-tab"
-                    data-bs-toggle="tab"
-                    data-bs-target="#nav-exportswissdox"
-                    type="button"
-                    role="tab"
-                    aria-controls="nav-exportswissdox"
-                    aria-selected="false"
-                    @click="(exportTab = 'swissdox') && setExportFilename()"
-                    v-if="selectedCorpora && selectedCorpora.corpus && selectedCorpora.corpus.shortname.match(/swissdox/i)"
-                  >
-                    SwissdoxViz
-                  </button>
-                </div>
-              </nav> -->
-              <div class="tab-content" id="nav-exportxml-tabContent">
-                <div
-                  class="tab-pane fade show active pt-3"
-                  id="nav-exportxml"
-                  role="tabpanel"
-                  aria-labelledby="nav-exportxml-tab"
-                >
-                  <div class="row">
-                    <label class="col" for="nameExport">Filename:</label>
-                    <label class="col-2" for="extension">Export as</label>
-                  </div>
-                  <div class="row">
-                    <input
-                      type="text"
-                      class="form-control col"
-                      id="nameExport"
-                      name="nameExport"
-                      v-model="nameExport"
-                    />
-                    <select
-                      v-if="isSwissdox"
-                      class="col-2"
-                      v-model="exportTab"
-                    >
-                      <option value="xml">*.xml</option>
-                      <option value="swissdox">*.swissdox</option>
-                    </select>
-                    <span
-                      v-else
-                      class="col-2"
-                      style="margin-top: 0.33em;"
-                    >
-                      *.{{ exportTab }}
-                    </span>
-                  </div>
-                  <div class="row" style="margin-top: 1em;">
-                    <label for="nExport" v-if="!isSwissdox || exportTab == 'xml'">Number of hits:</label>
-                  </div>
-                  <div class="row">
-                    <input
-                      type="text"
-                      class="form-control col"
-                      id="nExport"
-                      name="nExport"
-                      v-model="nExport"
-                      :style="`margin-right: 1em; visibility: ${isSwissdox && exportTab == 'swissdox' ? 'hidden;' : 'visible'};`"
-                    />
-                    <button
-                      type="button"
-                      @click="exportResults(exportTab, /*download=*/true, /*preview=*/true)"
-                      class="btn btn-primary me-1 col-2"
-                      data-bs-dismiss="modal"
-                    >
-                      Download
-                    </button>
-                  </div>
-                </div>
-              </div>
-              <!-- <div class="tab-content" id="nav-exportswissdox-tabContent">
-                <div
-                  class="tab-pane fade pt-3"
-                  id="nav-exportswissdox"
-                  role="tabpanel"
-                  aria-labelledby="nav-exportswissdox-tab"
-                >
-                  <label for="nameExport">Filename:</label>
-                  <input
-                    type="text"
-                    class="form-control"
-                    id="nameExport"
-                    name="nameExport"
-                    v-model="nameExport"
-                  />
-                  <button
-                    type="button"
-                    @click="exportResults('swissdox', /*download=*/true, /*preview=*/true)"
-                    class="btn btn-primary me-1"
-                    data-bs-dismiss="modal"
-                  >
-                    Launch export
-                  </button>
-                </div>
-              </div> -->
-            </div>
+            <component
+              :is="modalComponent"
+              v-bind="modalProps"
+              :key="modalIndexKey"
+              @updated="handleModalUpdated"
+              @save="handleModalSave"
+              @delete="handleModalDelete"
+            />
           </div>
-          <div class="modal-footer">
+          <div class="modal-footer" v-if="showModalFooter">
             <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
               {{ $t('common-close') }}
             </button>
-          </div>
-        </div>
-      </div>
-    </div>
-    <div class="modal fade" id="saveQueryModal" tabindex="-1" aria-labelledby="saveQueryModalLabel" aria-hidden="true">
-      <div class="modal-dialog">
-        <div class="modal-content">
-          <div class="modal-header">
-            <h5 class="modal-title" id="saveQueryModalLabel">{{ $t('common-save-query') }}</h5>
-            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-          </div>
-          <div class="modal-body text-start">
-            <label for="queryName" class="form-label">{{ $t('common-query-name') }}</label>
-            <input type="text" class="form-control" id="queryName" v-model="queryName" />
-          </div>
-          <div class="modal-footer">
-            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
-              {{ $t('common-close') }}
+            <button
+              v-if="showSaveButton"
+              type="button"
+              class="btn btn-primary"
+              :disabled="!allowSave"
+              @click="handleModalSave"
+            >
+              {{ $t('common-save') }}
             </button>
-            <button type="button" :disabled="saveQueryDisabled || !this.queryName" @click="saveQuery" class="btn btn-primary me-1"
-              data-bs-dismiss="modal">
-              {{ $t('common-save-query') }}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-    <div class="modal fade" id="deleteQueryModal" tabindex="-1" aria-labelledby="deleteQueryModalLabel"
-      aria-hidden="true">
-      <div class="modal-dialog">
-        <div class="modal-content">
-          <div class="modal-header">
-            <h5 class="modal-title" id="deleteQueryModalLabel">{{ $t('common-delete-query') }}</h5>
-            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-          </div>
-          <div class="modal-body text-start">
-            <p>{{ $t('common-delete-query-sure') }}</p>
-          </div>
-          <div class="modal-footer">
-            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
-              {{ $t('common-close') }}
-            </button>
-            <button type="button" @click="deleteQuery" class="btn btn-danger me-1"
-              data-bs-dismiss="modal">
+            <button
+              v-if="showDeleteButton"
+              type="button"
+              class="btn btn-danger"
+              @click="handleModalDelete"
+            >
               {{ $t('common-delete-query') }}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-    <div class="modal fade" id="corpusGraphModal" tabindex="-1" aria-labelledby="corpusGraphModalLabel"
-      aria-hidden="true" ref="vuemodal">
-      <div class="modal-dialog modal-xl">
-        <div class="modal-content">
-          <div class="modal-header">
-            <h5 class="modal-title" id="corpusGraphModallLabel">
-              {{ $t('corpus-structure') }}
-            </h5>
-            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-          </div>
-          <div class="modal-body text-start" v-if="showGraph == 'modal'">
-            <div class="row">
-              <p class="title mb-0">{{ selectedCorpora.corpus.meta.name }}</p>
-              <CorpusGraphViewNew :corpus="selectedCorpora.corpus" />
-            </div>
-          </div>
-          <div class="modal-footer">
-            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
-              {{ $t('common-close') }}
             </button>
           </div>
         </div>
@@ -717,63 +551,6 @@
     <div class="lcp-progress-bar" :title="$t('common-refresh-progress')" v-if="showLoadingBar">
       <div class="lcp-progress-bar-driver" :style="`width: ${navPercentage}%;`"></div>
     </div>
-
-    <div class="modal fade" id="corpusDetailsModal" tabindex="-1" aria-labelledby="corpusDetailsModalLabel"
-      aria-hidden="true" ref="vuemodaldetails">
-      <div class="modal-dialog modal-lg">
-        <div class="modal-content">
-          <div class="modal-header">
-            <h5 class="modal-title" id="corpusDetailsModalLabel">
-              {{ $t('platform-general-corpus-details') }}
-            </h5>
-            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-          </div>
-          <div class="modal-body text-start" v-if="corpusModal">
-            <CorpusDetailsModal :corpusModal="corpusModal" :key="modalIndexKey" />
-          </div>
-          <div class="modal-footer">
-            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
-              {{ $t('common-close') }}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- <div class="modal fade" id="imageModal" tabindex="-1" aria-labelledby="imageModalLabel"
-      aria-hidden="true" ref="vuemodaldetails">
-      <div class="modal-dialog modal-full">
-        <div class="modal-content">
-          <div class="modal-header">
-            <h5 class="modal-title" id="imageModalLabel">{{ $t('results-image-viewer') }}</h5>
-            <button
-              type="button"
-              class="btn-close"
-              data-bs-dismiss="modal"
-              :aria-label="$t('common-close')"
-            ></button>
-          </div>
-          <div class="modal-body text-start" v-if="image">
-            <ImageViewer
-              :image="image"
-              :columnHeaders="image.columnHeaders"
-              :corpus="this.selectedCorpora.corpus"
-              :meta="WSDataMeta"
-              :sentences="WSDataSentences.result[-1] || {}"
-              :documentIds="documentIds"
-              @getImageAnnotations="getImageAnnotations"
-            />
-          </div>
-          <div class="modal-footer">
-            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
-              {{ $t('common-close') }}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div> -->
-
-
   </div>
 </template>
 
@@ -966,19 +743,24 @@ import { useUserStore } from "@/stores/userStore";
 import { useWsStore } from "@/stores/wsStore";
 
 import ImageViewer from "@/components/ImageViewer.vue";
+import PlainDocumentViewer from "@/components/PlainDocumentViewer.vue";
 import CorpusDetailsModal from "@/components/corpus/DetailsModal.vue";
 import Title from "@/components/TitleComponent.vue";
 import ResultsTableView from "@/components/results/TableView.vue";
 import ResultsKWICView from "@/components/results/KWICView.vue";
 import ResultsPlainTableView from "@/components/results/PlainTableView.vue";
 import EditorView from "@/components/EditorView.vue";
-// import CorpusGraphView from "@/components/CorpusGraphView.vue";
 import CorpusGraphViewNew from "@/components/CorpusGraphViewNew.vue";
 import PlayerComponent from "@/components/PlayerComponent.vue";
+import ExportModal from "@/components/query/ExportModal.vue";
+import SaveQueryModal from "@/components/query/SaveQueryModal.vue";
+import DeleteQueryModal from "@/components/query/DeleteQueryModal.vue";
+import CorpusGraphModal from "@/components/query/CorpusGraphModal.vue";
 import { setTooltips, removeTooltips } from "@/tooltips";
 import Utils from "@/utils";
 import { IntervalTree } from "@/intervaltrees";
 import config from "@/config";
+import WSDataResults from "@/classes/WSDataResults";
 
 export default {
   name: "QueryView",
@@ -993,7 +775,7 @@ export default {
       wsConnected: false,
       selectedCorpora: null,
       isQueryValidData: null,
-      WSDataResults: "",
+      WSDataResults: new WSDataResults(),
       WSDataMeta: {"layer": {}, "bySegment": {}},
       WSDataSentences: {},
       WSDataSentencesByStream: new IntervalTree(),
@@ -1031,7 +813,7 @@ export default {
       selectedQuery: null,
       userQueries: [],
 
-      activeMainTab: ['soundscript', 'videoscope'].includes(config.appType) || this.shouldImageViewer() ? "data" : "query",
+      activeMainTab: "data",
       graphIndex: 0,
       appType: config.appType,
       querySubmitted: false,
@@ -1044,7 +826,18 @@ export default {
 
       modalIndexKey: 0,
       noCorpus: null,
-      local: window.location.hostname == "localhost"
+      local: window.location.hostname == "localhost",
+      // Reusable modal properties
+      modalInstance: null,
+      currentModal: null,
+      modalTitle: '',
+      modalComponent: null,
+      modalProps: {},
+      modalSizeClass: 'modal-lg',
+      showModalFooter: true,
+      showSaveButton: false,
+      showDeleteButton: false,
+      allowSave: false,
 
     };
   },
@@ -1055,10 +848,14 @@ export default {
     ResultsTableView,
     EditorView,
     CorpusDetailsModal,
-    // CorpusGraphView,
     CorpusGraphViewNew,
     PlayerComponent,
     ImageViewer,
+    PlainDocumentViewer,
+    ExportModal,
+    SaveQueryModal,
+    DeleteQueryModal,
+    CorpusGraphModal
   },
   watch: {
     corpora: {
@@ -1122,17 +919,10 @@ export default {
       }
     },
     selectedCorpora() {
-      this.activeMainTab = ['soundscript', 'videoscope'].includes(config.appType) ? "data" : "query";
-      if (this.shouldImageViewer()) this.activeMainTab = "data";
+      this.activeMainTab = "data";
       this.querySubmitted = false
       this.queryStatus = null
       this.checkAuthUser();
-      // let updateGraph = false;
-      // if (this.corpusGraph) {
-      //   this.corpusGraph = null;
-      //   updateGraph = true;
-      // }
-      // this.validate();
       if (this.selectedCorpora) {
         // this.loadDocuments();
         this.defaultQueryDQD = this.getSampleQuery();
@@ -1142,9 +932,6 @@ export default {
           null,
           `/query/${this.selectedCorpora.value}/${this.selectedCorpora.corpus.shortname}`
         );
-        // if (updateGraph)
-        //   // make sure to delay the re-setting of corpusGraph
-        //   setTimeout(() => (this.corpusGraph = this.selectedCorpora.corpus), 1);
         this.showGraph = 'main'
         setTimeout(() => this.graphIndex++, 1)
         this.noCorpus = null;
@@ -1159,7 +946,7 @@ export default {
         this.loading = false;
         this.requestId = null;
         this.querySatisfied = "";
-        this.WSDataResults = {};
+        this.WSDataResults = new WSDataResults();
         this.WSDataMeta = {"layer": {}, "bySegment": {}};
         this.WSDataSentences = {};
         this.nameExport = "";
@@ -1167,35 +954,24 @@ export default {
     },
     WSDataResults() {
       if (this.WSDataResults) {
-        if (this.WSDataResults.percentage_done) {
-          this.percentageDone = this.WSDataResults.percentage_done;
+        // Use the class methods for cleaner access
+        this.percentageDone = this.WSDataResults.getPercentageDone();
+        this.percentageWordsDone = this.WSDataResults.percentage_words_done || 0;
+        this.percentageTotalDone = this.WSDataResults.getTotalPercentageDone();
+
+        // Use class methods for status checks
+        if (this.WSDataResults.isFinished()) {
+          this.percentageDone = 100;
+          this.percentageTotalDone = 100;
+          this.loading = false;
         }
-        if (this.WSDataResults.percentage_words_done) {
-          this.percentageWordsDone = this.WSDataResults.percentage_words_done;
+        if (this.WSDataResults.isSatisfied()) {
+          this.percentageDone = 100;
+          this.loading = false;
         }
-        if (
-          this.WSDataResults.total_results_so_far &&
-          this.WSDataResults.projected_results
-        ) {
-          this.percentageTotalDone =
-            (this.WSDataResults.total_results_so_far /
-              this.WSDataResults.projected_results) *
-            100;
-        }
-        // if (["finished"].includes(this.WSDataResults.status)) {
-        //   this.percentageDone = 100;
-        //   this.percentageTotalDone = 100;
-        //   this.loading = false;
-        // }
-        // if (["satisfied", "overtime"].includes(this.WSDataResults.status)) {
-        //   // this.percentageDone = this.WSDataResults.hit_limit/this.WSDataResults.projected_results*100.
-        //   this.percentageDone = 100;
-        //   this.loading = false;
-        // }
-        // console.log("XXX", this.percentageTotalDone, this.percentageDone);
       }
 
-      if (this.WSDataResults.percentage_done >= 100) {
+      if (this.WSDataResults.getPercentageDone() >= 100) {
         this.loading = false;
         this.requestId = null;
       }
@@ -1242,6 +1018,130 @@ export default {
     updateSentencesByStream() {
       // Use a method to trigger a reflective update because vue is stupid
       this.WSDataSentencesByStream = this.WSDataSentencesByStream.clone();
+    },
+
+    getReusableModalInstance() {
+      if (!this.modalInstance) {
+        this.modalInstance = new Modal(document.querySelector("#reusableModalQuery"));
+        // Check if initialization worked
+        if (!this.modalInstance._config) {
+          console.error('Modal initialization failed - no config');
+          return;
+        }
+      }
+      return this.modalInstance;
+    },
+    // Modal management methods
+    openModal(modalType, props = {}) {
+      // Close existing modal if open
+      this.getReusableModalInstance().hide();
+
+      // Set up the new modal configuration
+      this.currentModal = modalType;
+      this.modalIndexKey++;
+
+      // Configure based on modal type
+      switch(modalType) {
+        case 'export':
+          this.modalTitle = this.$t('common-export-results');
+          this.modalComponent = 'ExportModal';
+          this.modalProps = {
+            exportTab: this.exportTab,
+            nameExport: this.nameExport,
+            nExport: this.nExport,
+            isSwissdox: this.isSwissdox,
+            '@update:exportTab': (val) => { this.exportTab = val; },
+            '@update:nameExport': (val) => { this.nameExport = val; },
+            '@update:nExport': (val) => { this.nExport = val; }
+          };
+          this.modalSizeClass = 'modal-xl';
+          this.showModalFooter = true;
+          this.showSaveButton = false;
+          this.showDeleteButton = false;
+          break;
+
+        case 'saveQuery':
+          this.modalTitle = this.$t('common-save-query');
+          this.modalComponent = 'SaveQueryModal';
+          this.modalProps = {
+            initialQueryName: this.queryName
+          };
+          this.modalSizeClass = 'modal-dialog';
+          this.showModalFooter = true;
+          this.showSaveButton = true;
+          this.showDeleteButton = false;
+          break;
+
+        case 'deleteQuery':
+          this.modalTitle = this.$t('common-delete-query');
+          this.modalComponent = 'DeleteQueryModal';
+          this.modalProps = {};
+          this.modalSizeClass = 'modal-dialog';
+          this.showModalFooter = true;
+          this.showSaveButton = false;
+          this.showDeleteButton = true;
+          break;
+
+        case 'corpusGraph':
+          this.showGraph = 'modal';
+          this.modalTitle = this.$t('corpus-structure');
+          this.modalComponent = 'CorpusGraphModal';
+          this.modalProps = {
+            corpus: this.selectedCorpora.corpus,
+          };
+          this.modalSizeClass = 'modal-xl';
+          this.showModalFooter = true;
+          this.showSaveButton = false;
+          this.showDeleteButton = false;
+          break;
+
+        case 'corpusDetails':
+          this.modalTitle = this.$t('platform-general-corpus-details');
+          this.modalComponent = 'CorpusDetailsModal';
+          this.modalProps = {
+            corpusModal: props.corpus
+          };
+          this.modalSizeClass = 'modal-lg';
+          this.showModalFooter = true;
+          this.showSaveButton = false;
+          this.showDeleteButton = false;
+          break;
+      }
+
+      // Show the modal
+      this.$nextTick(() => {
+        const modalNode = document.querySelector("#reusableModalQuery");
+        const handleHidden = () => {
+          this.showGraph = 'main';
+          return modalNode.removeEventListener('hidden.bs.modal', handleHidden);
+        };
+        modalNode.addEventListener('hidden.bs.modal', handleHidden);
+        this.modalInstance.show();
+      });
+    },
+
+    handleModalUpdated(valid, data) {
+      this.allowSave = valid;
+      if (this.currentModal === 'saveQuery') {
+        this.queryName = data.queryName;
+      }
+    },
+
+    handleModalSave(exportTab) {
+      this.getReusableModalInstance().hide();
+      switch(this.currentModal) {
+        case 'saveQuery':
+          return this.saveQuery();
+        case 'export':
+          return this.exportResults(exportTab, true, true);
+      }
+    },
+
+    handleModalDelete() {
+      this.getReusableModalInstance().hide();
+      if (this.currentModal === 'deleteQuery') {
+        return this.deleteQuery();
+      }
     },
     shouldImageViewer() {
       if (!this.selectedCorpora || !this.selectedCorpora.corpus) return false;
@@ -1293,7 +1193,7 @@ export default {
       this.nameExport = this.nameExport.replace(/\/+/g,"-").replace(/,+/g,"");
     },
     setMainTab() {
-      this.activeMainTab = 'query'
+      this.activeMainTab = 'query';
     },
     setTab(tab) {
       this.selectedQuery = null;
@@ -1340,7 +1240,7 @@ export default {
       return found;
     },
     corpusDataType: Utils.corpusDataType,
-    showExploreTab() {
+    showMediaTab() {
       return this.selectedCorpora
         && ['audio', 'video'].includes(Utils.corpusDataType(this.selectedCorpora.corpus))
         && config.appType != "catchphrase"
@@ -1356,17 +1256,18 @@ export default {
     },
     updateLoading(status) {
       this.queryStatus = status;
-      if (["finished"].includes(status)) {
+      this.WSDataResults.status = status;
+
+      if (this.WSDataResults.isFinished()) {
         this.percentageDone = 100;
         this.percentageTotalDone = 100;
         this.loading = false;
         this.requestId = null;
       }
-      if (["satisfied", "overtime"].includes(status)) {
+      if (this.WSDataResults.isSatisfied()) {
         this.percentageDone = 100;
         this.loading = false;
         this.requestId = null;
-        this.querySatisfied = this.currentQuery;
       }
     },
     updatePage(currentPage) {
@@ -1385,7 +1286,7 @@ export default {
         this.WSDataResults.more_data_available
       );
       if (
-        newNResults > allActiveResults && this.WSDataSentences && this.WSDataResults.more_data_available
+        newNResults > allActiveResults && this.WSDataResults.more_data_available
       ) {
         // console.log("Submit");
         this.nResults = newNResults;
@@ -1529,14 +1430,6 @@ export default {
 
         if (data["action"] == "image_annotations" || is_doc) {
           const annotations = is_doc ? data.document : data.annotations;
-          // if (!annotations || annotations.length == 0) {
-          //   console.log("data", data);
-          //   useNotificationStore().add({
-          //     type: "error",
-          //     text: "No annotations for this document",
-          //   });
-          //   return;
-          // }
           const meta = [], ids = [];
           this.WSDataSentences = this.WSDataSentences || {};
           for (let [row] of annotations) {
@@ -1714,14 +1607,6 @@ export default {
             this.WSDataSentences[sid] = v;
           }
           this.updateSentencesByStream();
-          if (data.full) {
-            if (this.WSDataResults) {
-              if (!this.WSDataResults.result)
-                this.WSDataResults.result = {};
-              if (!this.WSDataResults.result["0"] || !this.WSDataResults.result["0"].result_sets)
-                this.WSDataResults.result["0"] = { result_sets: [] };
-            }
-          }
           this.WSDataSentences = {...this.WSDataSentences};
           // if (["satisfied", "overtime"].includes(this.WSDataResults.status)) {
           //   this.loading = false;
@@ -1775,18 +1660,8 @@ export default {
         data["n_results"] = this.allResults.length;
         delete data["result"];
         data["percentage_done"] += this.percentageDone;
-        this.WSDataResults = data;
+        this.WSDataResults = WSDataResults.fromWebSocketMessage(data);
       }
-    },
-    openGraphInModal() {
-      this.$refs.vuemodal.addEventListener("shown.bs.modal", () => {
-        this.showGraph = 'modal';
-      });
-      this.$refs.vuemodal.addEventListener("hide.bs.modal", () => {
-        this.showGraph = 'main';
-        // if (restoreSmallGraphWith) this.corpusGraph = restoreSmallGraphWith;
-        // restoreSmallGraphWith = null;
-      });
     },
     resizeGraph(container) {
       let svg = container.querySelector("svg");
@@ -1835,7 +1710,7 @@ export default {
         this.failedStatus = false;
         this.stop();
         if (cleanResults == true)
-          this.WSDataResults = {};
+          this.WSDataResults.clear();
       }
       let data = {
         corpus: this.selectedCorpora.value,
@@ -1865,8 +1740,8 @@ export default {
       }
 
       // console.log(document.querySelector("button#nav-results-tab"))
-      this.querySubmitted = true
-      this.activeMainTab = 'data'
+      this.querySubmitted = true;
+      this.activeMainTab = 'data';
       nextTick(() => {
         const section = document.getElementById("results");
         if (section) {
@@ -2030,7 +1905,7 @@ export default {
       })).filter((q) => q.query?.query_type === this.currentTab);
     },
     nKwics() {
-      const kwic_keys = ((this.WSDataResults.result[0]||{}).result_sets||[])
+      const kwic_keys = this.WSDataResults.getResultSets()
         .map((rs,n)=>rs.type=="plain"?n+1:-1)
         .filter(n=>n>0);
       return Object.fromEntries(
@@ -2053,7 +1928,7 @@ export default {
        return !this.currentQuery || this.currentQuery.match(/^\s*$/);
     },
     dataTabEmpty() {
-      if (this.selectedCorpora && this.showExploreTab())
+      if (this.selectedCorpora && this.showMediaTab())
         return false;
       if (this.querySubmitted)
         return false;
@@ -2073,7 +1948,7 @@ export default {
         !this.selectedLanguages
     },
     noResults() {
-      const dr = JSON.parse(JSON.stringify(this.WSDataResults)) || {};
+      const dr = JSON.parse(JSON.stringify(this.WSDataResults.toObject())) || {};
       dr.result = dr.result || {};
       return Object.entries(dr.result).every(([k,v])=>k==0 || !v || v.length==0);
     }
@@ -2085,6 +1960,10 @@ export default {
     setTimeout(()=>this.selectedLanguages = this.selectedLanguages || [this.availableLanguages[0]], 100);
   },
   beforeUnmount() {
+    if (this.modalInstance) {
+      this.modalInstance.dispose();
+      this.modalInstance = null;
+    }
     removeTooltips();
   },
 };
