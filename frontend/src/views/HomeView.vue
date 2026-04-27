@@ -88,7 +88,7 @@
                   </div>
                 </div>
               </div>
-              <div class="project-settings" v-if="project.isAdmin || true">
+              <div class="project-settings" v-if="project.isAdmin">
                 <button
                   type="button"
                   class="btn btn-sm btn-light"
