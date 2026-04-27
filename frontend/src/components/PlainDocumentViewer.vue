@@ -93,7 +93,7 @@
                 :meta="meta"
                 :metaByLayer="metaByLayer"
                 :corpora="{corpus: corpus}"
-                :languages="[]"
+                :languages="language ? [language] : []"
                 :hideContext="true"
                 v-if="modalVisible && currentPrepSentence && currentPrepSentence._sid"
               />
@@ -156,7 +156,8 @@ export default {
     "sentences",
     "sentencesByStream",
     "documentIds",
-    "minimize"
+    "minimize",
+    "language"
   ],
   emits: ["getSegmentAnnotations", "switchToQueryTab"],
   methods: {
@@ -171,7 +172,8 @@ export default {
         room: this.roomId,
         user: this.userData.user.id,
         corpora_id: this.corpus.meta.id,
-        kind: "plain"
+        kind: "plain",
+        language: this.language
       });
     },
     showModal(prepSentence) {
@@ -230,7 +232,15 @@ export default {
     columnHeaders() {
       if (!this.corpus) return [];
       const seg = this.corpus.segment;
-      return this.corpus.mapping.layer[seg].prepared.columnHeaders;
+      let segMapping = this.corpus.mapping.layer[seg];
+      if (!("prepared" in segMapping)) {
+        try {
+          segMapping = segMapping.partitions[this.language];
+        } catch {
+          console.error("Could not find the column headers in", segMapping, "for", this.language);
+        }
+      }
+      return segMapping.prepared.columnHeaders;
     },
     allPrepared() {
       if (!this.currentDocumentSelected) return [];
@@ -284,15 +294,19 @@ export default {
       const docId = this.currentDocumentSelected.value.id;
       const docMeta = this.meta.layer[this.corpus.document];
       if (docMeta && docId in docMeta) return;
-      console.log("need to fetch document", docId, this.corpus.meta.id);
       useCorpusStore().fetchAnnotations({
         user: this.userData.user.id,
         room: this.roomId,
         corpus: this.corpus.meta.id,
         anchor: "stream",
         range: this.currentDocumentSelected.value.char_range,
-        language: ""
+        language: this.language
       });
+    },
+    language() {
+      this.currentDocumentSelected = null;
+      this.documentOptions = [];
+      this.loadDocuments();
     }
   },
   mounted() {
@@ -355,8 +369,9 @@ export default {
   display: none;
   position: absolute;
   background-color: beige;
+  margin-top: -0.5em;
 }
-.segment:hover .segment-info {
+.segment .icon-info:hover .segment-info {
   display: block;
 }
 .segment .layer-name {

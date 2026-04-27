@@ -271,6 +271,7 @@
                   :sentencesByStream="WSDataSentencesByStream"
                   :documentIds="documentIds"
                   :minimize="queryStatus"
+                  :language="selectedLanguages ? selectedLanguages[0] : ''"
                   @switchToQueryTab="setMainTab"
                   ref="documentViewer"
                 />

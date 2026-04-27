@@ -156,7 +156,6 @@ export const useCorpusStore = defineStore("corpusData", {
     },
     fetchAnnotations(data) {
       if (!(data.anchor in {stream: 1, time: 1}) && !(data.range instanceof Array)) return;
-      console.log("data for fetchAnnotations", data);
       httpApi.post("/annotations", data).then((response) => {
         return response.data;
       });

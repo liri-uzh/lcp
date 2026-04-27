@@ -70,7 +70,7 @@ from .utils import (
     sql_str,
     SQLCorpus,
 )
-from .abstract_query.utils import _get_table, _get_mapping
+from .abstract_query.utils import _get_table
 
 
 @final
@@ -101,11 +101,16 @@ class QueryService:
         config: dict,
         queue: str = "internal",
         kind: str = "audio",
+        language: str = "",
     ) -> Job:
         """
         Fetch document id + info from DB.
         """
         doc_layer = config.get("document", "document")
+        batch = next(x for x in config["_batches"])
+        partitions = config.get("partitions", {}).get("values", [""])
+        lang = language or next(x for x in partitions)
+        sqlc = SQLCorpus(config, schema, batch, lang)
         # info: name -> column
         info: dict[str, str] = {
             "name": "name",
@@ -119,7 +124,6 @@ class QueryService:
         joins: dict = {}
         layer_attrs = _get_all_attributes(doc_layer, config)
         if "name" in layer_attrs:
-            sqlc = SQLCorpus(config, schema, next(x for x in config["_batches"]), "")
             name_ref = sqlc.attribute("d", doc_layer, "name")
             joins = name_ref.joins
             info["name"] = name_ref.ref
@@ -128,11 +132,9 @@ class QueryService:
             + ",".join(literal_sql(k) + "," + sql_str(v) for k, v in info.items())
             + ")"
         )
-        query = (
-            f"SELECT {doc_layer.lower()}_id, {jsonb_info} FROM "
-            + sql_str("{}", schema)
-            + f".{doc_layer} d"
-        )
+        doc_id = sqlc.layer("d", doc_layer, pointer=True)
+        doc_table = next(x for x in doc_id.joins)
+        query = f"SELECT {doc_id.ref}, {jsonb_info} FROM {doc_table}"
         for jtab, jconds in joins.items():
             if not jconds:
                 continue
