@@ -149,20 +149,24 @@ class Lama(Authentication):
         return False
 
     ## Helpers
+    async def get_project_admins(self, request: web.Request, project_id: Any) -> list:
+        project_users = await self.project_users(request, project_id)
+        registered_users = project_users.get("registred", [])
+        if not registered_users or not isinstance(registered_users, list):
+            return []
+        admins: list[str] = [
+            str(u.get("id", ""))
+            for u in registered_users
+            if isinstance(u, dict) and u.get("isAdmin")
+        ]
+        return admins
+
     async def get_corpus_admin_ids(self, request: web.Request, corpus_id: int | str):
         corpus: dict = request.app["config"].get(str(corpus_id))
         projects_admin_ids: list[str] = []
         for pid in corpus.get("projects", []):
             try:
-                project_users = await self.project_users(request, pid)
-                registered_users = project_users.get("registred", [])
-                if not registered_users or not isinstance(registered_users, list):
-                    continue
-                admins: list[str] = [
-                    str(u.get("id", ""))
-                    for u in registered_users
-                    if isinstance(u, dict) and u.get("isAdmin")
-                ]
+                admins = await self.get_project_admins(request, pid)
                 projects_admin_ids += admins
             except:
                 pass

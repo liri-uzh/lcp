@@ -197,12 +197,15 @@ async def corpora_meta_update(request: web.Request) -> web.Response:
     ):
         raise PermissionError("This user is not authorized to access this corpus")
 
-    projects_admin_ids: list[str] = await authenticator.get_corpus_admin_ids(
-        request, corpora_id
-    )
-    user_in_admins = user.get("id") in projects_admin_ids
-    if not user.get("superAdmin") and not user_in_admins:
-        raise PermissionError("User is not authorized to edit this corpus")
+    is_super_admin = user.get("superAdmin")
+    user_id = user.get("id")
+    if not is_super_admin:
+        projects_admin_ids: list[str] = await authenticator.get_corpus_admin_ids(
+            request, corpora_id
+        )
+        user_in_admins = user_id in projects_admin_ids
+        if not user_in_admins:
+            raise PermissionError("User is not authorized to edit this corpus")
 
     # When apiAccessToken is hidden (less then 20 chars), get the original one from the config
     swissubase = metadata.get("swissubase", {})
@@ -252,7 +255,17 @@ async def corpora_meta_update(request: web.Request) -> web.Response:
 
     jobs_payload = [str(job_meta.id), str(job_desc.id)]
     if "projects" in request_data:
-        pids = request_data["projects"] or ["00000000-0000-0000-0000-000000000000"]
+        pids = cast(
+            list, request_data["projects"] or ["00000000-0000-0000-0000-000000000000"]
+        )
+        for pid in pids:
+            if is_super_admin:
+                continue
+            project_admins = await authenticator.get_project_admins(request, pid)
+            if user_id not in project_admins:
+                raise PermissionError(
+                    "This user is not authorized to modify this collection"
+                )
         job_update_projects: Job = request.app["query_service"].update_projects(
             corpora_id, pids
         )

@@ -70,6 +70,9 @@ class Authentication:
         )
 
     ## Helpers
+    async def get_project_admins(self, request: web.Request, project_id) -> list:
+        return [USER["id"]]
+
     async def get_corpus_admin_ids(self, request: web.Request, corpus_id: int | str):
         return [USER["id"]]
 
