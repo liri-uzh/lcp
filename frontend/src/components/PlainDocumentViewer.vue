@@ -300,6 +300,7 @@ export default {
         corpus: this.corpus.meta.id,
         anchor: "stream",
         range: this.currentDocumentSelected.value.char_range,
+        limit: 500,
         language: this.language
       });
     },

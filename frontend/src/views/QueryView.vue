@@ -484,7 +484,7 @@
                              />
                           </span>
                           <ResultsTableView v-else-if="resultSet.type != 'plain'"
-                            :data="WSDataResults.getResultData(index + 1)" :languages="selectedLanguages"
+                            :data="WSDataResults.getResultData(index)" :languages="selectedLanguages"
                             :attributes="resultSet.attributes" :meta="WSDataMeta.bySegment" :resultsPerPage="resultsPerPage"
                             :total="resultSet.total || []"
                             :type="resultSet.type" :corpora="selectedCorpora" />
