@@ -492,6 +492,11 @@ export default {
           router.push(`/query/${corpus.meta.id}/${Utils.slugify(corpus.shortname)}`);
         }
       }
+      else if (!this.userData.user.displayName)
+        useNotificationStore().add({
+          type: "error",
+          text: "Authenticate to access this corpus",
+        });
     },
     calculateSum(array) {
       return array.reduce((accumulator, value) => {

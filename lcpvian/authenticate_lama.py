@@ -182,11 +182,12 @@ class Lama(Authentication):
         else:
             user_details_lama = await _lama_user_details(request.headers)
         # TODO: move this to LAMA directly
-        user_id = cast(dict, user_details_lama.get("user", {})).get("id", "")
+        user = cast(dict, user_details_lama.get("user", {}))
+        user_id = user.get("id", "")
         if user_id and SUPER_ADMINS and user_id in SUPER_ADMINS:
-            cast(dict, user_details_lama["user"])["superAdmin"] = True
+            user["superAdmin"] = True
         else:
-            cast(dict, user_details_lama["user"]).pop("superAdmin", "")
+            user.pop("superAdmin", "")
         return user_details_lama
 
     async def project_users(self, request: web.Request, project_id: str) -> JSONObject:

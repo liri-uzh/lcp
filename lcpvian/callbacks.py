@@ -48,7 +48,6 @@ from .utils import (
     _sharepublish_msg,
 )
 
-
 PUBSUB_LIMIT = int(os.getenv("PUBSUB_LIMIT", 31999999))
 MESSAGE_TTL = int(os.getenv("REDIS_WS_MESSSAGE_TTL", 5000))
 RESULTS_SWISSDOX = os.environ.get("RESULTS_SWISSDOX", "results/swissdox")
@@ -72,6 +71,12 @@ def _document(
     if not room:
         return
     msg_id = str(uuid4())
+    limit = cast(int, kwargs.get("limit", job_kwargs.get("limit", -1)))
+    if limit > 0:
+        if isinstance(result, dict):
+            result = {k: v for n, (k, v) in enumerate(result.items()) if n < limit}
+        elif isinstance(result, list):
+            result = [v for n, v in enumerate(result) if n < limit]
     jso = {
         "document": result,
         "action": action,

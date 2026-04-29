@@ -251,6 +251,7 @@ class QueryService:
         rang: list[int],
         corpus: str,
         language: str,
+        limit: int,
         user: str,
         room: str | None,
         queue: str = "internal",
@@ -311,6 +312,7 @@ class QueryService:
         kwargs = {
             "document": True,
             "corpus": corpus,
+            "limit": limit,
             "user": user,
             "room": room,
             "doc": "",
@@ -562,17 +564,13 @@ class QueryService:
         if query_type:
             params["query_type"] = query_type
 
-            query = (
-                """SELECT * FROM lcp_user.queries q
+            query = ("""SELECT * FROM lcp_user.queries q
                 WHERE q."user" = :user AND q.query_type = :query_type
-                ORDER BY created_at DESC LIMIT {limit};"""
-            ).format(limit=limit)
+                ORDER BY created_at DESC LIMIT {limit};""").format(limit=limit)
         else:
-            query = (
-                """SELECT * FROM lcp_user.queries q
+            query = ("""SELECT * FROM lcp_user.queries q
                 WHERE q."user" = :user
-                ORDER BY created_at DESC LIMIT {limit};"""
-            ).format(limit=limit)
+                ORDER BY created_at DESC LIMIT {limit};""").format(limit=limit)
 
         opts = {
             "user": user,
