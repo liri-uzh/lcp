@@ -340,11 +340,7 @@ async def post_query(request: web.Request) -> web.Response:
         request_data["room"] = room
     # Check permission
     authenticator = cast(Authentication, app["auth_class"](app))
-    user_data: dict = {}
-    if "X-API-Key" in request.headers and "X-API-Secret" in request.headers:
-        user_data = await authenticator.check_api_key(request)
-    else:
-        user_data = await authenticator.user_details(request)
+    user_data: dict = await authenticator.user_details(request)
     app_type = str(request_data.get("appType", "lcp"))
     app_type = (
         "lcp"
@@ -372,7 +368,7 @@ async def post_query(request: web.Request) -> web.Response:
         raise web.HTTPForbidden(text=msg)
 
     try:
-        (req, qi, job) = process_query(app, request_data)
+        req, qi, job = process_query(app, request_data)
     except Exception as e:
         print("Could not process query", e)
         traceback.print_exc()
