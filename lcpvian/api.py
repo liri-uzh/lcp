@@ -59,7 +59,7 @@ async def search(request: web.Request) -> web.Response:
 
     val = validate(query, kind, **kwargs)
     if val.get("status") != 200:
-        return web.HTTPForbidden(text=cast(dict, val).get("error", "Error"))
+        return web.HTTPBadRequest(text=cast(dict, val).get("error", "Error"))
 
     json_query = val["json"]
 
