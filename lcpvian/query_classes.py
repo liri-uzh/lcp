@@ -972,7 +972,7 @@ class QueryInfo:
                 for b, n in self.done_batches.items()
             ],
         )
-        (_, to_send, _, _, _) = _aggregate_results(
+        _, to_send, _, _, _ = _aggregate_results(
             res,
             stats_results,
             meta_json,

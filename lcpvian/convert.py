@@ -390,18 +390,9 @@ def _make_filters(
             name, comp = cast(tuple[str, dict[str, Any]], list(filt.items())[0])
             if name != "comparison":
                 raise ValueError("expected comparison")
-            if "entity" not in comp:
-                raise ValueError("expected function-free comparison")
-
-            entity = comp["entity"]
-            operator = comp["operator"]
-            value = next(
-                c[1] for c in comp.items() if c[0] not in ("entity", "operator")
-            )
-            if value.isnumeric():
-                value = int(value)
-            elif value.replace(".", "").isnumeric():
-                value = float(value)
+            entity = comp["left"]
+            operator = comp["comparator"]
+            value = comp["right"]
             made = cast(tuple[str, str, int | str | float], (entity, operator, value))
             fixed.append(made)
         out[idx] = fixed
@@ -435,6 +426,13 @@ def _apply_filter(result: list, name: str, op: str, num: int | str | float) -> l
     Apply a single filter to a group of results, returning only those that match
     """
     out: list = []
+    try:
+        num = int(num)
+    except:
+        try:
+            num = float(num)
+        except:
+            raise TypeError(f"The filter value {num} is not a valid numerical value")
     for r in result:
         total = r[-1]
         res = OPS[op](total, num)
