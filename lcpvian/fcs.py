@@ -11,6 +11,7 @@ from .cql_to_json import CqlToJson
 from .textsearch_to_json import textsearch_to_json
 from .query_classes import QueryInfo, Request
 from .query import process_query
+from .typed import JSONObject
 from .utils import _get_iso639_3, LCPApplication
 
 FCS_HOST = "catchphrase.linguistik.uzh.ch"
@@ -178,8 +179,7 @@ def _make_search_response(
             if in_hit:
                 prep_seg += "</hits:Hit>"
             ref = f"{PID_PREFIX}query/{cid}/{shortname}"
-            records.append(
-                f"""
+            records.append(f"""
     <{SRU[version]}:record>
       {_get_record_headers(version, 'searchRetrieve')}
       <{SRU[version]}:recordData>
@@ -194,8 +194,7 @@ def _make_search_response(
         </fcs:Resource>
       </{SRU[version]}:recordData>
       <{SRU[version]}:recordPosition>{startRecord+rp}</{SRU[version]}:recordPosition>
-    </{SRU[version]}:record>"""
-            )
+    </{SRU[version]}:record>""")
             if len(records) >= requested:
                 break
     if len(records) == 0:
@@ -213,6 +212,7 @@ def _make_search_response(
 
 async def search_retrieve(
     app: LCPApplication,
+    request: web.Request,
     operation: str = "searchRetrieve",
     version: str = "2.0",
     query: str = "",
@@ -222,6 +222,7 @@ async def search_retrieve(
     **extra_params,
 ) -> str:
     authenticator = cast(Authentication, app["auth_class"](app))
+    user = await authenticator.user_details(request)
 
     resources = [
         (_get_cid_from_pid(pid), _get_lg_from_pid(pid))
@@ -235,7 +236,7 @@ async def search_retrieve(
             "values", [conf.get("meta", {}).get("language", "en")]
         )
         if (not resources or ((cid, lg) in resources))
-        and authenticator.check_corpus_searchable(cid, {}, "lcp", get_all=False)
+        and authenticator.check_corpus_searchable(cid, user, "lcp", get_all=False)
         and conf.get("enabled")
     ]
     try:
@@ -262,7 +263,7 @@ async def search_retrieve(
                 if queryType == "cql"
                 else textsearch_to_json(query, conf)
             )
-            (req, qi, job) = process_query(
+            req, qi, job = process_query(
                 app,
                 {
                     "appType": "lcp",
@@ -296,7 +297,7 @@ async def search_retrieve(
     )
 
 
-async def explain(app: LCPApplication, **extra_params) -> str:
+async def explain(app: LCPApplication, request: web.Request, **extra_params) -> str:
     version = extra_params.get("version", "2.0")
     first_half: str = f"""<?xml version='1.0' encoding='utf-8'?>
 <{SRU[version]}:explainResponse xmlns:{SRU[version]}="{SRU_URL[version]}">
@@ -329,6 +330,7 @@ async def explain(app: LCPApplication, **extra_params) -> str:
     second_half = f"</{SRU[version]}:explainResponse>"
     if extra_params.get("x-fcs-endpoint-description") in (True, "true", "True", 1):
         authenticator = cast(Authentication, app["auth_class"](app))
+        user = await authenticator.user_details(request)
         resources_list: list[str] = [
             f"""      <ed:Resource pid="{PID_PREFIX}{cid}/{lg}">
           <ed:Title xml:lang="en">{conf['shortname']}{ ' ('+lg+')' if 'partitions' in conf else ''}</ed:Title>
@@ -340,7 +342,7 @@ async def explain(app: LCPApplication, **extra_params) -> str:
             for lg in conf.get("partitions", {}).get(
                 "values", [conf.get("meta", {}).get("language", "")]
             )
-            if authenticator.check_corpus_searchable(cid, {}, "lcp", get_all=False)
+            if authenticator.check_corpus_searchable(cid, user, "lcp", get_all=False)
             and conf.get("enabled")
         ]
         resources_str = "\n        ".join(resources_list)
@@ -383,13 +385,11 @@ async def get_fcs(request: web.Request) -> web.Response:
             <details>10</details>
             <message>Version {version} not supported.</message>
         </diagnostic>
-    </diagnostics>""".format(
-            version=version
-        )
+    </diagnostics>""".format(version=version)
     elif operation == "explain":
-        resp = await explain(app, **q)
+        resp = await explain(app, request, **q)
     elif operation == "searchRetrieve":
-        resp = await search_retrieve(app, **q)
+        resp = await search_retrieve(app, request, **q)
     else:
         # http://clarin.eu/fcs/diagnostic/10
         resp = """<diagnostics>
