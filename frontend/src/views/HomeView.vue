@@ -61,7 +61,13 @@
                 <FontAwesomeIcon
                   :icon="projectIcons(project)"
                   class="me-1 tooltips"
-                  :title="project.isPublic ? 'Public collection' : (project.isSemiPublic ? 'Log-in required' : 'Private collection')"
+                  :title="project.isPublic
+                    ? 'Public collection'
+                    : (
+                      project.isSemiPublic
+                      ? 'Log-in protected'
+                      : 'Private collection'
+                    )"
                 />
                 <strong>{{ project.title }}</strong>
                 <span class="api-badge"> ({{ project.corpora.length }})</span>
@@ -124,7 +130,7 @@
             </div>
             <div
               class="corpora-container"
-              :class="corporaContainer(filterCorpora(project.corpora))"
+              :class="corporaContainer(project)"
               @pointerdown="e=>dragScrollProjects(e,project.id)"
             >
               <div
@@ -381,7 +387,7 @@ export default {
       const projectEdge = projectNode.getBoundingClientRect()[where];
       return [...corporaNode.children].find(c=>(where == "left" ? -1 : 1) * (c.getBoundingClientRect()[where] - projectEdge) > 0);
     },
-    corporaContainer(corpora) {
+    corporaContainer(project) {
       let ret = [""];
       const projectsWithCorpora = this.projectsGroups.filter(p=>this.filterCorpora(p.corpora).length>0);
       if (projectsWithCorpora.length < 2) {
@@ -392,8 +398,11 @@ export default {
       }
       if (projectsWithCorpora.length > 2)
         ret = ["manyCorpora"];
+      const corpora = this.filterCorpora(project.corpora);
       if (corpora.length == 0)
         ret = ["noCorpus"];
+      if (!project.isPublic && !this.userData.user.displayName)
+        ret.push("no-query")
       return ret;
     },
     dragScrollProjects(event, projectId) {
@@ -422,16 +431,22 @@ export default {
     },
     projectIcons(project) {
       let icons = ['fas']
-      if (project.isPublic == true || project.isSemiPublic == true) {
-        icons.push('globe')
+      if (project.isPublic == true) {
+        icons.push('globe');
+      } 
+      else if (project.isSemiPublic == true) {
+        if (this.userData.user.displayName)
+          icons.push('globe');
+        else
+          icons.push('sign-in');
       }
       else if (project.isAdmin) {
-        icons.push('user-gear')
+        icons.push('user-gear');
       }
       else {
-        icons.push('users')
+        icons.push('users');
       }
-      return icons
+      return icons;
     },
     filterCorpora(corpora) {
       if (this.corporaFilter) {
@@ -760,19 +775,19 @@ export default {
       let sortedProjects = []
 
       // Show public projects first
-      Object.keys(projects).forEach((projectId) => {
-        if (projects[projectId].isPublic) {
-          sortedProjects.push(projects[projectId])
-          delete projects[projectId]
-        }
-      })
+      for (const projectId in projects) {
+        if (!projects[projectId].isPublic) continue;
+        sortedProjects.push(projects[projectId]);
+        delete projects[projectId];
+      }
+      sortedProjects.sort(x=>x.title.includes("Public") ? -1 : 1);
       // Show semi-public projects second
-      Object.keys(projects).forEach((projectId) => {
-        if (projects[projectId].isSemiPublic) {
-          sortedProjects.push(projects[projectId])
-          delete projects[projectId]
-        }
-      })
+      const sortedKeys = Object.keys(projects).sort(pid=>projects[pid].title.includes("Main") ? -1 : 1);
+      for (const projectId of sortedKeys) {
+        if (!projects[projectId].isSemiPublic) continue;
+        sortedProjects.push(projects[projectId]);
+        delete projects[projectId];
+      }
       // Rest
       sortedProjects.push(...Object.values(projects));
       return sortedProjects;
@@ -1023,6 +1038,9 @@ export default {
 }
 .corpora-container.noCorpus {
   height: 0px;
+}
+.no-query {
+  font-style: italic;
 }
 
 .corpus-block {

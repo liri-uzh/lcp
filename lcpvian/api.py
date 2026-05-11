@@ -14,11 +14,7 @@ from .validate import validate
 
 
 async def _get_user(request: web.Request, authenticator) -> dict:
-    user_data = {}
-    if "X-API-Key" in request.headers and "X-API-Secret" in request.headers:
-        user_data = await authenticator.check_api_key(request)
-    else:
-        user_data = await authenticator.user_details(request)
+    user_data = await authenticator.user_details(request)
     return user_data
 
 
@@ -63,7 +59,7 @@ async def search(request: web.Request) -> web.Response:
 
     val = validate(query, kind, **kwargs)
     if val.get("status") != 200:
-        return web.HTTPForbidden(text=cast(dict, val).get("error", "Error"))
+        return web.HTTPBadRequest(text=cast(dict, val).get("error", "Error"))
 
     json_query = val["json"]
 
@@ -79,7 +75,7 @@ async def search(request: web.Request) -> web.Response:
     }
     if "to_export" in request_data:
         data_to_process["to_export"] = request_data["to_export"]
-    (req, qi, job) = process_query(cast(LCPApplication, request.app), data_to_process)
+    req, qi, job = process_query(cast(LCPApplication, request.app), data_to_process)
 
     # No job means no query is being run: delete the request
     if job is None and qi.has_request(req):

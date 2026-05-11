@@ -765,7 +765,18 @@ WHERE {ent_stream_ref} && {cont_tok_stream_ref}
             right_str = next(x for x in cast(dict, right).values())
             if not left_str or not right_str:
                 continue
-            wheres.add(" ".join([left_str, comparator, right_str]))
+            if left_str == "frequency":
+                out.append(
+                    {
+                        "comparison": {
+                            "left": left_str,
+                            "comparator": comparator,
+                            "right": right_str,
+                        }
+                    }
+                )
+            else:
+                wheres.add(" ".join([left_str, comparator, right_str]))
             # wheres.add(f"{entity} {operator.replace('=','~') if type == 'regexComparison' else operator} '{text}'")
 
         if wheres:

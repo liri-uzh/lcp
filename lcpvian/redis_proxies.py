@@ -33,7 +33,7 @@ class RedisDict(dict):
 
     def __setattr__(self, name: str, value: Any):
         # Handle internal attributes normally
-        if name.startswith("_"):
+        if str(name).startswith("_"):
             super().__setattr__(name, value)
         else:
             existing: Any = self.__getattr__(name)

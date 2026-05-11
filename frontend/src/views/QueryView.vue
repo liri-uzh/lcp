@@ -421,7 +421,7 @@
                               {{ resultSet.name }}
                               <small>
                                 <span>{{
-                                  WSDataResults.getResultData(index + 1).length
+                                  WSDataResults.getResultData(index).length
                                 }}</span>
                               </small
                               >

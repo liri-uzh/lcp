@@ -176,11 +176,16 @@ class Lama(Authentication):
 
     async def user_details(self, request: web.Request) -> JSONObject:
         user_details_lama: JSONObject
+        data_user_details: dict = {**request.headers}
         if "X-API-Key" in request.headers and "X-API-Secret" in request.headers:
-            user_details_lama = await _lama_check_api_key(request.headers)
-            user_details_lama["user"] = user_details_lama.get("account", {})
-        else:
-            user_details_lama = await _lama_user_details(request.headers)
+            user_details_lama_api = await _lama_check_api_key(request.headers)
+            account: dict = cast(dict, user_details_lama_api.get("account", {}))
+            data_user_details = {
+                **request.headers,
+                "X-Mail": account.get("email") or "",
+                "X-Edu-Person-Unique-Id": "-",
+            }
+        user_details_lama = await _lama_user_details(data_user_details)
         # TODO: move this to LAMA directly
         user = cast(dict, user_details_lama.get("user", {}))
         user_id = user.get("id", "")
