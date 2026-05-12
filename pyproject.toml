@@ -69,6 +69,7 @@ dependencies = [
   "pycares~=4.4.0",
   "pydantic~=2.6.4",
   "pyjwt~=2.8.0",
+  "pytest~=9.0.3",
   "python-dotenv~=1.0.1",
   "pytz~=2024.1",
   "redis~=5.0.3",
