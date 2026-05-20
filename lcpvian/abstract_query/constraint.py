@@ -592,7 +592,7 @@ class Constraint:
             case_insensitive = "caseInsensitive" in cast(
                 dict, (right_info if labels_left else left_info)
             ).get("meta", {})
-            (parsed_op, mask) = self.join_labels_table(
+            parsed_op, mask = self.join_labels_table(
                 ref_ref,
                 ref_layer,
                 nbit,
@@ -611,7 +611,8 @@ class Constraint:
             if "string" in (left_type, right_type):
                 op = self.op.replace("=", "~")
                 meta = cast(dict, {**left_info, **right_info}.get("meta", {}))
-                if "caseInsensitive" in meta:
+                case_insensitive = "caseInsensitive" in meta
+                if case_insensitive:
                     op += "*"
                 left = f"({left})::text" if left_type == "string" else left
                 right = f"({right})::text" if right_type == "string" else right
@@ -624,7 +625,9 @@ class Constraint:
                         rgx_suffix.span()[0] if rgx_suffix else len(right_no_prefix) - 1
                     )
                     like_pattern = right_no_prefix[:idx_suffix]
-                    formed_condition = f"{left} {'NOT ' if op.startswith('!') else ''}LIKE '{like_pattern}%' AND {formed_condition}"
+                    like_operator = "ILIKE" if case_insensitive else "LIKE"
+                    like_condition = f"{left} {'NOT ' if op.startswith('!') else ''}{like_operator} '{like_pattern}%'"
+                    formed_condition = f"{like_condition} AND {formed_condition}"
             elif "label" in (left_type, right_type):
                 pass
 
