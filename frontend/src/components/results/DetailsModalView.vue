@@ -58,24 +58,19 @@
         </select>
         </div>
         <ol>
-          <li v-for="(prep, n) in sentencesInContext" :key="`prep-${n}`">
+          <li v-for="(prep, n) in getSentencesInContext(sentencesByStream)" :key="`prep-${n}`">
             <span
               style="margin-right: 0.5em"
               class="icon-info ms-2"
             >
               <FontAwesomeIcon :icon="['fas', 'circle-info']" />
-              <table class="popover-details-table mb-2">
-                <template v-for="(meta_attrs, meta_layer) in metaPerSentence(prep)" :key="`${prep._sid}-${meta_layer}`">
-                  <tr>
-                    <td>{{ meta_layer }}</td>
-                    <td>
-                      <div v-for="(attr_value, attr_name) in filterMetaAttrs(meta_attrs)" :key="`${prep._sid}-${meta_layer}-${attr_name}`">
-                        <strong>{{ attr_name }}:</strong> {{ attr_value }}
-                      </div>
-                    </td>
-                  </tr>
-                </template>
-              </table>
+              <!-- <AnnotationDisplay
+                :axisPositions="annotationAxisPositions"
+                :corpusConfig="corpusConfig"
+                :stickyPosition="stickyAnnotations"
+                :style="{ top: annotationDisplayPosition.y + 'px', left: annotationDisplayPosition.x + 'px' }"
+                @close="closeAnnotations"
+              /> -->
             </span>
             <PlainTokens
               :item="prep"
@@ -94,7 +89,7 @@
         aria-labelledby="nav-dependency-tab"
         v-if="hasDepRel"
       >
-        <DepRelView :data="data" :sentences="sentence" :columnHeaders="columnHeaders" />
+        <DepRelView :data="data" :sentence="sentence" :columnHeaders="columnHeaders" />
       </div>
       <div
         class="tab-pane fade"
@@ -103,7 +98,7 @@
         role="tabpanel"
         aria-labelledby="nav-details-tab"
       >
-        <DetailsTableView :data="data" :sentences="sentence" :columnHeaders="columnHeaders" :corpora="corpora" :isModal="true" />
+        <DetailsTableView :data="data" :sentence="sentence" :columnHeaders="columnHeaders" :corpora="corpora" :isModal="true" />
       </div>
     </div>
   </div>
@@ -141,8 +136,9 @@ import { mapState } from "pinia";
 import { useCorpusStore } from "@/stores/corpusStore";
 import { useUserStore } from "@/stores/userStore";
 import { useWsStore } from "@/stores/wsStore";
+import { useCorpusAnnotationsStore } from '@/stores/corpusAnnotations';
 
-
+// import AnnotationDisplay from '@/components/AnnotationDisplay.vue';
 import DepRelView from "@/components/DepRelView.vue";
 import DetailsTableView from "@/components/results/DetailsTableView.vue";
 import PlainTokens from "@/components/results/PlainToken.vue";
@@ -150,7 +146,7 @@ import Utils from "@/utils.js";
 
 export default {
   name: "ResultsDetailsModalView",
-  props: ["data", "sentences", "sentencesByStream", "meta", "metaByLayer", "languages", "corpora", "hideContext"],
+  props: ["data", "languages", "corpora", "hideContext"],
   data() {
     let lang = (this.languages||[])[0];
     let segment = this.corpora.corpus.segment;
@@ -173,54 +169,61 @@ export default {
       return Object.fromEntries(Object.entries(attrs).filter(kv=>!(kv[0] in {char_range:1,frame_range:1,xy_box:1,_id:1})));
     },
     plainTokens(sentence) {
-      const [startIndex, tokens, annotations, char_range] = sentence; // eslint-disable-line no-unused-vars
-      let tokenData = JSON.parse(JSON.stringify(this.data[1]));
-      tokenData = tokenData.map( tokenIdOrSet => tokenIdOrSet instanceof Array ? tokenIdOrSet : [tokenIdOrSet] );
+      const startIndex = sentence.offset;
+      const annotations = sentence.annotations;
+      const hits = this.data?.hits || [];
+      const tokens = sentence.content || [];
+      const tokenData = hits.map( tokenIdOrSet => tokenIdOrSet instanceof Array ? tokenIdOrSet : [tokenIdOrSet] );
       // Return a list of TokenToDisplay instances
-      return tokens.map( (token,idx) => new Utils.TokenToDisplay(token, startIndex + idx, tokenData, this.columnHeaders, annotations) );
+      return tokens.map( (token,idx) => new Utils.TokenToDisplay(
+        token,
+        startIndex + idx,
+        tokenData || [],
+        this.columnHeaders,
+        annotations
+      ));
     },
-    metaPerSentence(sentence) {
-      if (sentence._sid in this.meta) return this.meta[sentence._sid];
-      const ret = {};
-      for (let [layerName,layerAnnotations] of Object.entries(this.metaByLayer)) {
-        const annotation = layerAnnotations.byStream.searchValue(sentence._char_range);
-        if (!annotation || annotation.length==0) continue;
-        ret[layerName] = annotation[0];
+    // Pass stream as an argument to update as needed
+    getSentencesInContext(stream) {
+      let char_range = this.sentence.char_range;
+      char_range = [char_range[0] - 2, char_range[1] + 2];
+      const meta = this.segmentAnnotations[this.sentenceId] || {};
+      if (this.context != this.corpora.corpus.firstClass.segment && this.context in meta) {
+        const metaId = meta[this.context];
+        const metaAnnotations = this.annotationsByLayer[this.context].byId[metaId];
+        char_range = metaAnnotations.char_range || char_range;
       }
-      return ret;
-    }
+      const sentenceIds = stream.search(char_range).sort((x,y)=>x.low - y.low).map(x=>x.value);
+      return sentenceIds
+        .filter(sid=>sid in this.segments)
+        .filter( (sid,i,ar) => i+1>=ar.length || sid != ar[i+1] ) // filter duplicates
+        .map( sid => {
+          const sentence = this.segments[sid].data;
+          const ret = this.plainTokens(sentence);
+          ret._char_range = sentence.char_range;
+          ret._sid = sid;
+          return ret;
+        });
+    },
   },
   computed: {
     ...mapState(useUserStore, ["userData", "roomId", "debug"]),
     ...mapState(useWsStore, ["messages"]),
+    ...mapState(useCorpusAnnotationsStore, ["segments", "sentencesByStream", "segmentAnnotations", "annotationsByLayer"]),
     sentenceId() {
-      return this.data[0];
+      return this.data.sentenceId;
     },
+    // PreparedSegment
     sentence() {
-      return this.sentences[this.sentenceId] || [];
+      const sent = this.segments[this.sentenceId];
+      return sent?.data;
     },
     metaLayers() {
-      if (!(this.sentenceId in this.meta)) return [];
-      return Object.keys(this.meta[this.sentenceId]).map(k=>Object({
+      if (!(this.sentenceId in this.segmentAnnotations)) return [];
+      return Object.keys(this.segmentAnnotations[this.sentenceId]).map(k=>Object({
         text: k == this.corpora.corpus.firstClass.segment ? `${k} (-/+ 1)` : k,
         value: k
       }));
-    },
-    sentencesInContext() {
-      let char_range = this.sentence.at(-1);
-      char_range = [char_range[0] - 2, char_range[1] + 2];
-      if (this.context != this.corpora.corpus.firstClass.segment && this.context in (this.meta[this.sentenceId] || {}))
-        char_range = this.meta[this.sentenceId][this.context].char_range;
-      const sentenceIds = this.sentencesByStream.search(char_range).sort((x,y)=>x.low - y.low).map(x=>x.value);
-      return sentenceIds
-        .filter(sid=>sid in this.sentences)
-        .filter( (sid,i,ar) => i+1>=ar.length || sid != ar[i+1] ) // filter duplicates
-        .map( sid => {
-          const ret = this.plainTokens(this.sentences[sid]);
-          ret._char_range = this.sentences[sid].at(-1);
-          ret._sid = sid;
-          return ret;
-        });
     },
   },
   watch: {
@@ -228,8 +231,12 @@ export default {
       if (this.context == this.corpora.corpus.firstClass.segment) return;
       if (this.sentenceId in this.annotationsFetched && this.context in this.annotationsFetched[this.sentenceId])
         return;
-      if (!(this.context in (this.meta[this.sentenceId] || {}))) return;
-      const char_range = this.meta[this.sentenceId][this.context].char_range;
+      const meta = this.segmentAnnotations[this.sentenceId] || {};
+      if (!(this.context in meta)) return;
+      const contextId = meta[this.context][0];
+      if (!(this.context in this.annotationsByLayer)) return;
+      const contextAnnotations = this.annotationsByLayer[this.context].byId[contextId];
+      const char_range = contextAnnotations.char_range;
       this.annotationsFetched[this.sentenceId] = this.annotationsFetched[this.sentenceId] || {};
       this.annotationsFetched[this.sentenceId][this.context] = 1;
       const corpus = this.corpora.corpus.meta.id;
@@ -242,9 +249,10 @@ export default {
         language: (this.languages || [""])[0]
       };
       useCorpusStore().fetchAnnotations(data);
-    }
+    },
   },
   components: {
+    // AnnotationDisplay,
     DepRelView,
     DetailsTableView,
     PlainTokens

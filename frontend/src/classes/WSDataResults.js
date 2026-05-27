@@ -153,4 +153,15 @@ class WSDataResults {
   }
 }
 
+class DataLine {
+  constructor(line, n) {
+    const copyLine = [...line];
+    this.id = n;
+    this.sentenceId = copyLine.shift();
+    this.char_range = copyLine.pop();
+    this.hits = copyLine;
+  }
+}
+
+export { DataLine };
 export default WSDataResults;

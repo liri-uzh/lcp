@@ -254,7 +254,6 @@
         :mediaDuration="currentMediaDuration"
         :playerIsPlaying="playerIsPlaying"
         :playerCurrentTime="playerCurrentTime"
-        :hoveredResult="hoveredResult"
         :corpusId="selectedCorpora.value"
         :docId="currentDocument[0]"
         @updateTime="_playerSetTime"
@@ -352,7 +351,7 @@ class Track {
 const urlRegex = /(https?:\/\/(www\.)?[-a-zA-Z0-9@:%._+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_+.~#?&//=]*))/g;
 
 export default {
-  props: ["meta", "selectedCorpora", "documentIds", "selectedMediaForPlay", "hoveredResult", "dataType"],
+  props: ["meta", "selectedCorpora", "documentIds", "selectedMediaForPlay", "dataType"],
   emits: ["switchToQueryTab"],
   data() {
     return {

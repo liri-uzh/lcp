@@ -384,7 +384,6 @@ export default {
       if (!sp) return window.requestAnimationFrame(()=>getSuperParentWidth(r));
       const w = sp.getBoundingClientRect().width;
       if (w == 0) return window.requestAnimationFrame(()=>getSuperParentWidth(r));
-      console.log("superParent", sp, "width", w);
       r(w);
     }
     this.width = await new Promise(r=>getSuperParentWidth(r));
