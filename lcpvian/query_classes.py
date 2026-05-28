@@ -280,6 +280,17 @@ class Request:
         ret["projected_results"] = int(
             100 * (ret["total_results_so_far"] / (ret["percentage_words_done"] or 100))
         )
+        batch_hash, _ = qi.query_batches.get(batch_name) or [None, None]
+        if (
+            batch_hash
+            and len(qi.query_batches) > 1
+            and all(bh == batch_hash for (bh, _) in qi.query_batches.values())
+        ):
+            # queries are not batch-dependent (same hash for each batch)
+            ret["percentage_done"] = 100.0
+            ret["percentage_words_done"] = 100.0
+            ret["batches_done"] = len(qi.query_batches)
+            ret["status"] = "finished"
         return ret
 
     async def send_segments(
@@ -361,6 +372,19 @@ class Request:
         print(f"[{self.id}] send query {batch_name}")
         batch_hash, _ = qi.query_batches[batch_name]
         if batch_hash in self.sent_hashes:
+            if len(qi.query_batches) > len(self.sent_hashes) and all(
+                bh == batch_hash for (bh, _) in qi.query_batches.values()
+            ):
+                # running same query on each batch -> send confirmation message
+                payload = self.get_payload(qi, batch_name)
+                payload.update({"action": "query_result", "result": {}})
+                await push_msg(
+                    app["websockets"],
+                    self.room,
+                    cast(JSONObject, payload),
+                    skip=None,
+                    just=(self.room, self.user),
+                )
             # If some lines were already sent for this job
             return
         batch_res: list = qi.get_from_cache(batch_hash)
