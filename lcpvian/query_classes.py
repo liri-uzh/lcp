@@ -569,7 +569,7 @@ class QueryInfo:
         **kwargs,
     ) -> Job:
         """
-        Adds a job to the background queue
+        Adds a job to the query or background queue, as appropriate
         Can be called either from the main app or from a worker
         """
         queue: str = (
@@ -745,6 +745,22 @@ class QueryInfo:
             self.qi["done_batches"][k] = v
 
     @property
+    def scheduled_batches(self) -> dict:
+        """
+        Keep track of batches for which queries have been scheduled (or run)
+        """
+        if "scheduled_batches" not in self.qi:
+            self.qi["scheduled_batches"] = {}
+        return cast(dict, self.qi["scheduled_batches"])
+
+    @scheduled_batches.setter
+    def scheduled_batches(self, value: dict):
+        if "scheduled_batches" not in self.qi:
+            self.qi["scheduled_batches"] = {}
+        for k, v in value.items():
+            self.qi["scheduled_batches"][k] = v
+
+    @property
     def query_batches(self) -> dict:
         """
         Map batch names with (batch_hash, n_kwic_lines)
@@ -855,14 +871,14 @@ class QueryInfo:
         If no batch is predicted to have enough results, pick the smallest
         available (so more results go to the frontend faster).
         """
-        if not previous_batch or not len(self.done_batches):
+        if not previous_batch or not len(self.scheduled_batches):
             return self.all_batches[0]
-        list_done_batches = [[b, n] for b, n in self.done_batches.items()]
+        list_scheduled_batches = [[b, n] for b, n in self.scheduled_batches.items()]
         next_batch: list = next(
             (
                 b
-                for n, b in enumerate(list_done_batches)
-                if n > 0 and list_done_batches[n - 1][0] == previous_batch
+                for n, b in enumerate(list_scheduled_batches)
+                if n > 0 and list_scheduled_batches[n - 1][0] == previous_batch
             ),
             [],
         )
@@ -870,16 +886,17 @@ class QueryInfo:
             return next_batch
 
         buffer = 0.1  # set to zero for picking smaller batches
-        while len(self.done_batches) < len(self.all_batches):
+        while len(self.scheduled_batches) < len(self.all_batches):
             so_far = self.total_results_so_far
             # set here ensures we don't double count, even though it should not happen
             total_words_processed_so_far = (
-                sum([int(x) for x in self.done_batches.values()]) or 1
+                sum([int(x) for x in self.scheduled_batches.values()]) or 1
             )
             proportion_that_matches = so_far / total_words_processed_so_far
             first_not_done: list[str | int] | None = None
             for batch in self.all_batches:
-                if batch[0] in self.done_batches:
+                batch_name = batch[0]
+                if batch_name in self.scheduled_batches:
                     continue
                 if self.full:
                     return batch

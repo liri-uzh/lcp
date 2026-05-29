@@ -255,6 +255,8 @@ def schedule_next_batch(
     if not next_batch:
         qi.running_batch = ""
         return None
+    batch_name, _ = next_batch
+    qi.scheduled_batches[batch_name] = 1
     return qi.enqueue(do_batch, qhash, list(next_batch), callback=batch_callback)
 
 
@@ -303,7 +305,7 @@ def process_query(
     qi = QueryInfo(
         shash,
         app["redis"],
-        json.loads(json_query_str),  # discard any modifications made to json_query
+        json.loads(json_query_str),  # roll back any modifications made to json_query
         meta_json,
         post_processes,
         request.languages,
@@ -322,6 +324,11 @@ def process_query(
     if should_run:
         qi.add_request(request)
         job = schedule_next_batch(shash, connection=app["redis"])
+        # try running all batches in parallel if this is a full query
+        for _ in range(len(all_batches) - len(qi.scheduled_batches)):
+            if not qi.full:
+                continue
+            schedule_next_batch(shash, connection=app["redis"])
     return (request, qi, job)
 
 
