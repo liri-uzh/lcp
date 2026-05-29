@@ -1056,7 +1056,9 @@ def _get_constraints(
 
     references: dict[str, list[str]] = {}
 
-    is_relational = conf.config["layer"][layer].get("layerType") == "relation"
+    is_relational = (
+        conf.config["layer"][layer].get("layerType") == "relation" if layer else False
+    )
 
     part_ofs: list[str] = []
     for part in part_of or []:

@@ -1,0 +1,16 @@
+# test top level constraints
+
+Document d
+
+Segment@d s
+
+Token@s t1
+
+d.classCode = /^S/
+t1.form = "hello"
+
+kwic => plain
+    context
+        s
+    entities
+        t1
