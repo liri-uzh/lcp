@@ -1,0 +1,15 @@
+# test special characters in sequences
+
+Segment s
+
+sequence@s seq
+    Token t1
+        OR
+            form = "?!"
+            lemma = "?!"
+
+kwic => plain
+    context
+        s
+    entities
+        seq
