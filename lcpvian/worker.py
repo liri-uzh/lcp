@@ -159,6 +159,11 @@ class SQLJob(Job):
 class MyWorker(Worker):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         kwargs["job_class"] = SQLJob
+        print("starting a worker", args, kwargs)
+        if "query" in args or "background" in args:
+            kwargs["concurrency"] = (
+                4  # full queries need to be able to run batches in parallel
+            )
         super().__init__(*args, **kwargs)
 
 
