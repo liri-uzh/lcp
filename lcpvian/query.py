@@ -41,8 +41,9 @@ def batch_callback(job: Job, connection: RedisConnection, batch_name: str):
     qhash: str = job.args[0]
     qi: QueryInfo = QueryInfo(qhash, connection)
 
-    # do next batch (if needed)
-    schedule_next_batch(qhash, connection, batch_name)
+    # do next batch if needed (all already scheduled if full)
+    if not qi.full:
+        schedule_next_batch(qhash, connection, batch_name)
 
     # run needed segment+meta queries
     lines_before, lines_now = qi.get_lines_batch(batch_name)
@@ -213,6 +214,7 @@ async def do_batch(qhash: str, batch: list):
         return
     # Now this is the running batch
     qi.running_batch = batch_name
+    qi.scheduled_batches[batch_name] = 1
     try:
         assert batch_name in qi.query_batches
         batch_hash, _ = qi.query_batches[batch_name]
@@ -255,8 +257,6 @@ def schedule_next_batch(
     if not next_batch:
         qi.running_batch = ""
         return None
-    batch_name, _ = next_batch
-    qi.scheduled_batches[batch_name] = 1
     return qi.enqueue(do_batch, qhash, list(next_batch), callback=batch_callback)
 
 
