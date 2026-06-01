@@ -509,7 +509,7 @@
               :is="modalComponent"
               v-bind="modalProps"
               :key="modalIndexKey"
-              @updated="handleModalUpdated"
+              @update="handleModalUpdate"
               @save="handleModalSave"
               @delete="handleModalDelete"
             />
@@ -1042,9 +1042,6 @@ export default {
             nameExport: this.nameExport,
             nExport: this.nExport,
             isSwissdox: this.isSwissdox,
-            '@update:exportTab': (val) => { this.exportTab = val; },
-            '@update:nameExport': (val) => { this.nameExport = val; },
-            '@update:nExport': (val) => { this.nExport = val; }
           };
           this.modalSizeClass = 'modal-xl';
           this.showModalFooter = true;
@@ -1112,10 +1109,27 @@ export default {
       });
     },
 
-    handleModalUpdated(valid, data) {
-      this.allowSave = valid;
-      if (this.currentModal === 'saveQuery') {
-        this.queryName = data.queryName;
+    handleModalUpdate(...args) {
+      if (this.currentModal == 'saveQuery') {
+        const [valid, data] = args;
+        this.allowSave = valid;
+        if (this.currentModal === 'saveQuery') {
+          this.queryName = data.queryName;
+        }
+      }
+      else if (this.currentModal == 'export') {
+        const [event, val] = args;
+        switch (event) {
+          case 'exportTab':
+            this.exportTab = val;
+            break;
+          case 'nameExport':
+            this.nameExport = val;
+            break;
+          case 'nExport':
+            this.nExport = val;
+            break;
+        }
       }
     },
 

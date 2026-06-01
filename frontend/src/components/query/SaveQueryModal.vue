@@ -9,7 +9,7 @@
 export default {
   name: "SaveQueryModal",
   props: ["initialQueryName"],
-  emits: ["updated"],
+  emits: ["update"],
   data() {
     return {
       queryName: this.initialQueryName || ""
@@ -17,7 +17,7 @@ export default {
   },
   watch: {
     queryName(newVal) {
-      this.$emit('updated', newVal.length > 0, { queryName: newVal });
+      this.$emit('update', newVal.length > 0, { queryName: newVal });
     }
   }
 };
