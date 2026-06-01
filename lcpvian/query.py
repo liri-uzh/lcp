@@ -290,10 +290,11 @@ def process_query(
     json_query_str = json.dumps(json_query)
     lang = cast(str | None, request.languages[0] if request.languages else None)
     all_batches = _get_query_batches(config, request.languages)
+    first_batch = all_batches[0]
     sql_query, meta_json, post_processes = json_to_sql(
         cast(QueryJSON, json_query),
         schema=config.get("schema_path", ""),
-        batch=cast(str, all_batches[0][0]),
+        batch=cast(str, first_batch[0]),  # batch_name
         config=config,
         lang=lang,
     )
@@ -324,11 +325,21 @@ def process_query(
     if should_run:
         qi.add_request(request)
         job = schedule_next_batch(shash, connection=app["redis"])
-        # try running all batches in parallel if this is a full query
-        for _ in range(len(all_batches) - len(qi.scheduled_batches)):
-            if not qi.full:
-                continue
-            schedule_next_batch(shash, connection=app["redis"])
+        if job and qi.full:
+            # Schedule all batches in parallel if this is a full query
+            scheduled_batch, _ = job.args[1]
+            print(
+                f"Full query: batch {scheduled_batch} already scheduled -- adding the remaining ones now"
+            )
+            for remaining_batch in all_batches:
+                batch_name, _ = remaining_batch
+                if batch_name == scheduled_batch:
+                    continue
+                job = qi.enqueue(
+                    do_batch, shash, list(remaining_batch), callback=batch_callback
+                )
+                newly_scheduled_batch, _ = job.args[1] if job else ["", None]
+                print(f"Full query: scheduled {newly_scheduled_batch}")
     return (request, qi, job)
 
 

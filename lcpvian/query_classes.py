@@ -871,14 +871,17 @@ class QueryInfo:
         If no batch is predicted to have enough results, pick the smallest
         available (so more results go to the frontend faster).
         """
-        if not previous_batch or not len(self.scheduled_batches):
-            return self.all_batches[0]
-        list_scheduled_batches = [[b, n] for b, n in self.scheduled_batches.items()]
+        first_batch = self.all_batches[0]
+        if not previous_batch or len(self.done_batches) == 0:
+            return first_batch
+
+        # return the batch after 'previous' in done_batches if it's in there
+        list_done_batches = [[b, n] for b, n in self.done_batches.items()]
         next_batch: list = next(
             (
                 b
-                for n, b in enumerate(list_scheduled_batches)
-                if n > 0 and list_scheduled_batches[n - 1][0] == previous_batch
+                for n, b in enumerate(list_done_batches)
+                if n > 0 and list_done_batches[n - 1][0] == previous_batch
             ),
             [],
         )
@@ -886,17 +889,17 @@ class QueryInfo:
             return next_batch
 
         buffer = 0.1  # set to zero for picking smaller batches
-        while len(self.scheduled_batches) < len(self.all_batches):
+        while len(self.done_batches) < len(self.all_batches):
             so_far = self.total_results_so_far
             # set here ensures we don't double count, even though it should not happen
             total_words_processed_so_far = (
-                sum([int(x) for x in self.scheduled_batches.values()]) or 1
+                sum([int(x) for x in self.done_batches.values()]) or 1
             )
             proportion_that_matches = so_far / total_words_processed_so_far
             first_not_done: list[str | int] | None = None
             for batch in self.all_batches:
                 batch_name = batch[0]
-                if batch_name in self.scheduled_batches:
+                if batch_name in self.done_batches:
                     continue
                 if self.full:
                     return batch
