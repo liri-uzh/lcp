@@ -30,7 +30,10 @@ export const useCorpusAnnotationsStore = defineStore('corpusAnnotations', {
       // Minimal operational state
       loading: false,
       error: null,
-      lastUpdated: null
+      lastUpdated: null,
+
+      // Event handler
+      events: new EventTarget()
     };
   },
 
@@ -51,8 +54,10 @@ export const useCorpusAnnotationsStore = defineStore('corpusAnnotations', {
           this.processAnnotations(backendData[-2])
         }
 
-        this.lastUpdated = new Date()
-        this.loading = false
+        this.lastUpdated = new Date();
+        this.loading = false;
+
+        this.events.dispatchEvent(new Event("data"));
 
         return true
       } catch (error) {

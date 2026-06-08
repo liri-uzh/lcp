@@ -23,7 +23,7 @@
           </div>
           
           <span
-            v-if="!hideCopy"
+            v-if="!hideCopy && false"
             :title="$t('common-copy-clipboard')"
             @click="copyToClip(segments)"
             class="action-button"
@@ -49,7 +49,7 @@
           <span :title="$t('common-play-video')" @click="playVideo(segments, document, dataLine)" class="action-button" v-if="showVideo(document)">
             <FontAwesomeIcon :icon="['fas', 'play']" />
           </span>
-          
+
           <div
             v-for="(segment, sidIndex) in segments"
             :key="`tr-segments-${segmentsIndex}-${sidIndex}`"
@@ -57,9 +57,11 @@
           >
             <span
               style="margin-right: 0.5em"
-              @mousemove="showAnnotations(segment.id, $event)"
-              @mouseleave="!stickyAnnotations.x && !stickyAnnotations.y && closeAnnotations()"
-              @click="setStickyAnnotations($event)"
+              @mousemove="!details && showAnnotations(segment.id, $event)"
+              @mouseleave="!details && !stickyAnnotations.x && !stickyAnnotations.y && closeAnnotations()"
+              @click="details ? showModal(getDataLine(segment.id, segment.char_range)) : setStickyAnnotations($event)"
+              :data-bs-toggle="details ? 'modal' : ''"
+              :data-bs-target="details ? `#detailsModal${randInt}` : ''"
               class="icon-info ms-2"
             >
               <FontAwesomeIcon :icon="['fas', 'circle-info']" />
@@ -86,7 +88,7 @@
         
         <td class="buttons">
           <button
-            v-if="!hideDetails"
+            v-if="!details"
             type="button"
             class="btn btn-secondary btn-sm"
             data-bs-toggle="modal"
@@ -170,6 +172,7 @@
               :corpora="corpora"
               :languages="languages"
               :key="modalData.id"
+              :hideContext="hideContext"
               v-if="modalVisible"
             />
           </div>
@@ -222,16 +225,17 @@ export default {
     'corpora',
     'resultsPerPage',
     'loading',
-    "hideDetails",
+    "details",
     "hideCopy",
-    "hideImage"
+    "hideImage",
+    "hideContext"
   ],
   data() {
 
     const corpusAnnotations = useCorpusAnnotationsStore();
 
     let allowedMetaColumns = {}
-    const corpusConfig = this.corpora?.corpus || {};
+    const corpusConfig = this.corpora?.corpus || corpusAnnotations.corpusConfig;
 
     Object.keys(corpusConfig.layer || {}).forEach(layer => {
       if (corpusConfig.layer[layer].attributes) {
@@ -273,7 +277,7 @@ export default {
   },
   computed: {
     corpusConfig() {
-      return this.corpora?.corpus || {};
+      return this.corpora?.corpus || this.store.corpusConfig;
     },
     
     segmentWindow() {
@@ -358,11 +362,7 @@ export default {
         const segments = this.store.getSegmentsByCharRange(range);
         if (!segments || segments.length == 0) continue;
         if (!dataLine)
-          dataLine = new DataLine(
-            [segments[0].id, [], range] // no hits
-            ,
-            segments.length
-          );
+          dataLine = this.getDataLine(segments[0].id, range, segments.length);
         // no hits: create a dataLine with segment ID and char_range
         prepared.push([segments, doc, dataLine]);
       }
@@ -370,6 +370,14 @@ export default {
     }
   },
   methods: {
+    getDataLine(segmentId, range, n) {
+      return new DataLine(
+        [segmentId, [], range] // no hits
+        ,
+        n
+      );
+    },
+
     getSegmentFrameRangesByIds(ids) {
       const segAnns = this.store.getSegmentAnnotations();
       if (!segAnns || !segAnns.byId) return [];
@@ -617,7 +625,7 @@ export default {
 
       return tokens;
     }
-  }
+  },
 };
 </script>
 

@@ -1,10 +1,10 @@
 <template>
-  <div id="dep-rel-view">
+  <div :id="`dep-rel-view-${randInt}`" class="dep-rel-view">
   </div>
 </template>
 
 <style scoped>
-  #dep-rel-view {
+  .dep-rel-view {
     padding-top: 20px;
     height: 60vh;
   }
@@ -135,6 +135,7 @@ export default {
       tokens: tokens,
       links: links,
       tokenSpace: 25,
+      randInt: Math.floor(Math.random() * 1000)
     }
   },
   methods: {
@@ -284,8 +285,8 @@ export default {
       width = totalWidth - margin.left - margin.right,
       height = 110 + maxLevel*15 - margin.top - margin.bottom;
 
-    d3.select("div#dep-rel-view").html('')
-    const svg = d3.select("div#dep-rel-view").append("svg")
+    d3.select(`div#dep-rel-view-${this.randInt}`).html('')
+    const svg = d3.select(`div#dep-rel-view-${this.randInt}`).append("svg")
       .attr("width", width + margin.right + margin.left)
       .attr("height", height + margin.top + margin.bottom)
       .attr("viewBox", [0, 0, width, height])

@@ -1,15 +1,15 @@
 <template>
-  <div id="result-details-view">
+  <div :id="`result-details-view-${randInt}`">
     <nav>
-      <div class="nav nav-tabs" id="nav-tab" role="tablist">
+      <div class="nav nav-tabs" :id="`nav-tab-${randInt}`" role="tablist">
         <button
           class="nav-link active"
-          id="nav-context-tab"
+          :id="`nav-context-tab-${randInt}`"
           data-bs-toggle="tab"
-          data-bs-target="#nav-context"
+          :data-bs-target="`#nav-context-${randInt}`"
           type="button"
           role="tab"
-          aria-controls="nav-context"
+          :aria-controls="`nav-context-${randInt}`"
           aria-selected="true"
           v-if="showContext"
         >
@@ -17,12 +17,12 @@
         </button>
         <button
           class="nav-link"
-          id="nav-dependency-tab"
+          :id="`nav-dependency-tab-${randInt}`"
           data-bs-toggle="tab"
-          data-bs-target="#nav-dependency"
+          :data-bs-target="`#nav-dependency-${randInt}`"
           type="button"
           role="tab"
-          aria-controls="nav-dependency"
+          :aria-controls="`nav-dependency-${randInt}`"
           aria-selected="true"
           v-if="hasDepRel"
         >
@@ -31,24 +31,36 @@
         <button
           class="nav-link"
           :class="hideContext ? ['active'] : []"
-          id="nav-details-tab"
+          :id="`nav-details-tab-${randInt}`"
           data-bs-toggle="tab"
-          data-bs-target="#nav-details"
+          :data-bs-target="`#nav-details-${randInt}`"
           type="button"
           role="tab"
-          aria-controls="nav-details"
+          :aria-controls="`nav-details-${randInt}`"
           aria-selected="false"
         >
           {{ $t('modal-results-tab-tabular') }}
         </button>
+        <button
+          class="nav-link"
+          :id="`nav-meta-tab-${randInt}`"
+          data-bs-toggle="tab"
+          :data-bs-target="`#nav-meta-${randInt}`"
+          type="button"
+          role="tab"
+          :aria-controls="`nav-meta-${randInt}`"
+          aria-selected="false"
+        >
+          Metadata
+        </button>
       </div>
     </nav>
-    <div class="tab-content" id="nav-tabContent">
+    <div class="tab-content" :id="`nav-tabContent-${randInt}`">
       <div
         class="tab-pane fade show active"
-        id="nav-context"
+        :id="`nav-context-${randInt}`"
         role="tabpanel"
-        aria-labelledby="nav-dependency-context"
+        :aria-labelledby="`nav-context-tab-${randInt}`"
         v-if="showContext"
       >
         <div>
@@ -64,12 +76,6 @@
               class="icon-info ms-2"
             >
               <FontAwesomeIcon :icon="['fas', 'circle-info']" />
-              <!-- <AnnotationDisplay
-                :axisPositions="annotationAxisPositions"
-                :stickyPosition="stickyAnnotations"
-                :style="{ top: annotationDisplayPosition.y + 'px', left: annotationDisplayPosition.x + 'px' }"
-                @close="closeAnnotations"
-              /> -->
             </span>
             <PlainTokens
               :item="prep"
@@ -83,9 +89,9 @@
       </div>
       <div
         class="tab-pane fade"
-        id="nav-dependency"
+        :id="`nav-dependency-${randInt}`"
         role="tabpanel"
-        aria-labelledby="nav-dependency-tab"
+        :aria-labelledby="`nav-dependency-tab-${randInt}`"
         v-if="hasDepRel"
       >
         <DepRelView :data="data" :sentence="sentence" :columnHeaders="columnHeaders" />
@@ -93,12 +99,24 @@
       <div
         class="tab-pane fade"
         :class="hideContext ? ['show','active'] : []"
-        id="nav-details"
+        :id="`nav-details-${randInt}`"
         role="tabpanel"
-        aria-labelledby="nav-details-tab"
+        :aria-labelledby="`nav-details-tab-${randInt}`"
       >
         <DetailsTableView :data="data" :sentence="sentence" :columnHeaders="columnHeaders" :corpora="corpora" :isModal="true" />
       </div>
+    </div>
+    <div
+      class="tab-pane fade"
+      :id="`nav-meta-${randInt}`"
+      role="tabpanel"
+      :aria-labelledby="`nav-meta-tab-${randInt}`"
+      v-if="sentence?.char_range"
+    >
+      <AnnotationDisplay
+        :axisPositions="[{axisType: 'stream', position: sentence.char_range}]"
+        :stickyPosition="{ x: 0, y: 0 }"
+      />
     </div>
   </div>
 </template>
@@ -137,7 +155,7 @@ import { useUserStore } from "@/stores/userStore";
 import { useWsStore } from "@/stores/wsStore";
 import { useCorpusAnnotationsStore } from '@/stores/corpusAnnotations';
 
-// import AnnotationDisplay from '@/components/AnnotationDisplay.vue';
+import AnnotationDisplay from '@/components/AnnotationDisplay.vue';
 import DepRelView from "@/components/DepRelView.vue";
 import DetailsTableView from "@/components/results/DetailsTableView.vue";
 import PlainTokens from "@/components/results/PlainToken.vue";
@@ -147,7 +165,9 @@ export default {
   name: "ResultsDetailsModalView",
   props: ["data", "languages", "corpora", "hideContext"],
   data() {
-    let lang = (this.languages||[])[0];
+    let lang = this.languages || "";
+    if (lang instanceof Array)
+      lang = lang.length > 0 ? lang[0] : "";
     let segment = this.corpora.corpus.segment;
     let mapping = this.corpora.corpus.mapping.layer[segment];
     if (lang && "partitions" in mapping) {
@@ -160,7 +180,8 @@ export default {
       hasDepRel: deprel,
       columnHeaders: columnHeaders,
       annotationsFetched: {},
-      showContext: this.hideContext ? false : true
+      showContext: this.hideContext ? false : true,
+      randInt: Math.floor(Math.random() * 1000)
     }
   },
   methods: {
@@ -251,7 +272,7 @@ export default {
     },
   },
   components: {
-    // AnnotationDisplay,
+    AnnotationDisplay,
     DepRelView,
     DetailsTableView,
     PlainTokens

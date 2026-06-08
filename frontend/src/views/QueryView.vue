@@ -261,12 +261,8 @@
                   ref="imageViewer"
                 />
                 <PlainDocumentViewer
-                  v-else-if="false"
+                  v-else-if="selectedCorpora.corpus"
                   :corpus="selectedCorpora.corpus"
-                  :meta="WSDataMeta"
-                  :metaByLayer="WSDataMeta.layer"
-                  :sentences="WSDataSentences"
-                  :sentencesByStream="WSDataSentencesByStream"
                   :documentIds="documentIds"
                   :minimize="queryStatus"
                   :language="selectedLanguages ? selectedLanguages[0] : ''"

@@ -120,7 +120,7 @@
         @playMedia="()=>null"
         :resultsPerPage="200"
         :loading="false"
-        :hideDetails="true"
+        :details="false"
         :hideCopy="true"
         :hideImage="true"
       />
