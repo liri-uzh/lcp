@@ -739,6 +739,10 @@ export default {
       this.zoomValue = DEFAULT_ZOOM_LEVEL;
 
       this.updateCurrentPosition(this.currentTime > 0 ? this.currentTime : this.defaultCurrentTime);
+
+      // update selection in case it's needed
+      if (this.data._selection && this.data._selection instanceof Array && this.data._selection.length == 2)
+        this.select(...this.data._selection);
     },
     clipMedia() {
       const [x1,x2] = this.selectionStart < this.selectionEnd ? [this.selectionStart,this.selectionEnd] : [this.selectionEnd, this.selectionStart];

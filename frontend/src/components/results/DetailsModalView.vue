@@ -66,7 +66,6 @@
               <FontAwesomeIcon :icon="['fas', 'circle-info']" />
               <!-- <AnnotationDisplay
                 :axisPositions="annotationAxisPositions"
-                :corpusConfig="corpusConfig"
                 :stickyPosition="stickyAnnotations"
                 :style="{ top: annotationDisplayPosition.y + 'px', left: annotationDisplayPosition.x + 'px' }"
                 @close="closeAnnotations"

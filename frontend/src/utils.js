@@ -200,6 +200,20 @@ const Utils = {
           )
         );
     },
+    contains(parentCandidate, childCandidate, conf) {
+      const parentConf = conf[parentCandidate];
+      if (!parentConf) return false;
+      const contains = parentConf.contains;
+      if (!contains) return false;
+      let containsString = contains;
+      if (contains instanceof Array) {
+        if (contains.length == 0) return false;
+        containsString = contains[0];
+      }
+      if (!containsString) return false;
+      if (containsString == childCandidate) return true;
+      return Utils.contains(containsString, childCandidate, conf);
+    },
     isAnchored(layer, conf, anchor) {
       if (!(layer in conf))
         return false;

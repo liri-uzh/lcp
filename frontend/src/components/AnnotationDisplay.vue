@@ -9,11 +9,11 @@
     </span>
 
     <table class="popover-table">
-      <template v-for="(annotations, layer) in filteredAnnotations" :key="`layer-${layer}`">
+      <template v-for="([layer, annotations]) in sortedFilteredAnnotations" :key="`layer-${layer}`">
         <tr v-if="shouldShowLayer(layer)">
           <td @click="toggleLayerFold(layer)">
             <span class="layer-header">
-              <span class="fold-indicator">{{ isLayerFolded(layer) ? '▼' : '▶' }}</span>
+              <span class="fold-indicator">{{ isLayerFolded(layer) ? '▶' : '▼' }}</span>
               <span class="layer-name">{{ layer }}</span>
               <span v-if="showTimestamps(layer, annotations[0])" class="timetag nowrap">
                 {{ formatTimestamps(annotations[0]) }}
@@ -43,6 +43,8 @@
 </template>
 
 <script>
+import { mapState } from "pinia";
+
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome';
 import Utils from '@/utils.js';
 import { useCorpusAnnotationsStore } from '@/stores/corpusAnnotations';
@@ -72,10 +74,6 @@ export default {
         item.position && Array.isArray(item.position)
       )
     },
-    corpusConfig: {
-      type: Object,
-      required: true
-    },
     maxAnnotations: {
       type: Number,
       default: 50
@@ -95,11 +93,19 @@ export default {
   },
   
   data() {
-    return {
-      foldedLayers: {}
-    };
+    return {};
   },
   computed: {
+    ...mapState(useCorpusAnnotationsStore, ["corpusConfig", "foldedLayers"]),
+    sortedFilteredAnnotations() {
+      const ret = Object.entries(this.filteredAnnotations).sort((x,y)=>{
+        const layerX = x[0], layerY = y[0];
+        if (layerX == this.corpusConfig.firstClass.document) return -1;
+        if (Utils.contains(layerX, layerY, this.corpusConfig)) return -1;
+        return 1;
+      });
+      return ret;
+    },
     filteredAnnotations() {
       // Get raw annotations from store based on axis positions
       const rawAnnotations = this.store.findOverlappingAnnotations(this.axisPositions);
@@ -155,8 +161,8 @@ export default {
     
     showTimestamps(layer, annotation) {
       return this.corpusConfig.meta?.mediaSlots && 
-             'frame_range' in annotation &&
-             layer == this.corpusConfig.firstClass?.document
+             'frame_range' in annotation /* &&
+             layer == this.corpusConfig.firstClass?.document */;
     },
     
     formatTimestamps(annotation) {

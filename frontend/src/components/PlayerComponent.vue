@@ -329,7 +329,14 @@ class Track {
     this._groups = groups || {};
   }
   push(v, info, layer_attrs) {
-    const [startFrame, endFrame] = info.frame_range; //JSON.parse(info.frame_range.replace(")","]"));
+    let [startFrame, endFrame] = info.frame_range;
+    if (typeof(info.frame_range) == "string" && info.frame_range.includes(")")) {
+      try {
+        [startFrame, endFrame] = JSON.parse(info.frame_range.replace(")","]"));
+      } catch {
+        console.warn("Invalid frame range at", v, info, layer_attrs);
+      }
+    }
     const shift = v.currentDocument[3][0];
     let startTime = (parseFloat(startFrame - shift) / v.frameRate);
     let endTime = (parseFloat(endFrame - shift) / v.frameRate);
@@ -839,7 +846,11 @@ export default {
             mediaDuration = v.x2;
         }
       }
+      if (this.selectedMediaForPlay?.startTime || this.selectedMediaForPlay?.endTime)
+        tracks_to_show._selection = [this.selectedMediaForPlay.startTime, this.selectedMediaForPlay.endTime];
       this.dataToShow = tracks_to_show;
+      this.loadingDocument = false;
+
       return mediaDuration;
     },
     onSocketMessage(data) {
@@ -1004,11 +1015,18 @@ export default {
         this.$refs.timelineview.select(start, end);
         this.setResultTimes = [start, end];
 
-        this.currentDocumentSelected = {
-          name: document[1],
-          value: document[0],
-          document: document
+        if (this.currentDocumentSelected.document != document) {
+          this.dataToShow = [];
+          this.loadingDocument = true;
+
+          this.currentDocumentSelected = {
+            name: document[1],
+            value: document[0],
+            document: document
+          }
         }
+        else
+          this.playerPlay();
       }
     },
     playerIsPlaying: {

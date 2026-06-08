@@ -19,17 +19,18 @@ class PreparedSegment {
 export const useCorpusAnnotationsStore = defineStore('corpusAnnotations', {
   state: () => {
     return {
-    // Core data structures - ONLY data, no display state
-    annotationsByLayer: {}, // { layerName: { byId: {}, byStream: IntervalTree, byTime: IntervalTree, byLocation: IntervalTree } }
-    segments: {},           // { segmentId: { data: PreparedSegment, annotations: {} } }
-    sentencesByStream: new IntervalTree(),
-    segmentAnnotations: {},  // { segmentId: { layerName: annotationId[] } }
-    corpusConfig: null,
+      // Core data structures - ONLY data, no display state
+      annotationsByLayer: {}, // { layerName: { byId: {}, byStream: IntervalTree, byTime: IntervalTree, byLocation: IntervalTree } }
+      segments: {},           // { segmentId: { data: PreparedSegment, annotations: {} } }
+      sentencesByStream: new IntervalTree(),
+      segmentAnnotations: {},  // { segmentId: { layerName: annotationId[] } }
+      corpusConfig: null,
+      foldedLayers: {},
 
-    // Minimal operational state
-    loading: false,
-    error: null,
-    lastUpdated: null
+      // Minimal operational state
+      loading: false,
+      error: null,
+      lastUpdated: null
     };
   },
 

@@ -139,7 +139,6 @@
   <AnnotationDisplay
     v-if="showingAnnotations"
     :axisPositions="annotationAxisPositions"
-    :corpusConfig="corpusConfig"
     :stickyPosition="stickyAnnotations"
     :style="{ top: annotationDisplayPosition.y + 'px', left: annotationDisplayPosition.x + 'px' }"
     @close="closeAnnotations"
@@ -607,7 +606,7 @@ export default {
       const hits = dataLine?.hits || [];
       let tokens = sentence.content;
 
-      const tokenData = hits.map(tokenIdOrSet => tokenIdOrSet instanceof Array ? tokenIdOrSet : [tokenIdOrSet]);
+      const tokenData = hits.map(tokenIdOrSet => (tokenIdOrSet instanceof Array ? [...tokenIdOrSet] : [tokenIdOrSet]).flat());
       tokens = tokens.map((token, idx) => new TokenToDisplay(
         token,
         startIndex + idx,
