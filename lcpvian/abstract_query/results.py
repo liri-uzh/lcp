@@ -1077,7 +1077,7 @@ WHERE {ent_stream_ref} && {cont_tok_stream_ref}
         if not fields:
             return ""
 
-        formed = [f"{freq_table}.{a} IS NULL" for a in fields]
+        formed = [sql_str("{}.{} IS NULL", freq_table, a) for a in fields]
         return " WHERE " + " AND ".join(formed)
 
     @staticmethod

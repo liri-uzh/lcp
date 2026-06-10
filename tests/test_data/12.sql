@@ -62,9 +62,9 @@ WITH RECURSIVE fixed_parts AS
                 count(*) AS o
          FROM collocates2
          JOIN bnc1.token_freq USING ("form_id")
-         WHERE token_freq.lemma_id IS NULL
-           AND token_freq.xpos1 IS NULL
-           AND token_freq.xpos2 IS NULL
+         WHERE "token_freq"."lemma_id" IS NULL
+           AND "token_freq"."xpos1" IS NULL
+           AND "token_freq"."xpos2" IS NULL
          GROUP BY "form_id",
                   freq) x
       CROSS JOIN "bnc1"."form" "collocates2_form"
@@ -90,9 +90,9 @@ WITH RECURSIVE fixed_parts AS
                 count(*) AS o
          FROM collocates3
          JOIN bnc1.token_freq USING ("form_id")
-         WHERE token_freq.lemma_id IS NULL
-           AND token_freq.xpos1 IS NULL
-           AND token_freq.xpos2 IS NULL
+         WHERE "token_freq"."lemma_id" IS NULL
+           AND "token_freq"."xpos1" IS NULL
+           AND "token_freq"."xpos2" IS NULL
          GROUP BY "form_id",
                   freq) x
       CROSS JOIN "bnc1"."form" "collocates3_form"
