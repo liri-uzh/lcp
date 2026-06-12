@@ -99,6 +99,7 @@ class Request:
         self.synchronous: bool = cast(bool, redis_request.get("synchronous", False))
         self.requested: int = cast(int, redis_request.get("requested", 0))
         self.full: bool = cast(bool, redis_request.get("full", False))
+        self.raw_hits: bool = cast(bool, request.get("raw_hits", False))
         self.offset: int = cast(int, redis_request.get("offset", 0))
         self.corpus: int = cast(int, redis_request.get("corpus", 1))
         self.user: str = cast(str, redis_request.get("user", ""))
@@ -182,6 +183,9 @@ class Request:
         return obj
 
     def all_queries_done(self, qi: "QueryInfo") -> bool:
+        """
+        Check whether all the requests have gotten enough raw hits
+        """
         so_far = int(self.lines_sent_so_far or 0)
         if not self.full and so_far >= self.requested:
             return True
@@ -202,8 +206,9 @@ class Request:
         """
         if not self.all_queries_done(qi):
             return False
-        if not qi.kwic_keys:
+        if not qi.kwic_keys or self.raw_hits:
             return True
+        # Check whether the segment queries have completed and been sent
         all_segs_sent = True
         for batch_hash, (_, _, req_segs) in self.lines_batch.items():  # type: ignore
             batch_name = qi.get_batch_from_hash(batch_hash)
@@ -300,6 +305,8 @@ class Request:
         Fetch the segments lines for the batch, filter the ones needed for this request
         and send them to the client
         """
+        if self.raw_hits:
+            return
         print(f"[{self.id}] send segments {batch_name}")
         seg_hashes: list[str] = [x for x in qi.segments_for_batch[batch_name]]
         if all(x in self.sent_hashes for x in seg_hashes):
@@ -543,6 +550,7 @@ class QueryInfo:
         languages: list[str] | None = None,
         config: dict | None = None,
         local_queries: dict = {},
+        raw_hits: bool = False,
     ):
         self._connection = connection
         self.hash = qhash

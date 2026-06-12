@@ -48,8 +48,9 @@ def batch_callback(job: Job, connection: RedisConnection, batch_name: str):
     # run needed segment+meta queries
     lines_before, lines_now = qi.get_lines_batch(batch_name)
     lines_so_far = lines_before + lines_now
+
     # send sentences if needed
-    if not qi.kwic_keys:
+    if not qi.kwic_keys or all(r.raw_hits for r in qi.requests):
         return
 
     min_offset = min(r.offset for r in qi.requests) if qi.requests else 0
@@ -97,6 +98,8 @@ async def do_segment_and_meta(
     connection = current_job.connection
     qi = QueryInfo(qhash, connection=connection)
     if not qi.requests:
+        return
+    if all(r.raw_hits for r in qi.requests):
         return
     batch_hash, _ = qi.query_batches[batch_name]
     batch_results: list = qi.get_from_cache(batch_hash)
