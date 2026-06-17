@@ -11,8 +11,8 @@ import shutil
 import traceback
 
 from datetime import datetime, timedelta
-from tarfile import TarFile, is_tarfile
-from typing import cast, Any
+import tarfile
+from typing import cast, Any, Callable
 from uuid import uuid4
 from zipfile import ZipFile, is_zipfile
 
@@ -25,7 +25,6 @@ from .ddl_gen import generate_ddl
 from .dqd_parser import convert
 from .typed import JSON
 from .utils import _sanitize_corpus_name, _row_to_value
-
 
 VALID_EXTENSIONS = ("vrt", "csv", "tsv")
 COMPRESSED_EXTENTIONS = ("zip", "tar", "tar.gz", "tar.xz", "7z")
@@ -250,12 +249,12 @@ async def upload(request: web.Request) -> web.Response:
     corpus_name = kwargs["corpus_name"]
     cpath = kwargs["path"]
 
-    ziptar = [
-        (".zip", is_zipfile, ZipFile, "namelist"),
-        (".tar", is_tarfile, TarFile, "getnames"),
-        (".tar.gz", is_tarfile, TarFile, "getnames"),
-        (".tar.xz", is_tarfile, TarFile, "getnames"),
-        (".7z", is_7zfile, SevenZipFile, "getnames"),
+    ziptar: list[tuple[str, Callable, Callable, str, str]] = [
+        (".zip", is_zipfile, ZipFile, "namelist", "r"),
+        (".tar", tarfile.is_tarfile, tarfile.open, "getnames", "r"),
+        (".tar.gz", tarfile.is_tarfile, tarfile.open, "getnames", "r:gz"),
+        (".tar.xz", tarfile.is_tarfile, tarfile.open, "getnames", "r"),
+        (".7z", is_7zfile, SevenZipFile, "getnames", "r"),
     ]
 
     # username = request.rel_url.query.get("user_id", "")
@@ -281,9 +280,9 @@ async def upload(request: web.Request) -> web.Response:
 
         has_file = await _save_file(path, bit, has_file)
 
-        for ext, check, opener, method in ziptar:
+        for ext, check, opener, method, mode in ziptar:
             if path.endswith(ext) and check(path):
-                _extract_file(bit, path, cpath, ext, opener, method)
+                _extract_file(bit, path, cpath, ext, opener, method, mode)
             elif path.endswith(ext) and not check(path):
                 print(f"Something wrong with {path}. Ignoring...")
                 os.remove(path)
@@ -383,10 +382,16 @@ async def _save_file(path: str, bit: BodyPartReader, has_file: bool) -> bool:
 
 
 def _extract_file(
-    bit: BodyPartReader, path: str, cpath: str, ext: str, opener: type, method: str
+    bit: BodyPartReader,
+    path: str,
+    cpath: str,
+    ext: str,
+    opener: Callable,
+    method: str,
+    mode: str,
 ) -> None:
     print(f"Extracting {ext} file: {bit.filename}")
-    with opener(path, "r") as compressed:
+    with opener(path, mode) as compressed:
         for f in getattr(compressed, method)():
             basef = os.path.basename(str(f))
             if not str(f).endswith(VALID_EXTENSIONS):
