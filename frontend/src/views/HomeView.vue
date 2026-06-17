@@ -248,6 +248,7 @@
               v-bind="modalProps"
               :key="modalIndexKey"
               @updated="handleModalUpdated"
+              @submitSWISSUbase="submitModalSWISSUbase"
             />
           </div>
           <div class="modal-footer" v-if="showModalFooter">
@@ -543,7 +544,6 @@ export default {
           this.modalComponent = 'ProjectNewView';
           this.modalProps = {
             ...props,
-            '@updated': this.handleModalUpdated
           };
           this.modalSizeClass = 'modal-lg';
           this.showModalFooter = true;
@@ -568,8 +568,6 @@ export default {
           this.modalProps = {
             corpus: props.corpus,
             key: this.modalIndexKey,
-            '@submitSWISSUbase': this.submitModalSWISSUbase,
-            '@updated': this.handleModalUpdated,
             allProjects: this.getUniqueProjects
           };
           this.modalSizeClass = 'modal-xl';
@@ -583,7 +581,6 @@ export default {
           this.modalProps = {
             project: props.project,
             key: this.modalIndexKey,
-            '@updated': this.handleModalUpdated
           };
           this.modalSizeClass = 'modal-xl';
           this.showModalFooter = true;
