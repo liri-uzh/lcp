@@ -64,41 +64,33 @@ from .utils import (
     format_query_params,
     gather,
     _schema_from_corpus_name,
+    _load_top_module_file,
 )
 
-# passing the file name and path as argument
-lcpcli_spec = importlib.util.spec_from_file_location(
+# special loading from top-level module
+lcpcli = _load_top_module_file(
     "lcpcli",
     os.path.join(
-        os.path.split(os.path.dirname(__file__))[0],
         "lcpcli",
         "lcpcli",
         "check_files.py",
     ),
 )
-assert lcpcli_spec, RuntimeError("Could not find LCPCLI")
-assert lcpcli_spec.loader, RuntimeError("Could not find a loader for LCPCLI")
-lcpcli = importlib.util.module_from_spec(lcpcli_spec)
-lcpcli_spec.loader.exec_module(lcpcli)
 
 
 class SQLstats:
     def __init__(self) -> None:
-        self.check_tbl: Callable[[str, str], str] = lambda x, y: dedent(
-            f"""
+        self.check_tbl: Callable[[str, str], str] = lambda x, y: dedent(f"""
             SELECT EXISTS (
                    SELECT 1
                      FROM information_schema.tables
                     WHERE table_schema = '{x}'
-                      AND table_name = '{y}');"""
-        )
+                      AND table_name = '{y}');""")
 
-        self.copy_table: Callable[[str, str, str], str] = lambda x, y, z: dedent(
-            f"""
+        self.copy_table: Callable[[str, str, str], str] = lambda x, y, z: dedent(f"""
             COPY {x}.{y} {z}
             FROM STDIN
-            WITH CSV QUOTE E'\b' DELIMITER E'\t';"""
-        )
+            WITH CSV QUOTE E'\b' DELIMITER E'\t';""")
 
         # self.main_corp: str = _format_config_query(
         #     dedent(
@@ -114,21 +106,15 @@ class SQLstats:
         #     {join} WHERE mc.enabled = true;"""
         #     )
         # )
-        self.main_corp: str = _format_config_query(
-            dedent(
-                """
+        self.main_corp: str = _format_config_query(dedent("""
             WITH mc AS (SELECT * FROM main.finish_import(:tmp_schema ::uuid, :new_schema ::text, :mapping ::jsonb, :counts ::jsonb, :sample_query ::text))
             SELECT {selects}
             FROM mc
-            {join} WHERE mc.enabled = true;"""
-            )
-        )
+            {join} WHERE mc.enabled = true;"""))
 
-        self.token_count: Callable[[str, str], str] = lambda x, y: dedent(
-            f"""
+        self.token_count: Callable[[str, str], str] = lambda x, y: dedent(f"""
             SELECT count(*)
-              FROM "{x}".{y};"""
-        )
+              FROM "{x}".{y};""")
 
 
 class Table:

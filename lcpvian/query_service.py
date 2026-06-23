@@ -47,11 +47,11 @@ from .callbacks import (
     _upload_failure,
     _queries,
     _schema,
-    _upload,
+    _inserted,
     _deleted,
 )
 from .export import _export_notifs
-from .jobfuncs import _db_query, _upload_data, _create_schema
+from .jobfuncs import _db_query, _insert_data, _create_schema
 from .typed import (
     BaseArgs,
     Config,
@@ -811,7 +811,7 @@ class QueryService:
         )
         return job
 
-    def upload(
+    def insert_data(
         self,
         user: str,
         project: str,
@@ -822,12 +822,12 @@ class QueryService:
         **kwargs,
     ) -> Job:
         """
-        Upload a new corpus to the system
+        Insert a new corpus into the database
         """
         kwargs = {"gui": gui, "user_data": user_data, **kwargs}
         job: Job = self.app[queue].enqueue(
-            _upload_data,
-            on_success=Callback(_upload, self.callback_timeout),
+            _insert_data,
+            on_success=Callback(_inserted, self.callback_timeout),
             on_failure=Callback(_upload_failure, self.callback_timeout),
             result_ttl=self.query_ttl,
             job_timeout=self.upload_timeout,

@@ -217,7 +217,6 @@ async def do_batch(qhash: str, batch: list):
         return
     # Now this is the running batch
     qi.running_batch = batch_name
-    qi.scheduled_batches[batch_name] = 1
     try:
         assert batch_name in qi.query_batches
         batch_hash, _ = qi.query_batches[batch_name]

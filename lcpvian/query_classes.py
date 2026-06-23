@@ -753,22 +753,6 @@ class QueryInfo:
             self.qi["done_batches"][k] = v
 
     @property
-    def scheduled_batches(self) -> dict:
-        """
-        Keep track of batches for which queries have been scheduled (or run)
-        """
-        if "scheduled_batches" not in self.qi:
-            self.qi["scheduled_batches"] = {}
-        return cast(dict, self.qi["scheduled_batches"])
-
-    @scheduled_batches.setter
-    def scheduled_batches(self, value: dict):
-        if "scheduled_batches" not in self.qi:
-            self.qi["scheduled_batches"] = {}
-        for k, v in value.items():
-            self.qi["scheduled_batches"][k] = v
-
-    @property
     def query_batches(self) -> dict:
         """
         Map batch names with (batch_hash, n_kwic_lines)

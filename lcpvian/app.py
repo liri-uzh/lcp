@@ -18,6 +18,7 @@ from typing import cast, Type
 from aiohttp import WSCloseCode, web
 from aiohttp.client_exceptions import ClientConnectorError
 from aiohttp.web import HTTPForbidden, HTTPBadRequest
+from aiohttp.http_exceptions import LineTooLong
 from aiohttp_catcher import Catcher, catch
 from redis import Redis
 from redis import asyncio as aioredis
@@ -77,10 +78,16 @@ from .sock import listen_to_redis, sock, ws_cleanup
 from .store import fetch_queries, store_query, delete_query
 from .swissubase import swissubase_check_api, swissubase_submit
 from .typed import Config, Endpoint, Task, Websockets
-from .upload import make_schema, upload
+from .upload import (
+    make_schema,
+    upload,
+    monitor_db_insert,
+    create_upload,
+    upload_chunk,
+    upload_info,
+)
 from .lama import handle_lama_error
 from .video import video
-
 
 # this is all just a way to find out if utils (and therefore the codebase) is a c extension
 _LOADER = importlib.import_module(handle_timeout.__module__).__loader__
@@ -180,47 +187,48 @@ async def create_app(test: bool = False) -> web.Application:
 
     catcher: Catcher = Catcher()
 
+    # JOB ERRORS
     await catcher.add_scenario(
         catch(NoSuchJobError, AbandonedJobError)
         .with_status_code(200)
         .and_call(handle_timeout)
     )
-    await catcher.add_scenario(
-        catch(ClientConnectorError)
-        .with_status_code(401)
-        .and_stringify()
-        .with_additional_fields(
-            {"message": "Could not connect to LAMa. Probably not user's fault..."}
+    # LAMA ERRORS
+    for error_type, status_code, add_fields in (
+        (
+            ClientConnectorError,
+            401,
+            {"message": "Could not connect to LAMa. Probably not user's fault..."},
+        ),
+        (
+            PermissionError,
+            403,
+            lambda exc, _: {"reason": str(exc), "message": str(exc)},
+        ),
+        (
+            HTTPForbidden,
+            403,
+            lambda exc, _: {"reason": exc.reason, "message": exc.text},
+        ),
+    ):
+        await catcher.add_scenario(
+            catch(error_type)
+            .with_status_code(status_code)
+            .and_stringify()
+            .with_additional_fields(add_fields)
+            .and_call(handle_lama_error)
         )
-        .and_call(handle_lama_error)
-    )
-    await catcher.add_scenario(
-        catch(PermissionError)
-        .with_status_code(403)
-        .and_stringify()
-        .with_additional_fields(
-            lambda exc, _: {"reason": str(exc), "message": str(exc)}
+    # Bad request errors
+    for error_type, status_code in ((HTTPBadRequest, 400), (LineTooLong, 400)):
+        await catcher.add_scenario(
+            catch(error_type)
+            .with_status_code(status_code)
+            .and_stringify()
+            .with_additional_fields(
+                lambda exc, _: {"reason": exc.reason, "message": exc.text}
+            )
+            .and_call(handle_bad_request)
         )
-        .and_call(handle_lama_error)
-    )
-    await catcher.add_scenario(
-        catch(HTTPForbidden)
-        .with_status_code(403)
-        .and_stringify()
-        .with_additional_fields(
-            lambda exc, _: {"reason": exc.reason, "message": exc.text}
-        )
-        .and_call(handle_lama_error)
-    )
-    await catcher.add_scenario(
-        catch(HTTPBadRequest)
-        .with_status_code(400)
-        .and_stringify()
-        .with_additional_fields(
-            lambda exc, _: {"reason": exc.reason, "message": exc.text}
-        )
-        .and_call(handle_bad_request)
-    )
 
     app = LCPApplication(middlewares=[catcher.middleware])
     app.addkey("mypy", bool, C_COMPILED)
@@ -290,15 +298,22 @@ async def create_app(test: bool = False) -> web.Application:
         ("/settings", "GET", user_data),
         ("/store", "POST", store_query),
         ("/user/{user_id}/room/{room_id}/query/{query_id}", "DELETE", delete_query),
-        ("/upload", "POST", upload),
+        # ("/upload", "POST", upload),
+        ("/monitor_db_insert", "POST", upload),
+        ("/upload", "POST", create_upload),  # type: ignore
+        ("/upload/{upload_id}", "PATCH", upload_chunk),
+        ("/upload/{upload_id}", "HEAD", upload_info),
         ("/video", "GET", video),
         ("/ws", "GET", sock),
         ("/swissubase/check_api", "POST", swissubase_check_api),
         ("/swissubase/submit", "POST", swissubase_submit),
     ]
 
+    resources: dict = {}
     for url, method, func in endpoints:
-        cors.add(cors.add(app.router.add_resource(url)).add_route(method, func))
+        resource = resources.get(url, None) or cors.add(app.router.add_resource(url))
+        resources[url] = resource
+        cors.add(resource.add_route(method, func))
 
     redis_url: str = (
         f"{REDIS_URL}/{REDIS_DB_INDEX}" if REDIS_DB_INDEX > -1 else REDIS_URL

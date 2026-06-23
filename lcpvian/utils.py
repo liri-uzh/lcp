@@ -3,6 +3,7 @@ utils.py: all miscellaneous helpers and tools used by backend
 """
 
 import asyncio
+import importlib.util
 import json
 import logging
 import numpy as np
@@ -128,25 +129,16 @@ CONFIG_JOIN = """CROSS JOIN
 LR = "{}"
 
 
-def _futurecb(
-    job: Job,
-    connection: RedisConnection,
-    result: dict | None = None,
-) -> None:
-    """
-    Fetch msg_id from the job's meta and sends it publish_msg
-    Will be picked up in socks.py, which will resolve the future
-    """
-    msg_id = cast(dict, job.get_meta(refresh=True)).get("msg_id", "")
-    jso = json.dumps(result, cls=CustomEncoder)
-    return _publish_msg(connection, jso, msg_id)
-
-
-# Custom class to add a `job` attribute
-class CustomFuture(asyncio.Future):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.job: Job  # type: ignore
+def _load_top_module_file(name: str, path: str):
+    mod_spec = importlib.util.spec_from_file_location(
+        name,
+        os.path.join(os.path.split(os.path.dirname(__file__))[0], path),
+    )
+    assert mod_spec, RuntimeError(f"Could not find {name} at {path}")
+    assert mod_spec.loader, RuntimeError(f"Could not find a loader for {name}")
+    mod = importlib.util.module_from_spec(mod_spec)
+    mod_spec.loader.exec_module(mod)
+    return mod
 
 
 class LCPApplication(web.Application):
@@ -255,13 +247,15 @@ def setup() -> None:
     out = os.path.join(home, ".env")
     if not os.path.isfile(out):
         shutil.copyfile(env_ex, out)
-        print(
-            f"""
+        print(f"""
             Created: {out} ...
             Edit this file with needed values for the app to run,
             then run `lcp` and `lcp-worker` commands to start app
-            """.strip()
-        )
+            """.strip())
+
+
+def _sanitize_header(header_key_or_value: str) -> str:
+    return header_key_or_value.strip().replace("\n", "").replace("\r", "")
 
 
 def sanitize_filename(filename: str) -> str:

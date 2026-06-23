@@ -18,7 +18,7 @@ from .typed import DBQueryParams, JSONObject, MainCorpus, Sentence, UserQuery
 from .utils import _get_sent_ids
 
 
-async def _upload_data(
+async def _insert_data(
     project: str,
     user: str,
     room: str | None,

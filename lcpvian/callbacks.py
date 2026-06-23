@@ -433,13 +433,13 @@ def _schema(
     return _publish_msg(connection, jso, msg_id)
 
 
-def _upload(
+def _inserted(
     job: Job,
     connection: RedisConnection,
     result: MainCorpus | None,
 ) -> None:
     """
-    Success callback when user has uploaded a dataset
+    Success callback when user has inserted a dataset into the database
     """
     if result is None:
         print("Result was none. Skipping callback.")
