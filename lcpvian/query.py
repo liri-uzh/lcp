@@ -290,8 +290,9 @@ def process_query(
     except json.JSONDecodeError:
         json_query = convert(request.query, config)
     json_query_str = json.dumps(json_query)
-    lang = cast(str | None, request.languages[0] if request.languages else None)
-    all_batches = _get_query_batches(config, request.languages)
+    languages = [str(l) for l in request.languages.to_list()]
+    lang = cast(str | None, languages[0] if languages else None)
+    all_batches = _get_query_batches(config, languages)
     first_batch = all_batches[0]
     sql_query, meta_json, post_processes = json_to_sql(
         cast(QueryJSON, json_query),
@@ -311,7 +312,7 @@ def process_query(
         json.loads(json_query_str),  # roll back any modifications made to json_query
         meta_json,
         post_processes,
-        request.languages,
+        languages,
         config,
         local_queries,
     )

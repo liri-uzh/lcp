@@ -99,7 +99,7 @@ class Request:
         self.synchronous: bool = cast(bool, redis_request.get("synchronous", False))
         self.requested: int = cast(int, redis_request.get("requested", 0))
         self.full: bool = cast(bool, redis_request.get("full", False))
-        self.raw_hits: bool = cast(bool, request.get("raw_hits", False))
+        self.raw_hits: bool = cast(bool, redis_request.get("raw_hits", False))
         self.offset: int = cast(int, redis_request.get("offset", 0))
         self.corpus: int = cast(int, redis_request.get("corpus", 1))
         self.user: str = cast(str, redis_request.get("user", ""))
@@ -550,7 +550,6 @@ class QueryInfo:
         languages: list[str] | None = None,
         config: dict | None = None,
         local_queries: dict = {},
-        raw_hits: bool = False,
     ):
         self._connection = connection
         self.hash = qhash
@@ -558,7 +557,9 @@ class QueryInfo:
         self._json_query = qi.setdefault("json_query", json.dumps(json_query) or "")
         if config:
             config["batches"] = config.get("_batches", {})
-        self.config = qi.setdefault("config", config or {})
+        self.config = qi.setdefault(  # TODO: cleaner handling of super large doc_ids
+            "config", {k: v for k, v in (config or {}).items() if k != "doc_ids"}
+        )
         self.meta_json = qi.setdefault("meta_json", meta_json or {})
         self.post_processes = qi.setdefault("post_processes", post_processes or {})
         self.meta_labels = qi.setdefault("meta_labels", [])
