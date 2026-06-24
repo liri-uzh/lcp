@@ -181,7 +181,7 @@ export default {
     },
     rowClasses(tIndex) {
       let classes = [];
-      let startId = this.sentence[0];
+      let startId = this.sentence.offset;
       let tokenId = startId + tIndex;
       const hits = this.data.hits || [];
       let group = hits.findIndex(v => v instanceof Array ? v.includes(tokenId) : v == tokenId);
