@@ -25,18 +25,10 @@ WITH RECURSIVE fixed_parts AS
      AND "s_speaker"."speaker_id" = "s"."speaker_id"
      AND ("nod"."kinesics")::text ~ 'nod' ),
                match_list AS
-  (SELECT fixed_parts."nod" AS "nod",
-          fixed_parts."nod_frame_range" AS "nod_frame_range",
-          fixed_parts."nod_kinesics" AS "nod_kinesics",
-          fixed_parts."nod_speaker" AS "nod_speaker",
-          fixed_parts."s" AS "s",
-          fixed_parts."s_char_range" AS "s_char_range",
-          fixed_parts."s_frame_range" AS "s_frame_range",
-          fixed_parts."s_speaker" AS "s_speaker",
-          fixed_parts."t" AS "t",
-          fixed_parts."t_char_range" AS "t_char_range",
-          fixed_parts."t_frame_range" AS "t_frame_range",
-          fixed_parts."t_upos" AS "t_upos"
+  (SELECT "s",
+          "s_char_range",
+          "s_frame_range",
+          "t"
    FROM fixed_parts),
                res1 AS
   (SELECT DISTINCT 1::int2 AS rstype,

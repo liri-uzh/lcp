@@ -50,19 +50,15 @@ WITH RECURSIVE fixed_parts AS
           fixed_parts.jouer AS max_seq
    FROM fixed_parts) ,
                match_list AS
-  (SELECT ARRAY
+  (SELECT "ca",
+          "jouer",
+          "s",
+          "s_char_range",
+          ARRAY
      (SELECT "t"."token_id"
       FROM "sparcling1"."token_frrest" "t"
       WHERE "t"."segment_id" = gather."s"
-        AND "t"."token_id" BETWEEN gather."min_seq"::bigint AND gather."max_seq"::bigint) AS "seq",
-          gather."ca" AS "ca",
-          gather."ca_char_range" AS "ca_char_range",
-          gather."ca_form" AS "ca_form",
-          gather."jouer" AS "jouer",
-          gather."jouer_char_range" AS "jouer_char_range",
-          gather."jouer_lemma" AS "jouer_lemma",
-          gather."s" AS "s",
-          gather."s_char_range" AS "s_char_range"
+        AND "t"."token_id" BETWEEN gather."min_seq"::bigint AND gather."max_seq"::bigint) AS "seq"
    FROM gather),
                res1 AS
   (SELECT DISTINCT 1::int2 AS rstype,

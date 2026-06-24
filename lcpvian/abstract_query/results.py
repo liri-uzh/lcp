@@ -618,7 +618,9 @@ WHERE {ent_stream_ref} && {cont_tok_stream_ref}
                 entout += entities_list
             tokens += attributes
 
-        ents_form: str = ", ".join(sql_str("{}", x) for x in entout)
+        quoted_entouts = [sql_str("{}", x) for x in entout]
+        self.r.selects = self.r.selects.union({x for x in quoted_entouts})
+        ents_form: str = ", ".join(quoted_entouts)
         doc_join = ""
         extras: list[str] = []
         ranges: list[dict[str, Any]] = []
@@ -633,6 +635,7 @@ WHERE {ent_stream_ref} && {cont_tok_stream_ref}
                     out_ref.alias,
                     out_ref.alias,
                 )
+                self.r.selects.add(sql_str("{}", out_ref.alias))
                 extras.append(fr)
                 ranges.append(
                     {
@@ -657,6 +660,7 @@ WHERE {ent_stream_ref} && {cont_tok_stream_ref}
                 if not ents_form
                 else f"{ents_form}, disjunction_matches"
             )
+            self.r.selects.add(sql_str("{}", "disjunction_matches"))
             attribs[1]["data"].append(
                 {"name": "disjunction_matches", "type": "set", "multiple": True}
             )

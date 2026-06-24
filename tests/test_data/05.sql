@@ -24,19 +24,12 @@ WITH RECURSIVE fixed_parts AS
      AND "interruptor"."utterance_id" = "t"."utterance_id"
      AND "interruptor_agent"."agent_id" = "interruptor"."agent_id" ),
                match_list AS
-  (SELECT fixed_parts."interruptee" AS "interruptee",
-          fixed_parts."interruptee_agent" AS "interruptee_agent",
-          fixed_parts."interruptee_agent_region" AS "interruptee_agent_region",
-          fixed_parts."interruptee_char_range" AS "interruptee_char_range",
-          fixed_parts."interruptee_frame_range" AS "interruptee_frame_range",
-          fixed_parts."interruptor" AS "interruptor",
-          fixed_parts."interruptor_agent" AS "interruptor_agent",
-          fixed_parts."interruptor_agent_region" AS "interruptor_agent_region",
-          fixed_parts."interruptor_char_range" AS "interruptor_char_range",
-          fixed_parts."interruptor_frame_range" AS "interruptor_frame_range",
-          fixed_parts."t" AS "t",
-          fixed_parts."t_char_range" AS "t_char_range",
-          fixed_parts."t_frame_range" AS "t_frame_range"
+  (SELECT "interruptee_agent_region",
+          "interruptor",
+          "interruptor_agent_region",
+          "interruptor_char_range",
+          "interruptor_frame_range",
+          "t"
    FROM fixed_parts),
                res1 AS
   (SELECT DISTINCT 1::int2 AS rstype,

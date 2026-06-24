@@ -46,6 +46,11 @@ SELECT_PH = "{selects}"
 CARRY_PH = "{carry_over}"
 LR = "{}"
 
+AS_RGX = re.compile(
+    r"""(.|\n|\r)+ AS ("[^"]+"|[^"]+)$""",
+    flags=re.IGNORECASE,
+)
+
 
 class Token:
     def __init__(
@@ -246,7 +251,10 @@ class QueryMaker:
         return joins, conditions
 
     def _get_label_as(self, select: str) -> str:
-        return re.split(" as ", select, flags=re.IGNORECASE)[-1]
+        match = AS_RGX.match(select)
+        if match:
+            return match.groups()[-1]
+        return select
 
     def _make_main(self, query_part: QueryPart) -> tuple[str, str, str]:
         """
@@ -457,7 +465,11 @@ class QueryMaker:
         """
         The main entrypoint: produce query sqlc as a single string
         """
-        self.selects = self.r.selects
+        # Store it for later (we'll modify self.r.selects)
+        selects_for_res = {self._get_label_as(x) for x in self.r.selects}
+
+        # Only keep named references
+        self.selects = {s for s in self.r.selects if AS_RGX.match(s)}
         self.joins = self.r.joins
         self.conditions = self.r.conditions
 
@@ -909,8 +921,6 @@ class QueryMaker:
 
         # If any sequence has a label and needs its range to be returned
         if sequence_ranges:
-
-            # selects_intermediate = {self._get_label_as(s) for s in selects_in_fixed}
             selects_intermediate = {self._get_label_as(s) for s in self.selects}
             gather_selects: str = ",\n".join(
                 # sorted({s.replace("___lasttable___", last_table) for s in self.selects})
@@ -942,7 +952,8 @@ class QueryMaker:
                     min_label,
                     max_label,
                 )
-                self.selects.add(
+                # self.selects.add(
+                selects_for_res.add(
                     sql_str(
                         f"ARRAY(SELECT {LR}.{LR} FROM {infrom} WHERE {inwhere}) AS {LR}",
                         jttable,
@@ -950,6 +961,12 @@ class QueryMaker:
                         seqlab,
                     )
                 )
+                # Remove any simple ref from selects_for_res
+                selects_for_res = {
+                    s
+                    for s in selects_for_res
+                    if s not in (seqlab, sql_str("{}", seqlab))
+                }
 
             additional_from: str = last_table
             if last_cte:
@@ -971,18 +988,12 @@ class QueryMaker:
             str_refs: str = ",".join(refs)
             self.selects.add(f"jsonb_build_array({str_refs}) AS {g}")
 
-        # Do not select ambiguous references (e.g. because of repeated sequences)
         match_selects: str = ",\n".join(
             sorted(
                 {
-                    s.replace("___lasttable___", last_table)
-                    for s in self.selects
-                    if not any(
-                        s.split(" AS ")[-1] == self._get_label_as(x)
-                        for x in self.selects
-                        if x != s
-                    )
-                    and not _bound_label(self._get_label_as(s), self.query_json)
+                    s
+                    for s in selects_for_res
+                    if not _bound_label(self._get_label_as(s), self.query_json)
                 }
             )
         )

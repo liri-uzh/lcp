@@ -30,17 +30,14 @@ WITH RECURSIVE fixed_parts AS
           fixed_parts.t1 AS max_seq
    FROM fixed_parts) ,
                match_list AS
-  (SELECT ARRAY
+  (SELECT "s",
+          "s_char_range",
+          "t1",
+          ARRAY
      (SELECT "t"."token_id"
       FROM "bnc1"."tokenrest" "t"
       WHERE "t"."segment_id" = gather."s"
-        AND "t"."token_id" BETWEEN gather."min_seq"::bigint AND gather."max_seq"::bigint) AS "seq",
-          gather."s" AS "s",
-          gather."s_char_range" AS "s_char_range",
-          gather."t1" AS "t1",
-          gather."t1_char_range" AS "t1_char_range",
-          gather."t1_form" AS "t1_form",
-          gather."t1_lemma" AS "t1_lemma"
+        AND "t"."token_id" BETWEEN gather."min_seq"::bigint AND gather."max_seq"::bigint) AS "seq"
    FROM gather),
                res1 AS
   (SELECT DISTINCT 1::int2 AS rstype,

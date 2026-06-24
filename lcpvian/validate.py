@@ -48,11 +48,14 @@ def process_refs(
         )
         if obj_l := obj["unit"].get("label"):
             ret[obj_l] = set()
-    if ("reference" in obj or "entity" in obj) and recent_layer:
-        ref = obj.get("reference", obj.get("entity", ""))
-        # attrs = conf["layer"].get(recent_layer, {}).get("attributes", {})
-        attrs = _get_all_attributes(recent_layer, conf)
+    ref = next((obj[x] for x in ("reference", "entity", "attribute") if obj.get(x)), "")
+    if ref:  # and recent_layer:
         if "." in ref:
+            refname, reffield, *_ = ref.split(".")
+            if refname and reffield not in (refs := ret.get(refname, set())):
+                ret[refname] = refs.union({reffield})
+        attrs = _get_all_attributes(recent_layer, conf) if recent_layer else {}
+        if "." in ref and attrs:
             refname, reffield, *_ = ref.split(".")
             attr = attrs.get(refname, {})
             glob_attr = attr.get("ref", "")
@@ -72,9 +75,7 @@ def process_refs(
             assert not dict_keys or reffield in dict_keys, ReferenceError(
                 f"No sub-attribute named '{reffield}' on attribute '{refname}' of layer {recent_layer}"
             )
-            if refname and reffield not in (refs := ret.get(refname, set())):
-                ret[refname] = refs.union({reffield})
-        else:
+        elif ref and attrs:
             assert ref in attrs or ref in labels, ReferenceError(
                 f"Could not find an attribute named '{ref}' on layer {recent_layer}"
             )
