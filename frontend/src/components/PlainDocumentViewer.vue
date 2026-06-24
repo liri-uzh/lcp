@@ -101,9 +101,7 @@ export default {
     setPreparedRanges() {
       if (!this.currentDocumentSelected?.value?.char_range) return;
       const char_range_str = this.currentDocumentSelected.value.char_range.join(",");
-      const ret = {};
-      ret[char_range_str] = null;
-      this.preparedRanges = ret;
+      this.preparedRanges = [[char_range_str, null]];
     }
   },
   computed: {

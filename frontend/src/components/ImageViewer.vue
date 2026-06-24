@@ -107,14 +107,9 @@
       </div>
       <SegmentTable
         v-if="currentImage && currentImage.char_range"
-        :preparedRanges="Object.fromEntries(
-          [
-            [
-              currentImage.char_range.join(','),
-              image?.dataLine
-            ]
-          ]
-        )"
+        :preparedRanges="[
+              [currentImage.char_range.join(','),image?.dataLine]
+            ]"
         :languages="languages"
         :corpora="{corpus: corpus}"
         @playMedia="()=>null"

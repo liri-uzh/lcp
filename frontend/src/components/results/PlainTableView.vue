@@ -94,9 +94,7 @@ export default {
         .map( (row, rowIndex) => new DataLine(row, rowIndex) );
     },
     preparedRangesCurrentPage() {
-      return Object.fromEntries(
-        this.resultsCurrentPage.map(dl=>[dl.char_range.join(','),dl])
-      );
+      return this.resultsCurrentPage.map(dl=>[dl.char_range.join(','),dl]);
     }
   },
   methods: {

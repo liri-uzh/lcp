@@ -1,5 +1,5 @@
 <template>
-  <table class="table" v-if="preparedRanges && Object.keys(preparedRanges).length > 0">
+  <table class="table" v-if="preparedRanges && preparedRanges.length > 0">
     <tbody>
       <tr
         v-for="([segments, document, dataLine], segmentsIndex) in preparedSegments"
@@ -351,7 +351,7 @@ export default {
       const docStream = docAnnotations.byStream;
 
       const prepared = [];
-      for (let [strRange,dataLine] of Object.entries(this.preparedRanges)) {
+      for (let [strRange,dataLine] of this.preparedRanges) {
         let range = strRange.split(",").map(x=>parseInt(x));
         const doc = docStream.searchValue(range)[0];
         if (doc && dataLine) {
