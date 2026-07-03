@@ -614,11 +614,10 @@ export default {
       const hits = dataLine?.hits || [];
       let tokens = sentence.content;
 
-      const tokenData = hits.map(tokenIdOrSet => (tokenIdOrSet instanceof Array ? [...tokenIdOrSet] : [tokenIdOrSet]).flat());
       tokens = tokens.map((token, idx) => new TokenToDisplay(
         token,
         startIndex + idx,
-        tokenData,
+        hits,
         this.columnHeaders,
         annotations
       ));

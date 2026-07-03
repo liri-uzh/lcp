@@ -312,8 +312,6 @@ export default {
             : [tokenOrArrayOfTokens]
         );
       }
-      if (groups.length > 0)
-        console.log("groups", groups, data);
       return groups;
     },
     showPopover(token, resultIndex, event) {

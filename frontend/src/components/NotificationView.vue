@@ -134,6 +134,10 @@ export default {
       switch (type) {
         case "error":
           retval = "danger";
+          break;
+        case "warning":
+          retval = "warning";
+          break;
       }
       return retval;
     },

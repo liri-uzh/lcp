@@ -152,7 +152,7 @@ export default {
         corpus: this.corpus.meta.id,
         anchor: "stream",
         range: this.currentDocumentSelected.value.char_range,
-        limit: 500,
+        limit: 1000, // limit lines to 1000 to spare memory load
         language: this.language
       });
     },

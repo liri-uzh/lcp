@@ -159,7 +159,7 @@ class DataLine {
     this.id = n;
     this.sentenceId = copyLine.shift();
     this.char_range = copyLine.pop();
-    this.hits = copyLine;
+    this.hits = copyLine.pop();
   }
 }
 

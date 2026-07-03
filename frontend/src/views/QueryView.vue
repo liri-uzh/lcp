@@ -1350,6 +1350,12 @@ export default {
           return;
         }
 
+        if (data["warning"])
+          useNotificationStore().add({
+            type: "warning",
+            text: data["warning"]
+          });
+
         const is_doc = data["action"] == "document";
 
         if (data["action"] == "image_annotations" || is_doc) {
