@@ -12,10 +12,12 @@ from sqlalchemy.sql import text
 from rq.connections import get_current_connection
 from rq.job import get_current_job, Job
 
+from lcpvian.upload import _move_media_files
+
 from .impo import Importer
 from .project import refresh_config
 from .typed import DBQueryParams, JSONObject, MainCorpus, Sentence, UserQuery
-from .utils import _get_sent_ids
+from .utils import _get_sent_ids, _row_to_value
 
 
 async def _insert_data(
@@ -35,15 +37,6 @@ async def _insert_data(
     with open(data_path, "r") as fo:
         data: JSONObject = json.load(fo)
 
-    # constraints = cast(list[str], data["constraints"])
-    # perms = cast(str, data["perms"])
-    # constraints.append(perms)
-
-    # template = cast(CorpusTemplate, data["template"])
-
-    # if not template.get("project"):
-    #     template["project"] = project
-
     upool = get_current_job()._upool  # type: ignore
     importer = Importer(upool, data, corpus, debug, **kwargs)
     extra = {"user": user, "room": room, "project": project}
@@ -52,6 +45,15 @@ async def _insert_data(
         msg = f"Starting corpus import for {user}: {project}"
         logging.info(msg, extra=extra)
         row = await importer.pipeline()
+        config = _row_to_value(row, project=project)
+        media_path = os.path.join(corpus, "media")
+        has_media = config.get("meta", {}).get("mediaSlots", {})
+        if has_media and os.path.isdir(media_path):
+            msg = f"Moving media files for {user}: {project}"
+            logging.info(msg, extra=extra)
+            _move_media_files(
+                os.path.join(project, "media"), config.get("schema_path", "")
+            )
     except Exception as err:
         tb = traceback.format_exc()
         msg = f"Error during import/upload: {err}"

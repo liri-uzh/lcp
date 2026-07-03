@@ -119,7 +119,7 @@ def _document(
                         continue
                     reordered_result.append(non_p["line"])
                     non_p["added"] = True
-            result = reordered_result
+            result = cast(list, reordered_result)
             result = [v for n, v in enumerate(result) if n < limit]
             if len(result) < len(reordered_result):
                 warning = f"Payload includes only the first {limit} annotation lines from the document (out of {len(reordered_result)})"
