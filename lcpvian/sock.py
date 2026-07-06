@@ -53,7 +53,6 @@ from .utils import (
     _sign_payload,
 )
 
-
 MESSAGE_TTL = os.getenv("REDIS_WS_MESSSAGE_TTL", 5000)
 QUERY_TTL = os.getenv("QUERY_TTL", 5000)
 

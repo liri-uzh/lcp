@@ -25,7 +25,10 @@
     </div>
   </div>
 
-  <LoadingView class="segment-loading" override="1" v-if="!currentDocumentSelected || !preparedRanges"/>
+  <div v-if="unknownLanguage">
+    This is a multilingual corpus: select one of <span v-html="corpus.partitions.values.join(', ')"></span> to preview documents.
+  </div>
+  <LoadingView class="segment-loading" override="1" v-else-if="!currentDocumentSelected || !preparedRanges"/>
   <div
     id="viewer-container"
     :class="[minimize ? 'minimized' : '']"
@@ -63,6 +66,7 @@ export default {
     const corpusAnnotations = useCorpusAnnotationsStore();
     corpusAnnotations.events.addEventListener("data", ()=> this.setPreparedRanges());
     return {
+      unknownLanguage: false,
       preparedRanges: null,
       documentId: 0,
       tmpdocumentId: 0,
@@ -90,12 +94,18 @@ export default {
       return name;
     },
     loadDocuments() {
+      if (this.corpus.partitions && !(this.corpus.partitions.values || []).includes(this.language)) {
+        this.unknownLanguage = true;
+        return;
+      }
+      this.unknownLanguage = false;
       useCorpusStore().fetchDocuments({
         room: this.roomId,
         user: this.userData.user.id,
         corpora_id: this.corpus.meta.id,
         kind: "plain",
-        language: this.language
+        language: this.language,
+        limit: 500
       });
     },
     setPreparedRanges() {
@@ -163,6 +173,8 @@ export default {
     },
   },
   mounted() {
+    console.log("language", this.language, "corpus", this.corpus);
+
     this.loadDocuments();
   },
   beforeUnmount() {

@@ -102,6 +102,7 @@ class QueryService:
         queue: str = "internal",
         kind: str = "audio",
         language: str = "",
+        limit: int = -1,
     ) -> Job:
         """
         Fetch document id + info from DB.
@@ -145,6 +146,8 @@ class QueryService:
             "corpus_id": corpus_id,
             "kind": kind,
         }
+        if limit > 0:
+            query += f" LIMIT {limit}"
         hashed = str(hasher((query, corpus_id)))
         job: Job
         if self.use_cache:

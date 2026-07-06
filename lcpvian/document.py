@@ -234,6 +234,7 @@ async def document_ids(request: web.Request) -> web.Response:
     schema = config[corpus_id]["schema_path"]
     kind: str = request_data.get("kind", "audio")
     language: str = request_data.get("language", "")
+    limit: int = int(request_data.get("limit", -1))
 
     if not authenticator.check_corpus_allowed(
         corpus_id,
@@ -251,6 +252,7 @@ async def document_ids(request: web.Request) -> web.Response:
             config[corpus_id],
             kind=kind,
             language=language,
+            limit=limit,
         )
         info: dict[str, str] = {"status": "started", "job": job.id}
         return web.json_response(info)
@@ -268,6 +270,8 @@ async def document_ids(request: web.Request) -> web.Response:
         "corpus_id": int(corpus_id),
         "kind": kind,
     }
+    if limit > 0:
+        payload["limit"] = limit
     await push_msg(
         request.app["websockets"],
         room,
