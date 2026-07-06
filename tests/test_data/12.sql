@@ -24,16 +24,11 @@ WITH RECURSIVE fixed_parts AS
      AND ("d"."meta"->>'classCode')::text LIKE 'S%'
      AND ("d"."meta"->>'classCode')::text ~ '^S' ),
                match_list AS
-  (SELECT fixed_parts."d" AS "d",
-          fixed_parts."d_char_range" AS "d_char_range",
-          fixed_parts."d_classCode" AS "d_classCode",
-          fixed_parts."prox_form" AS "prox_form",
-          fixed_parts."s" AS "s",
-          fixed_parts."s_char_range" AS "s_char_range",
-          fixed_parts."t3" AS "t3",
-          fixed_parts."t3_char_range" AS "t3_char_range",
-          fixed_parts."t3_segment_id" AS "t3_segment_id",
-          fixed_parts."t3_xpos2" AS "t3_xpos2"
+  (SELECT "prox_form",
+          "s",
+          "s_char_range",
+          "t3",
+          "t3_segment_id"
    FROM fixed_parts),
                res1 AS
   (SELECT DISTINCT 1::int2 AS rstype,
@@ -62,9 +57,9 @@ WITH RECURSIVE fixed_parts AS
                 count(*) AS o
          FROM collocates2
          JOIN bnc1.token_freq USING ("form_id")
-         WHERE token_freq.lemma_id IS NULL
-           AND token_freq.xpos1 IS NULL
-           AND token_freq.xpos2 IS NULL
+         WHERE "token_freq"."lemma_id" IS NULL
+           AND "token_freq"."xpos1" IS NULL
+           AND "token_freq"."xpos2" IS NULL
          GROUP BY "form_id",
                   freq) x
       CROSS JOIN "bnc1"."form" "collocates2_form"
@@ -90,9 +85,9 @@ WITH RECURSIVE fixed_parts AS
                 count(*) AS o
          FROM collocates3
          JOIN bnc1.token_freq USING ("form_id")
-         WHERE token_freq.lemma_id IS NULL
-           AND token_freq.xpos1 IS NULL
-           AND token_freq.xpos2 IS NULL
+         WHERE "token_freq"."lemma_id" IS NULL
+           AND "token_freq"."xpos1" IS NULL
+           AND "token_freq"."xpos2" IS NULL
          GROUP BY "form_id",
                   freq) x
       CROSS JOIN "bnc1"."form" "collocates3_form"

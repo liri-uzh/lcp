@@ -99,6 +99,7 @@ class Request:
         self.synchronous: bool = cast(bool, redis_request.get("synchronous", False))
         self.requested: int = cast(int, redis_request.get("requested", 0))
         self.full: bool = cast(bool, redis_request.get("full", False))
+        self.raw_hits: bool = cast(bool, redis_request.get("raw_hits", False))
         self.offset: int = cast(int, redis_request.get("offset", 0))
         self.corpus: int = cast(int, redis_request.get("corpus", 1))
         self.user: str = cast(str, redis_request.get("user", ""))
@@ -182,6 +183,9 @@ class Request:
         return obj
 
     def all_queries_done(self, qi: "QueryInfo") -> bool:
+        """
+        Check whether all the requests have gotten enough raw hits
+        """
         so_far = int(self.lines_sent_so_far or 0)
         if not self.full and so_far >= self.requested:
             return True
@@ -202,8 +206,9 @@ class Request:
         """
         if not self.all_queries_done(qi):
             return False
-        if not qi.kwic_keys:
+        if not qi.kwic_keys or self.raw_hits:
             return True
+        # Check whether the segment queries have completed and been sent
         all_segs_sent = True
         for batch_hash, (_, _, req_segs) in self.lines_batch.items():  # type: ignore
             batch_name = qi.get_batch_from_hash(batch_hash)
@@ -280,6 +285,17 @@ class Request:
         ret["projected_results"] = int(
             100 * (ret["total_results_so_far"] / (ret["percentage_words_done"] or 100))
         )
+        batch_hash, _ = qi.query_batches.get(batch_name) or [None, None]
+        if (
+            batch_hash
+            and len(qi.query_batches) > 1
+            and all(bh == batch_hash for (bh, _) in qi.query_batches.values())
+        ):
+            # queries are not batch-dependent (same hash for each batch)
+            ret["percentage_done"] = 100.0
+            ret["percentage_words_done"] = 100.0
+            ret["batches_done"] = len(qi.query_batches)
+            ret["status"] = "finished"
         return ret
 
     async def send_segments(
@@ -289,6 +305,8 @@ class Request:
         Fetch the segments lines for the batch, filter the ones needed for this request
         and send them to the client
         """
+        if self.raw_hits:
+            return
         print(f"[{self.id}] send segments {batch_name}")
         seg_hashes: list[str] = [x for x in qi.segments_for_batch[batch_name]]
         if all(x in self.sent_hashes for x in seg_hashes):
@@ -361,6 +379,19 @@ class Request:
         print(f"[{self.id}] send query {batch_name}")
         batch_hash, _ = qi.query_batches[batch_name]
         if batch_hash in self.sent_hashes:
+            if len(qi.query_batches) > len(self.sent_hashes) and all(
+                bh == batch_hash for (bh, _) in qi.query_batches.values()
+            ):
+                # running same query on each batch -> send confirmation message
+                payload = self.get_payload(qi, batch_name)
+                payload.update({"action": "query_result", "result": {}})
+                await push_msg(
+                    app["websockets"],
+                    self.room,
+                    cast(JSONObject, payload),
+                    skip=None,
+                    just=(self.room, self.user),
+                )
             # If some lines were already sent for this job
             return
         batch_res: list = qi.get_from_cache(batch_hash)
@@ -526,7 +557,9 @@ class QueryInfo:
         self._json_query = qi.setdefault("json_query", json.dumps(json_query) or "")
         if config:
             config["batches"] = config.get("_batches", {})
-        self.config = qi.setdefault("config", config or {})
+        self.config = qi.setdefault(  # TODO: cleaner handling of super large doc_ids
+            "config", {k: v for k, v in (config or {}).items() if k != "doc_ids"}
+        )
         self.meta_json = qi.setdefault("meta_json", meta_json or {})
         self.post_processes = qi.setdefault("post_processes", post_processes or {})
         self.meta_labels = qi.setdefault("meta_labels", [])
@@ -545,7 +578,7 @@ class QueryInfo:
         **kwargs,
     ) -> Job:
         """
-        Adds a job to the background queue
+        Adds a job to the query or background queue, as appropriate
         Can be called either from the main app or from a worker
         """
         queue: str = (
@@ -831,8 +864,11 @@ class QueryInfo:
         If no batch is predicted to have enough results, pick the smallest
         available (so more results go to the frontend faster).
         """
-        if not previous_batch or not len(self.done_batches):
-            return self.all_batches[0]
+        first_batch = self.all_batches[0]
+        if not previous_batch or len(self.done_batches) == 0:
+            return first_batch
+
+        # return the batch after 'previous' in done_batches if it's in there
         list_done_batches = [[b, n] for b, n in self.done_batches.items()]
         next_batch: list = next(
             (
@@ -855,7 +891,8 @@ class QueryInfo:
             proportion_that_matches = so_far / total_words_processed_so_far
             first_not_done: list[str | int] | None = None
             for batch in self.all_batches:
-                if batch[0] in self.done_batches:
+                batch_name = batch[0]
+                if batch_name in self.done_batches:
                     continue
                 if self.full:
                     return batch

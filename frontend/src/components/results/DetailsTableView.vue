@@ -3,15 +3,15 @@
     <table class="table mb-5" :class="isModal ? 'modal-table' : ''">
       <tbody>
         <tr>
-          <td v-if="sentences.length > 2" key="annotations"></td>
+          <td v-if="hasAnnotations" key="annotations"></td>
           <td v-for="(index) in filteredColumnHeadersIdx" :key="`tr-header-${index}`">
             <th>{{ columnHeaders[index] }}</th>
           </td>
         </tr>
-        <tr v-for="(token, tIndex) in sentences[1]" :key="`tr-token-${tIndex}`" :class="rowClasses(tIndex)">
+        <tr v-for="(token, tIndex) in sentence.content" :key="`tr-token-${tIndex}`" :class="rowClasses(tIndex)">
           <td
-            v-if="sentences.length > 2"
-            v-html="annotations(tIndex, sentences)"
+            v-if="hasAnnotations"
+            v-html="annotations(tIndex, sentence)"
             key="annotations"
           ></td>
           <td v-for="(cIndex) in filteredColumnHeadersIdx" :key="`td-${tIndex}-${cIndex}`">
@@ -127,7 +127,7 @@ import { setTooltips, removeTooltips } from "@/tooltips";
 
 export default {
   name: "ResultsDetailsTableView",
-  props: ["data", "sentences", "corpora", "columnHeaders", "isModal"],
+  props: ["data", "sentence", "corpora", "columnHeaders", "isModal"],
   data() {
     return {
       ufeatOrder: [
@@ -153,11 +153,11 @@ export default {
       let token = ""
       let headIndex = this.columnHeaders.indexOf("head")
       let formIndex = this.columnHeaders.indexOf("form")
-      let startId = this.sentences[0]
+      let startId = this.sentence.offset;
       if (headIndex && formIndex >= 0) {
         let tokenId = tokenData[headIndex];
         if (tokenId) {
-          token = this.sentences[1][tokenId - startId][formIndex]
+          token = this.sentence.content[tokenId - startId][formIndex]
           let difference = tokenId - startId - tIndex;
           let arrow = "↓", tag="sub";
           if (difference<0) {
@@ -181,9 +181,10 @@ export default {
     },
     rowClasses(tIndex) {
       let classes = [];
-      let startId = this.sentences[0];
+      let startId = this.sentence.offset;
       let tokenId = startId + tIndex;
-      let group = this.data[1].findIndex(v => v instanceof Array ? v.includes(tokenId) : v == tokenId);
+      const hits = this.data.hits || [];
+      let group = hits.findIndex(v => v instanceof Array ? v.includes(tokenId) : v == tokenId);
       if (group >= 0) classes.push(`tr-color-group-${group}`);
       return classes
     },
@@ -236,7 +237,8 @@ export default {
       return retval
     },
     annotations(tIndex, sentence) {
-      const [offset, _, annotations] = sentence; // eslint-disable-line no-unused-vars
+      const offset = sentence.offset;
+      const annotations = sentence.annotations;
       const tokenIndexOffset = tIndex + offset;
       let ret = [];
       for (let [layer, entities] of Object.entries(annotations)) {
@@ -247,6 +249,11 @@ export default {
         }
       }
       return ret.join(", ");
+    }
+  },
+  computed: {
+    hasAnnotations() {
+      return this.sentence.annotations && Object.keys(this.sentence.annotations).length > 0;
     }
   },
   mounted() {

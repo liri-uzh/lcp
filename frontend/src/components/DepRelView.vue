@@ -1,10 +1,10 @@
 <template>
-  <div id="dep-rel-view">
+  <div :id="`dep-rel-view-${randInt}`" class="dep-rel-view">
   </div>
 </template>
 
 <style scoped>
-  #dep-rel-view {
+  .dep-rel-view {
     padding-top: 20px;
     height: 60vh;
   }
@@ -128,19 +128,19 @@ const browserText = (function () {
 
 export default {
   name: "DepRelView",
-  props: ["data", "sentences", "columnHeaders"],
+  props: ["data", "sentence", "columnHeaders"],
   data(){
-    const { tokens, links } = this.buildGraphData(this.data, this.sentences)
+    const { tokens, links } = this.buildGraphData(this.data, this.sentence)
     return {
       tokens: tokens,
       links: links,
       tokenSpace: 25,
+      randInt: Math.floor(Math.random() * 1000)
     }
   },
   methods: {
-    buildGraphData(data, sentences) {
-      // let startId = this.data[1]
-      let startId = sentences[0]
+    buildGraphData(data, sentence) {
+      let startId = sentence.offset
       let tokens = []
       let links = []
       let sumX = 0
@@ -148,7 +148,8 @@ export default {
       let linksDict = {}
       let groups = {}
 
-      data[1].forEach( (tokenIdOrArray,groupId) => tokenIdOrArray instanceof Array
+      const hits = data?.hits || [];
+      hits.forEach( (tokenIdOrArray,groupId) => tokenIdOrArray instanceof Array
         ? tokenIdOrArray.forEach( (tokenId) => groups[tokenId] = tokenId in groups ? groups[tokenId] : groupId )
         : groups[tokenIdOrArray] = tokenIdOrArray in groups ? groups[tokenIdOrArray] : groupId
       )
@@ -163,7 +164,7 @@ export default {
       let large_index_counter = 5000;
 
       // Compile tokens and link matrix
-      sentences[1].forEach((token, index) => {
+      sentence.content.forEach((token, index) => {
         let textWidth = browserText.getWidth(token[form_id], 12, "Arial")
         let typeWidth = browserText.getWidth(token[pos_id], 12, "Arial")
         let currentTokenId = startId + index
@@ -257,22 +258,22 @@ export default {
     //   `;
     // },
     calcLine(link) {
-      let diff = Math.abs(link.target - link.source)
-      let startId = this.sentences[0]
-      let sourceIndex = link.source - startId
-      let targetIndex = link.target - startId
-      let startX = this.tokens[sourceIndex].sumX + this.tokens[sourceIndex].width/2 + sourceIndex*this.tokenSpace
+      let diff = Math.abs(link.target - link.source);
+      let startId = this.sentence.offset;
+      let sourceIndex = link.source - startId;
+      let targetIndex = link.target - startId;
+      let startX = this.tokens[sourceIndex].sumX + this.tokens[sourceIndex].width/2 + sourceIndex*this.tokenSpace;
       if (!(targetIndex in this.tokens))
         return [startX,startX+4,0,'start'];
-      let endX = this.tokens[targetIndex].sumX + this.tokens[targetIndex].width/2 + targetIndex*this.tokenSpace
+      let endX = this.tokens[targetIndex].sumX + this.tokens[targetIndex].width/2 + targetIndex*this.tokenSpace;
       let arrowPlacment = 'end';
       if (startX > endX) {
-        let tmp = startX
-        startX = endX
-        endX = tmp
-        arrowPlacment = 'start'
+        let tmp = startX;
+        startX = endX;
+        endX = tmp;
+        arrowPlacment = 'start';
       }
-      return [startX + 2, endX - 2, 70 - diff*10, arrowPlacment]
+      return [startX + 2, endX - 2, 70 - diff*10, arrowPlacment];
     },
   },
   mounted() {
@@ -284,8 +285,8 @@ export default {
       width = totalWidth - margin.left - margin.right,
       height = 110 + maxLevel*15 - margin.top - margin.bottom;
 
-    d3.select("div#dep-rel-view").html('')
-    const svg = d3.select("div#dep-rel-view").append("svg")
+    d3.select(`div#dep-rel-view-${this.randInt}`).html('')
+    const svg = d3.select(`div#dep-rel-view-${this.randInt}`).append("svg")
       .attr("width", width + margin.right + margin.left)
       .attr("height", height + margin.top + margin.bottom)
       .attr("viewBox", [0, 0, width, height])
@@ -326,7 +327,7 @@ export default {
       .data(this.tokens)
       .join("text")
       // .attr("class", d => (d.id >= this.data[1] && d.id <= this.data.at(-1)) ? "text-bold text-danger" : "")
-      .attr("class", (d,i) => d.group + ' ' + (this.sentences && this.sentences[1] ? `label-${this.sentences[1][i][label_id]}` : '') )
+      .attr("class", (d,i) => d.group + ' ' + (this.sentence && this.sentence.content ? `label-${this.sentence.content[i][label_id]}` : '') )
       .text(d => d.form)
       .attr("x", (d, index) => (this.tokenSpace * index + d.sumX))
       .attr("y", 10 + maxLevel*15)

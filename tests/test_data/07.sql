@@ -12,11 +12,8 @@ WITH RECURSIVE fixed_parts AS
      AND (extract('year'
                   FROM ("e_aligned"."meta"->>'date')::date))::numeric > (1999)::numeric ),
                match_list AS
-  (SELECT fixed_parts."e" AS "e",
-          fixed_parts."e_aligned_date" AS "e_aligned_date",
-          fixed_parts."e_char_range" AS "e_char_range",
-          fixed_parts."s" AS "s",
-          fixed_parts."s_char_range" AS "s_char_range"
+  (SELECT "s",
+          "s_char_range"
    FROM fixed_parts),
                res1 AS
   (SELECT DISTINCT 1::int2 AS rstype,

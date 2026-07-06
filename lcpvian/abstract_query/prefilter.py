@@ -56,6 +56,7 @@ class SingleNode:
             search = [self.query]
         for piece in search:
             pref = ""
+            piece = piece.replace("!", "\\!").replace(":", "\\:")  # special characters
             for pattern in sorted(SUFFIXES, key=len, reverse=True):
                 centerpiece = self.query.lstrip("^").rstrip("$")
                 if (
@@ -76,6 +77,8 @@ class SingleNode:
                     piece = piece[: -len(pattern)]
                     piece = piece.lstrip().lstrip("^")
                     break
+            if pref and piece.endswith("?"):
+                piece = piece[:-1] + "\\?"  # special case
             fixed.append(f"{piece}{pref}")
         idx = next(k for k, v in col_data.items() if v == self.field)
         tokens = [f"{inv}{idx}{s}" for s in fixed]

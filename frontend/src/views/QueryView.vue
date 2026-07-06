@@ -247,7 +247,6 @@
                   :meta="WSDataMeta"
                   :selectedCorpora="selectedCorpora"
                   :selectedMediaForPlay="selectedMediaForPlay"
-                  :hoveredResult="hoveredResult"
                   :dataType="corpusDataType(selectedCorpora.corpus)"
                   @switchToQueryTab="setMainTab"
                 />
@@ -255,20 +254,15 @@
                   v-else-if="shouldImageViewer()"
                   :image="image"
                   :corpus="selectedCorpora.corpus"
-                  :meta="WSDataMeta"
-                  :sentences="WSDataSentences"
                   :documentIds="documentIds"
+                  :languages="selectedLanguages ? selectedLanguages[0] : ''"
                   @getImageAnnotations="getImageAnnotations"
                   @switchToQueryTab="setMainTab"
                   ref="imageViewer"
                 />
                 <PlainDocumentViewer
-                  v-else
+                  v-else-if="selectedCorpora.corpus"
                   :corpus="selectedCorpora.corpus"
-                  :meta="WSDataMeta"
-                  :metaByLayer="WSDataMeta.layer"
-                  :sentences="WSDataSentences"
-                  :sentencesByStream="WSDataSentencesByStream"
                   :documentIds="documentIds"
                   :minimize="queryStatus"
                   :language="selectedLanguages ? selectedLanguages[0] : ''"
@@ -453,19 +447,14 @@
                                 KWIC
                               </a>
                             </div>
-                             <ResultsPlainTableView
+                             <PlainTableView
                                v-if="plainType == 'table' || resultContainsSet(resultSet)"
-                               :data="WSDataResults.getResultData(index) || []"
-                               :sentences="WSDataSentences"
-                               :sentencesByStream="WSDataSentencesByStream"
+                               :data="WSDataResults.getResultData(index)"
                                :languages="selectedLanguages"
-                               :meta="WSDataMeta.bySegment"
-                               :metaByLayer="WSDataMeta.layer"
                                :attributes="resultSet.attributes"
                                :corpora="selectedCorpora"
                                @updatePage="updatePage"
                                @playMedia="playMedia"
-                               @hoverResultLine="hoverResultLine"
                                @showImage="showImage"
                                :resultsPerPage="resultsPerPage"
                                :loading="loading"
@@ -473,9 +462,7 @@
                              <ResultsKWICView
                                v-else-if="resultContainsSet(resultSet) == false"
                                :data="WSDataResults.getResultData(index)"
-                               :sentences="WSDataSentences"
                                :languages="selectedLanguages"
-                               :meta="WSDataMeta.bySegment"
                                :attributes="resultSet.attributes"
                                :corpora="selectedCorpora"
                                @updatePage="updatePage"
@@ -518,7 +505,7 @@
               :is="modalComponent"
               v-bind="modalProps"
               :key="modalIndexKey"
-              @updated="handleModalUpdated"
+              @update="handleModalUpdate"
               @save="handleModalSave"
               @delete="handleModalDelete"
             />
@@ -738,6 +725,7 @@ import { Modal } from "bootstrap";
 import { nextTick } from 'vue';
 
 import { useCorpusStore } from "@/stores/corpusStore";
+import { useCorpusAnnotationsStore } from "@/stores/corpusAnnotations";
 import { useNotificationStore } from "@/stores/notificationStore";
 import { useUserStore } from "@/stores/userStore";
 import { useWsStore } from "@/stores/wsStore";
@@ -748,7 +736,7 @@ import CorpusDetailsModal from "@/components/corpus/DetailsModal.vue";
 import Title from "@/components/TitleComponent.vue";
 import ResultsTableView from "@/components/results/TableView.vue";
 import ResultsKWICView from "@/components/results/KWICView.vue";
-import ResultsPlainTableView from "@/components/results/PlainTableView.vue";
+import PlainTableView from "@/components/results/PlainTableView.vue";
 import EditorView from "@/components/EditorView.vue";
 import CorpusGraphViewNew from "@/components/CorpusGraphViewNew.vue";
 import PlayerComponent from "@/components/PlayerComponent.vue";
@@ -758,7 +746,6 @@ import DeleteQueryModal from "@/components/query/DeleteQueryModal.vue";
 import CorpusGraphModal from "@/components/query/CorpusGraphModal.vue";
 import { setTooltips, removeTooltips } from "@/tooltips";
 import Utils from "@/utils";
-import { IntervalTree } from "@/intervaltrees";
 import config from "@/config";
 import WSDataResults from "@/classes/WSDataResults";
 
@@ -776,9 +763,6 @@ export default {
       selectedCorpora: null,
       isQueryValidData: null,
       WSDataResults: new WSDataResults(),
-      WSDataMeta: {"layer": {}, "bySegment": {}},
-      WSDataSentences: {},
-      WSDataSentencesByStream: new IntervalTree(),
       nResults: 200,
       activeResultIndex: 1,
       selectedLanguages: null,
@@ -808,7 +792,6 @@ export default {
       showLoadingBar: false,
 
       selectedMediaForPlay: null,
-      hoveredResult: null,
 
       selectedQuery: null,
       userQueries: [],
@@ -844,7 +827,7 @@ export default {
   components: {
     Title,
     ResultsKWICView,
-    ResultsPlainTableView,
+    PlainTableView,
     ResultsTableView,
     EditorView,
     CorpusDetailsModal,
@@ -947,8 +930,12 @@ export default {
         this.requestId = null;
         this.querySatisfied = "";
         this.WSDataResults = new WSDataResults();
-        this.WSDataMeta = {"layer": {}, "bySegment": {}};
-        this.WSDataSentences = {};
+
+        // Clear the store data
+        const corpusAnnotations = useCorpusAnnotationsStore();
+        corpusAnnotations.$reset();
+        corpusAnnotations.corpusConfig = this.selectedCorpora.corpus;
+
         this.nameExport = "";
       }
     },
@@ -1016,8 +1003,9 @@ export default {
   },
   methods: {
     updateSentencesByStream() {
-      // Use a method to trigger a reflective update because vue is stupid
-      this.WSDataSentencesByStream = this.WSDataSentencesByStream.clone();
+      // Use a method to trigger a reflective update
+      const corpusAnnotations = useCorpusAnnotationsStore();
+      corpusAnnotations.sentencesByStream = corpusAnnotations.sentencesByStream.clone();
     },
 
     getReusableModalInstance() {
@@ -1050,9 +1038,6 @@ export default {
             nameExport: this.nameExport,
             nExport: this.nExport,
             isSwissdox: this.isSwissdox,
-            '@update:exportTab': (val) => { this.exportTab = val; },
-            '@update:nameExport': (val) => { this.nameExport = val; },
-            '@update:nExport': (val) => { this.nExport = val; }
           };
           this.modalSizeClass = 'modal-xl';
           this.showModalFooter = true;
@@ -1120,10 +1105,27 @@ export default {
       });
     },
 
-    handleModalUpdated(valid, data) {
-      this.allowSave = valid;
-      if (this.currentModal === 'saveQuery') {
-        this.queryName = data.queryName;
+    handleModalUpdate(...args) {
+      if (this.currentModal == 'saveQuery') {
+        const [valid, data] = args;
+        this.allowSave = valid;
+        if (this.currentModal === 'saveQuery') {
+          this.queryName = data.queryName;
+        }
+      }
+      else if (this.currentModal == 'export') {
+        const [event, val] = args;
+        switch (event) {
+          case 'exportTab':
+            this.exportTab = val;
+            break;
+          case 'nameExport':
+            this.nameExport = val;
+            break;
+          case 'nExport':
+            this.nExport = val;
+            break;
+        }
       }
     },
 
@@ -1199,46 +1201,10 @@ export default {
       this.selectedQuery = null;
       this.currentTab = tab;
     },
-    hoverResultLine(line) {
-      this.hoveredResult = line;
-    },
     playMedia(data) {
       this.selectedMediaForPlay = data;
     },
-    insertRange(interval, range, value) {
-      if (this.rangeValueInInterval(interval, range, value)) return;
-      if (range.length == 4) {
-        const [x1, y1, x2, y2] = range;
-        const xs = [x1,x2].sort((a,b)=>parseInt(a) - parseInt(b));
-        const ys = [y1,y2].sort((a,b)=>parseInt(a) - parseInt(b));
-        let x = interval.search(xs, n=>n.low==xs[0] && n.high==xs[1]);
-        if (x.length)
-          x = x[0].value;
-        else {
-          x = new IntervalTree();
-          interval.insert(xs, x);
-        }
-        x.insert(ys, value);
-      }
-      else
-        interval.insert(range, value);
-    },
-    rangeValueInInterval(interval, range, value) {
-      let found = null;
-      if (range.length == 4) {
-        const [x1,y1,x2,y2] = range;
-        const xs = x1 < x2 ? [x1,x2] : [x2,x1];
-        const ys = y1 < y2 ? [y1,y2] : [y2,y1];
-        const xitv = interval.searchValue(xs, n=>n.low==xs[0] && n.high==xs[1]);
-        if (xitv.length == 0 || !(xitv[0] instanceof IntervalTree)) return found;
-        found = xitv[0].search(ys, n=>n.low==ys[0] && n.high==ys[1] && JSON.stringify(n.value)==JSON.stringify(value)).length > 0;
-      }
-      else {
-        const [low, high] = range[0] < range[1] ? range : [range[1],range[0]];
-        found = interval.search([low,high], n=>n.low==low && n.high==high && JSON.stringify(n.value)==JSON.stringify(value)).length > 0;
-      }
-      return found;
-    },
+
     corpusDataType: Utils.corpusDataType,
     showMediaTab() {
       return this.selectedCorpora
@@ -1332,53 +1298,6 @@ export default {
       this.modalIndexKey++
       modal.show()
     },
-    processMeta(meta) {
-      // TODO: store meta by stream, and pass that to components instead of by id?
-      const META_LIMIT = 50000;
-      const ancMap = {
-        char_range: "Stream",
-        frame_range: "Time",
-        xy_box: "Location"
-      };
-      if (meta.length > META_LIMIT) console.warn(`Too much metadata (over ${META_LIMIT} lines) to process everything`);
-      let n = 0;
-      for (let [sids, layer, lid, info] of meta) {
-        n++;
-        if (n>META_LIMIT) break;
-        if (!lid) continue;
-        if (!(layer in this.WSDataMeta.layer))
-          this.WSDataMeta.layer[layer] = {
-            "byId": {},
-            "byStream": new IntervalTree(), "byTime": new IntervalTree(), "byLocation": new IntervalTree()
-          };
-        const layer_dict = this.WSDataMeta.layer[layer];
-        if (lid in layer_dict) continue;
-        info._id = lid;
-        layer_dict.byId[lid] = info;
-        for (let sid of sids) {
-          this.WSDataMeta.bySegment[sid] = this.WSDataMeta.bySegment[sid] || {};
-          this.WSDataMeta.bySegment[sid][layer] = info;
-        }
-        // Parse the anchors in a first pass
-        for (let anc_col in ancMap) {
-          if (!(anc_col in info)) continue;
-          info[anc_col] = info[anc_col]
-            .split(",")
-            .map(x=>parseInt(x.replace(/[[()]/g,"")))
-            .map((v,i)=>v-(anc_col != "xy_box" && i==1)); // decrement right edge by 1 if not xy_box
-        }
-        // And insert in a second pass: JSON.stringify is now consistent across iterations
-        for (let [anc_col, anc_name] of Object.entries(ancMap)) {
-          if (!(anc_col in info)) continue;
-          const range = info[anc_col];
-          const byAnchor = layer_dict[`by${anc_name}`];
-          this.insertRange(byAnchor, range, info);
-        }
-      }
-      this.WSDataMeta.bySegment = {...this.WSDataMeta.bySegment};
-      this.WSDataMeta.layer = {...this.WSDataMeta.layer};
-      this.WSDataMeta = {...this.WSDataMeta};
-    },
     onSocketMessage(data) {
       // the below is just temporary code
       // let data = JSON.parse(event.data);
@@ -1421,41 +1340,56 @@ export default {
           return;
         }
 
+        const corpusAnnotations = useCorpusAnnotationsStore();
+        if (this.selectedCorpora.corpus && !corpusAnnotations.corpusConfig)
+          corpusAnnotations.corpusConfig = this.selectedCorpora.corpus;
+
+
         if (data["action"] === "clip_media") {
           useCorpusStore().getClipMedia({file: data["file"]});
           return;
         }
 
+        if (data["warning"])
+          useNotificationStore().add({
+            type: "warning",
+            text: data["warning"]
+          });
+
         const is_doc = data["action"] == "document";
 
         if (data["action"] == "image_annotations" || is_doc) {
           const annotations = is_doc ? data.document : data.annotations;
-          const meta = [], ids = [];
-          this.WSDataSentences = this.WSDataSentences || {};
+          const ids = [];
+
+          // Create backend data structure expected by the store
+          const backendData = {
+            '-1': {},  // Segments
+            '-2': []   // Annotations
+          };
+
           for (let [row] of annotations) {
             if (row[0] == "_prepared") {
-              const [seg_id, seg_offset, seg_content, char_range_str] = row.slice(1,)
-              if (seg_id in this.WSDataSentences) continue;
-              let char_range = [-1,-1];
-              try {
-                char_range = JSON.parse(
-                  char_range_str.replace(")","]")
-                ).map((v,i)=>v-(i==1)); // decrement right edge by 1
-                this.insertRange(this.WSDataSentencesByStream, char_range, seg_id);
-              } catch { null }
-              // Add empty annotations in 3rd slot
-              this.WSDataSentences[seg_id] = [seg_offset, seg_content, {}, char_range];
+              const [sid, offset, content, char_range] = row.slice(1,);
+              backendData["-1"][sid] = [offset, content, {}, char_range]; // no seg annotations returned here
             }
             else
-              meta.push([[], ...row]);
-            if (!is_doc && row[0] == data.layer) ids.push(row[1]);
+              backendData["-2"].push([[], ...row]);
+            if (!is_doc && row[0] == data.layer) {
+              ids.push(row[1]);
+              if (!this.image?.layer)
+                this.image = {
+                  layer: data.layer,
+                  layerId: row[1],
+                };
+            }
           }
-          this.WSDataSentences = {...this.WSDataSentences};
+          corpusAnnotations.processBackendData(backendData);
+
           this.updateSentencesByStream();
           for (let id of ids)
             this.imageAnnotations[id] = 1;
-          if (meta.length)
-            this.processMeta(meta);
+
         }
 
         if (is_doc) {
@@ -1592,25 +1526,11 @@ export default {
         } else if (data["action"] === "segments") {
           useWsStore().addMessageForPlayer(data);
           this.updateLoading(data.status);
-          const meta = data.result["-2"] || [];
-          this.processMeta(meta);
-          if (!(-1 in data.result)) return;
-          this.WSDataSentences = this.WSDataSentences || {};
-          for (let [sid, v] of Object.entries(data.result[-1])) {
-            const rangeMatches = v.map(x=>String(x||"").match(/^\[(\d+),(\d+)\)$/));
-            const rangeIdx = rangeMatches.findIndex(x=>x);
-            if (rangeIdx>=0) {
-              const range = rangeMatches[rangeIdx].slice(1,).map(x=>parseInt(x));
-              v[rangeIdx] = range;
-              this.insertRange(this.WSDataSentencesByStream, range, sid);
-            }
-            this.WSDataSentences[sid] = v;
-          }
-          this.updateSentencesByStream();
-          this.WSDataSentences = {...this.WSDataSentences};
-          // if (["satisfied", "overtime"].includes(this.WSDataResults.status)) {
-          //   this.loading = false;
-          // }
+          
+          // Process both segments and annotations using the new store
+          const corpusAnnotations = useCorpusAnnotationsStore();
+          corpusAnnotations.processBackendData(data.result);
+
           return;
         } else if (data["action"] === "failed") {
           this.loading = false;
@@ -1865,6 +1785,36 @@ export default {
         retval = `${config.baseMediaUrl}/${this.selectedCorpora.corpus.schema_path}/`
       }
       return retval
+    },
+
+    // Backward compatibility: Provide old data structure from new store
+    WSDataMeta() {
+      const corpusAnnotations = useCorpusAnnotationsStore();
+      return {
+        layer: corpusAnnotations.annotationsByLayer,
+        bySegment: Object.fromEntries(
+          Object.entries(corpusAnnotations.segments).map(([sid, segment]) => {
+            const annotations = {};
+            Object.entries(segment.annotations || {}).forEach(([layer, annotationId]) => {
+              const annotation = corpusAnnotations.annotationsByLayer[layer]?.byId[annotationId];
+              if (annotation) {
+                annotations[layer] = annotation;
+              }
+            });
+            return [sid, annotations];
+          })
+        )
+      };
+    },
+
+    WSDataSentences() {
+      const corpusAnnotations = useCorpusAnnotationsStore();
+      return corpusAnnotations.segments;
+    },
+
+    WSDataSentencesByStream() {
+      const corpusAnnotations = useCorpusAnnotationsStore();
+      return corpusAnnotations.sentencesByStream;
     },
     availableLanguages() {
       let retval = [];

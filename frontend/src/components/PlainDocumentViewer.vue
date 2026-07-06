@@ -25,92 +25,24 @@
     </div>
   </div>
 
-  <LoadingView class="segment-loading" override="1" v-if="!currentDocumentSelected"/>
+  <div v-if="unknownLanguage">
+    This is a multilingual corpus: select one of <span v-html="corpus.partitions.values.join(', ')"></span> to preview documents.
+  </div>
+  <LoadingView class="segment-loading" override="1" v-else-if="!currentDocumentSelected || !preparedRanges"/>
   <div
     id="viewer-container"
     :class="[minimize ? 'minimized' : '']"
     ref="viewerContainer"
-    v-if="corpus && documentLayer && currentDocumentSelected"
+    v-if="corpus && documentLayer && currentDocumentSelected && preparedRanges"
   >
-    <div class="segments" v-if="allPrepared instanceof Array && allPrepared.length > 0">
-      <div
-        class="segment"
-        v-for="(prep, n) in allPrepared"
-        :key="`segment-prepared-${n}`"
-        :class="prep._highlight > 0 ? 'highlight' : ''"
-      >
-        <span
-          v-if="Object.keys(meta).length"
-          style="margin-right: 0.5em"
-          class="icon-info ms-2"
-        >
-          <FontAwesomeIcon :icon="['fas', 'circle-info']" />
-          <div class="segment-info" v-html="metaForSentence(prep._sid, prep._char_range)"></div>
-        </span>
-        <PlainTokens
-          :item="prep"
-          :columnHeaders="columnHeaders"
-          :currentToken="currentToken"
-          :resultIndex="0"
-          @showPopover="()=>null"
-          @closePopover="()=>null"
-        />
-        <button
-          type="button"
-          class="btn btn-secondary btn-sm"
-          data-bs-toggle="modal"
-          :data-bs-target="`#detailsModalDocViewer${randInt}`"
-          @click="showModal(prep)"
-        >
-          {{ $t('common-details') }}
-        </button>
-      </div>
-    </div>
-    <div
-      class="modal fade modal-xl"
-      :id="`detailsModalDocViewer${randInt}`"
-      tabindex="-1"
-      aria-labelledby="detailsModalDocViewerLabel"
-      aria-hidden="true"
-    >
-      <div class="modal-dialog modal-full">
-        <div class="modal-content">
-          <div class="modal-header">
-            <h5 class="modal-title" id="detailsModalDocViewerLabel">{{ $t('common-details') }}</h5>
-            <button
-              type="button"
-              class="btn-close"
-              data-bs-dismiss="modal"
-              :aria-label="$t('common-close')"
-            ></button>
-          </div>
-          <div class="modal-body text-start">
-            <div class="modal-body-content">
-              <ResultsDetailsModalView
-                :data="[currentPrepSentence._sid, currentPrepSentence]"
-                :sentences="sentences"
-                :sentencesByStream="sentencesByStream"
-                :meta="meta"
-                :metaByLayer="metaByLayer"
-                :corpora="{corpus: corpus}"
-                :languages="language ? [language] : []"
-                :hideContext="true"
-                v-if="modalVisible && currentPrepSentence && currentPrepSentence._sid"
-              />
-            </div>
-          </div>
-          <div class="modal-footer">
-            <button
-              type="button"
-              class="btn btn-secondary"
-              data-bs-dismiss="modal"
-            >
-              {{ $t('common-close') }}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
+    <SegmentTable
+      :preparedRanges="preparedRanges"
+      :languages="language"
+      :corpora="{corpus: corpus}"
+      :resultsPerPage="0"
+      :details="'perSegment'"
+      :hideContext="true"
+    />
   </div>
 </template>
 
@@ -119,27 +51,25 @@ import { mapState } from "pinia";
 
 import { useCorpusStore } from "@/stores/corpusStore";
 import { useUserStore } from "@/stores/userStore";
+import { useCorpusAnnotationsStore } from "@/stores/corpusAnnotations";
 
 import LoadingView from "@/components/LoadingView.vue";
-import PlainTokens from "@/components/results/PlainToken.vue";
-import ResultsDetailsModalView from "@/components/results/DetailsModalView.vue";
-
-import Utils from "@/utils";
-
-const TokenToDisplay = Utils.TokenToDisplay;
+import SegmentTable from "@/components/SegmentTable.vue";
 
 export default {
   name: "PlainDocumentViewer",
   components: {
-    PlainTokens,
     LoadingView,
-    ResultsDetailsModalView,
+    SegmentTable,
   },
   data() {
+    const corpusAnnotations = useCorpusAnnotationsStore();
+    corpusAnnotations.events.addEventListener("data", ()=> this.setPreparedRanges());
     return {
+      unknownLanguage: false,
+      preparedRanges: null,
       documentId: 0,
       tmpdocumentId: 0,
-      currentToken: null,
       currentDocumentSelected: null,
       documentOptions: [],
       annotationVisibility: {},
@@ -151,10 +81,6 @@ export default {
   props: [
     "name",
     "corpus",
-    "meta",
-    "metaByLayer",
-    "sentences",
-    "sentencesByStream",
     "documentIds",
     "minimize",
     "language"
@@ -168,99 +94,35 @@ export default {
       return name;
     },
     loadDocuments() {
+      if (this.corpus.partitions && !(this.corpus.partitions.values || []).includes(this.language)) {
+        this.unknownLanguage = true;
+        return;
+      }
+      this.unknownLanguage = false;
       useCorpusStore().fetchDocuments({
         room: this.roomId,
         user: this.userData.user.id,
         corpora_id: this.corpus.meta.id,
         kind: "plain",
-        language: this.language
+        language: this.language,
+        limit: 500
       });
     },
-    showModal(prepSentence) {
-      this.currentPrepSentence = prepSentence;
-      this.modalVisible = true;
-    },
-    dictToStr(...args) {
-      return Utils.dictToStr(...args);
-    },
-    metaForSentence(sid, char_range) {
-      if (!this.meta || !this.meta.layer) return "";
-      const segMeta = this.meta.layer[this.corpus.segment];
-      if (!segMeta) return "";
-      if (!(sid in segMeta.byId)) return "";
-      const processedAnnotations = {};
-      const annotationsArray = [];
-      for (const layer in this.meta.layer) {
-        if (layer == this.corpus.document) continue;
-        processedAnnotations[layer] = {};
-        const layerStream = this.meta.layer[layer].byStream;
-        if (!layerStream) continue;
-        const annotations = layerStream.searchValue(char_range);
-        if (!annotations || !annotations.length) continue;
-        for (const annotation of annotations) {
-          const aid = annotation._id;
-          if (aid) {
-            if (aid in processedAnnotations[layer]) continue;
-            processedAnnotations[layer][aid] = 1;
-          }
-          const annotationArray = Object.entries(annotation).filter(
-            kv=>!kv[0].startsWith("_") && !["char_range","frame_range","xy_box"].includes(kv[0])
-          );
-          if (annotationArray.length == 0) continue;
-          annotationsArray.push([layer, annotationArray]);
-        }
-      }
-      if (annotationsArray.length == 0) return "";
-      const rows = annotationsArray.map(
-        ([layer,annotations]) => `
-        <tr><td colspan="2" class="layer-name">${layer}</td></tr>
-        ${
-          annotations.map(
-            ([k,v])=>'<tr><td class="attribute-name">'+k+'</td><td>'+v+'</td></tr>'
-          ).join('')
-        }
-      `).join('');
-      const ret = `<table>${rows}</table>`;
-      return ret;
+    setPreparedRanges() {
+      if (!this.currentDocumentSelected?.value?.char_range) return;
+      const char_range_str = this.currentDocumentSelected.value.char_range.join(",");
+      this.preparedRanges = [[char_range_str, null]];
     }
   },
   computed: {
     ...mapState(useUserStore, ["userData", "roomId"]),
+    ...mapState(useCorpusAnnotationsStore, {
+      meta: "annotationsByLayer",
+      events: "events",
+    }),
     documentLayer() {
       return this.corpus.document;
     },
-    columnHeaders() {
-      if (!this.corpus) return [];
-      const seg = this.corpus.segment;
-      let segMapping = this.corpus.mapping.layer[seg];
-      if (!("prepared" in segMapping)) {
-        try {
-          segMapping = segMapping.partitions[this.language];
-        } catch {
-          console.error("Could not find the column headers in", segMapping, "for", this.language);
-        }
-      }
-      return segMapping.prepared.columnHeaders;
-    },
-    allPrepared() {
-      if (!this.currentDocumentSelected) return [];
-      const char_range = this.currentDocumentSelected.value.char_range;
-      if (!(this.corpus.segment in this.meta.layer)) return [];
-      const prepared = [];
-      const segments = this.meta.layer[this.corpus.segment].byStream.searchValue(char_range);
-      for (let segment of segments.sort((a,b)=>a.char_range[0] - b.char_range[0])) {
-        if (!(segment._id in this.sentences)) continue;
-        const [segOffset, preTokens] = this.sentences[segment._id];
-        if (!preTokens) continue
-        let groups = [];
-        const tokens = preTokens.map((t,i)=>new TokenToDisplay(t, (segOffset||1)+i, groups, this.columnHeaders, {}));
-        tokens._highlight = groups.length;
-        tokens._sid = segment._id;
-        tokens._char_range = segment.char_range;
-        prepared.push(tokens);
-      }
-      return prepared;
-    }
   },
   watch: {
     documentId() {
@@ -286,21 +148,21 @@ export default {
       if (!this.currentDocumentSelected)
         this.currentDocumentSelected = this.documentOptions[0];
     },
-    meta() {
-      if (!this.meta.layer) return;
-    },
     currentDocumentSelected() {
+      this.preparedRanges = null;
       if (!this.currentDocumentSelected || !this.currentDocumentSelected.value) return;
       const docId = this.currentDocumentSelected.value.id;
-      const docMeta = this.meta.layer[this.corpus.document];
-      if (docMeta && docId in docMeta) return;
+      const metaLayer = this.meta.layer || {};
+      const docMeta = metaLayer[this.corpus.document];
+      if (docMeta && docId in docMeta)
+        return this.setPreparedRanges();
       useCorpusStore().fetchAnnotations({
         user: this.userData.user.id,
         room: this.roomId,
         corpus: this.corpus.meta.id,
         anchor: "stream",
         range: this.currentDocumentSelected.value.char_range,
-        limit: 500,
+        limit: 1000, // limit lines to 1000 to spare memory load
         language: this.language
       });
     },
@@ -308,9 +170,11 @@ export default {
       this.currentDocumentSelected = null;
       this.documentOptions = [];
       this.loadDocuments();
-    }
+    },
   },
   mounted() {
+    console.log("language", this.language, "corpus", this.corpus);
+
     this.loadDocuments();
   },
   beforeUnmount() {

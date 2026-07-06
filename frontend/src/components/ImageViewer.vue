@@ -105,23 +105,20 @@
           </div>
         </div>
       </div>
-      <div class="segments" v-if="allPrepared instanceof Array && allPrepared.length > 0">
-        <div
-          class="segment"
-          v-for="(prep, n) in allPrepared"
-          :key="`image-prepared-${n}`"
-          :class="prep._highlight > 0 ? 'highlight' : ''"
-        >
-          <PlainTokens
-            :item="prep"
-            :columnHeaders="columnHeaders"
-            :currentToken="currentToken"
-            :resultIndex="0"
-            @showPopover="()=>null"
-            @closePopover="()=>null"
-          />
-        </div>
-      </div>
+      <SegmentTable
+        v-if="currentImage && currentImage.char_range"
+        :preparedRanges="[
+              [currentImage.char_range.join(','),image?.dataLine]
+            ]"
+        :languages="languages"
+        :corpora="{corpus: corpus}"
+        @playMedia="()=>null"
+        :resultsPerPage="200"
+        :loading="false"
+        :details="false"
+        :hideCopy="true"
+        :hideImage="true"
+      />
     </div>
   </div>
 </template>
@@ -131,21 +128,17 @@ import { mapState } from "pinia";
 
 import { useCorpusStore } from "@/stores/corpusStore";
 import { useUserStore } from "@/stores/userStore";
-
+import { useCorpusAnnotationsStore } from "@/stores/corpusAnnotations";
 import LoadingView from "@/components/LoadingView.vue";
-import PlainTokens from "@/components/results/PlainToken.vue";
-
-import Utils from "@/utils";
+import SegmentTable from "@/components/SegmentTable.vue";
 import config from "@/config";
-
-const TokenToDisplay = Utils.TokenToDisplay;
 
 const MARGIN = 10;
 
 export default {
   name: "ImageViewer",
   components: {
-    PlainTokens,
+    SegmentTable,
     LoadingView
   },
   data() {
@@ -169,9 +162,8 @@ export default {
   props: [
     "image",
     "corpus",
-    "meta",
-    "sentences",
-    "documentIds"
+    "documentIds",
+    "languages"
   ],
   emits: ["getImageAnnotations", "switchToQueryTab"],
   methods: {
@@ -271,8 +263,8 @@ export default {
       if (!this.currentDocumentSelected) return;
       const box = this.currentDocumentSelected.value.xy_box;
       let foundImages = [];
-      if (this.meta.layer && this.meta.layer[this.imageLayer])
-        foundImages = this.overlaps(this.meta.layer[this.imageLayer].byLocation, box)
+      if (this.annotationsByLayer[this.imageLayer])
+        foundImages = this.overlaps(this.annotationsByLayer[this.imageLayer].byLocation, box)
       if (foundImages.length>0) {
         if (this.currentImage && foundImages.find(i=>i._id == this.layerId)) return;
         this.layerId = foundImages[0]._id;
@@ -316,11 +308,11 @@ export default {
   },
   computed: {
     ...mapState(useUserStore, ["userData", "roomId"]),
+    ...mapState(useCorpusAnnotationsStore, ["segments", "annotationsByLayer"]),
     currentImage() {
       if (!this.layerId) return;
       if (!this.imageLayer) return;
-      if (!this.meta.layer) return;
-      const images = this.meta.layer[this.imageLayer];
+      const images = this.annotationsByLayer[this.imageLayer];
       if (!images) return;
       const img = (images.byId || {})[this.layerId];
       if (!img) return;
@@ -355,31 +347,12 @@ export default {
       const img = this.currentImage;
       if (!img) return {};
       const ret = {};
-      for (let [layer, bys] of Object.entries(this.meta.layer)) {
+      for (let [layer, bys] of Object.entries(this.annotationsByLayer)) {
         const overlaps = this.overlaps(bys.byLocation, img.xy_box);
         if (overlaps.length == 0) continue;
         ret[layer] = [...(ret[layer] || []), ...overlaps];
       }
       return ret;
-    },
-    allPrepared() {
-      const img = this.currentImage;
-      if (!img) return [];
-      if (!this.meta.layer[this.corpus.segment]) return [];
-      const prepared = [];
-      const segments = this.meta.layer[this.corpus.segment].byStream.searchValue(img.char_range);
-      for (let segment of segments.sort((a,b)=>a.char_range[0] - b.char_range[0])) {
-        if (!(segment._id in this.sentences)) continue;
-        const [segOffset, preTokens] = this.sentences[segment._id];
-        if (!preTokens) continue
-        let groups = [];
-        if (this.image.resultSegment == segment._id)
-          groups = this.image.groups;
-        const tokens = preTokens.map((t,i)=>new TokenToDisplay(t, (segOffset||1)+i, groups, this.columnHeaders, {}));
-        tokens._highlight = groups.length;
-        prepared.push(tokens);
-      }
-      return prepared;
     },
     highlights() {
 
@@ -396,7 +369,7 @@ export default {
       const sortedYs = [y1 > y2 ? y2 : y1, y1 > y2 ? y1 : y2];
       const image_offset = [sortedXs[0], sortedYs[0], sortedXs[1], sortedYs[1]];
 
-      for (let [layer, bys] of Object.entries(this.meta.layer)) { // eslint-disable-line no-unused-vars
+      for (let [layer, bys] of Object.entries(this.annotationsByLayer)) { // eslint-disable-line no-unused-vars
         const overlaps = this.overlaps(bys.byLocation, img.xy_box);
         for (let o of overlaps) {
           if (!o || !o.xy_box) continue;
@@ -451,8 +424,8 @@ export default {
       this.imageWidth = 0;
       this.imageHeight = 0;
       if (!this.currentImage) return;
-      if (!this.meta || !this.meta.layer || !this.meta.layer[this.corpus.document]) return;
-      const docs = this.overlaps(this.meta.layer[this.corpus.document].byLocation, this.currentImage.xy_box);
+      if (!this.annotationsByLayer[this.corpus.document]) return;
+      const docs = this.overlaps(this.annotationsByLayer[this.corpus.document].byLocation, this.currentImage.xy_box);
       if (docs.length==0) return;
       const doc = docs[0];
       if (this.currentDocumentSelected && doc._id == this.currentDocumentSelected.value.id) return;
@@ -474,9 +447,9 @@ export default {
       if (!this.currentDocumentSelected)
         this.currentDocumentSelected = this.documentOptions[0];
     },
-    meta() {
+    annotationsByLayer() {
       if (this.currentImage) return;
-      if (!this.meta.layer) return;
+      if (!this.annotationsByLayer) return;
       if (this.shouldFetchForDocument()) return;
     },
     currentDocumentSelected() {

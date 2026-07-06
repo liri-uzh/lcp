@@ -20,16 +20,11 @@ WITH RECURSIVE fixed_parts AS
      AND "top"."keywords" & "top_mask_0".m > 0::bit(328)
      AND "s"."segment_id" = "t"."segment_id" ),
                match_list AS
-  (SELECT fixed_parts."s" AS "s",
-          fixed_parts."s_char_range" AS "s_char_range",
-          fixed_parts."s_frame_range" AS "s_frame_range",
-          fixed_parts."t" AS "t",
-          fixed_parts."t_char_range" AS "t_char_range",
-          fixed_parts."t_frame_range" AS "t_frame_range",
-          fixed_parts."top" AS "top",
-          fixed_parts."top_char_range" AS "top_char_range",
-          fixed_parts."top_frame_range" AS "top_frame_range",
-          fixed_parts."top_keywords" AS "top_keywords"
+  (SELECT "s",
+          "s_char_range",
+          "s_frame_range",
+          "t",
+          "top"
    FROM fixed_parts),
                res1 AS
   (SELECT DISTINCT 1::int2 AS rstype,

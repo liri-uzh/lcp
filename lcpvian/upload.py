@@ -4,6 +4,8 @@ importing data into them. These endpoints can also be polled, which returns
 status information about the current task
 """
 
+import base64
+import hashlib
 import json
 import os
 
@@ -11,8 +13,8 @@ import shutil
 import traceback
 
 from datetime import datetime, timedelta
-from tarfile import TarFile, is_tarfile
-from typing import cast, Any
+import tarfile
+from typing import cast, Any, Callable
 from uuid import uuid4
 from zipfile import ZipFile, is_zipfile
 
@@ -24,13 +26,22 @@ from .authenticate import Authentication
 from .ddl_gen import generate_ddl
 from .dqd_parser import convert
 from .typed import JSON
-from .utils import _sanitize_corpus_name, _row_to_value
+from .utils import (
+    _sanitize_corpus_name,
+    _row_to_value,
+    _sanitize_header,
+    _load_top_module_file,
+)
 
+lcpcli = _load_top_module_file(
+    "lcpcli", os.path.join("lcpcli", "lcpcli", "__init__.py")
+)
 
 VALID_EXTENSIONS = ("vrt", "csv", "tsv")
 COMPRESSED_EXTENTIONS = ("zip", "tar", "tar.gz", "tar.xz", "7z")
 MEDIA_EXTENSIONS = ("mp3", "mp4", "wav", "ogg", "png", "jpg", "jpeg", "bmp")
 UPLOADS_PATH = os.getenv("TEMP_UPLOADS_PATH", "uploads")
+UPLOAD_TTL = os.getenv("QUERY_TTL", 5000)
 
 
 async def _create_status_check(request: web.Request, job_id: str) -> web.Response:
@@ -149,14 +160,10 @@ def _check_dqd(template: dict) -> bool:
     return success
 
 
-def _ensure_partitioned0(path: str) -> None:
+def _ensure_partitioned0(data, path: str) -> None:
     """
     In case the user didn't call word.csv word0.csv
     """
-    template = os.path.join(path, "_data.json")
-    with open(template, "r") as fo:
-        data = json.load(fo)
-        data = data["template"]
     srcs = [os.path.join(path, "fts_vector.csv"), os.path.join(path, "fts_vector.tsv")]
     for layer in ("token", "segment"):
         lay = data["firstClass"][layer]
@@ -170,15 +177,11 @@ def _ensure_partitioned0(path: str) -> None:
             print(f"Moved: {src}->{dest}")
 
 
-def _correct_doc(path: str) -> None:
+def _correct_doc(data, path: str) -> None:
     """
     Fix incorrect JSON formatting...
     todo: remove this when fixed upstream
     """
-    template = os.path.join(path, "_data.json")
-    with open(template, "r") as fo:
-        data = json.load(fo)
-        data = data["template"]
     doc = data["firstClass"]["document"]
     docpath = os.path.join(path, f"{doc}.csv".lower())
     if not os.path.exists(docpath):
@@ -190,179 +193,295 @@ def _correct_doc(path: str) -> None:
         fo.write(data)
 
 
-async def upload(request: web.Request) -> web.Response:
-    """
-    Handle upload of data (save files, insert into db)
-    """
+def _parse_tus_metadata(header_value):
+    if not header_value:
+        return {}
+    metadata = {}
+    for pair in header_value.split(","):
+        key, encoded_value = pair.split(" ", 1)
+        metadata[key] = base64.b64decode(encoded_value).decode()
+    return metadata
 
+
+async def _validate_upload_request(
+    request: web.Request, upload_id: str = ""
+) -> tuple[bool, dict]:
+    headers = request.headers
     authenticator: Authentication = request.app["auth_class"](request.app)
+    status = await authenticator.check_api_key(request)
 
-    url = request.url
-    job_id = request.rel_url.query["job"]
-    checking = request.rel_url.query.get("check")
-    if checking:
-        return await _status_check(request, job_id)
+    metadata = _parse_tus_metadata(request.headers.get("Upload-Metadata", ""))
+    payload = {k: v for k, v in metadata.items()}
 
-    user_data = await authenticator.user_details(request)
-    if not user_data:
-        raise PermissionError("Could not authenticate the user")
-
-    gui_mode = request.rel_url.query.get("gui", False)
+    filename = metadata.get("filename", "")
+    job_id = metadata.get("job_id", "")
+    if not job_id:
+        try:
+            upload_info = _get_upload_for_id(request, upload_id)
+            payload.update(upload_info)
+            job_id = upload_info.get("job_id", "")
+            filename = upload_info.get("filename", "")
+        except Exception as e:
+            return False, {"error": f"Unauthorized: {str(e)}"}
 
     job: Job
-    # Pass corpus_super in the payload as a super admin to be able to add files in a later step
-    corpus_super: dict = cast(dict, request.rel_url.query.get("corpus_super", {}))
-    is_super_admin = cast(dict, user_data["user"]).get("superAdmin")
-    if corpus_super:
-        if not is_super_admin:
-            return web.json_response(
-                {
-                    "status": "failed",
-                    "error": "This user is not authorized to add new files to the corpus",
-                }
-            )
-        corpus = request.app["config"][str(corpus_super)]
-        project_id = corpus.get("project", corpus.get("projects", [])[0])
-        schema = corpus.get("schema_path", "")
-        cpath = os.path.join(project_id, schema)
-        os.makedirs(cpath, exist_ok=True)
-        job = Job.create(
-            "",
-            args=[],
-            kwargs={
-                "project": project_id,
-                "path": cpath,
-                "corpus_name": "",
-                "project_name": "",
-                "user": "",
-                "room": "",
-            },
-            connection=request.app["redis"],
-        )
-    else:
+    try:
+        payload["job_id"] = job_id
         job = Job.fetch(job_id, connection=request.app["redis"])
-    # schema_name: str = cast(str, job.args[1])
-    kwargs: dict = cast(dict, job.kwargs)
-    project_id = kwargs["project"]
-    username = kwargs["user"]
-    room = kwargs["room"]
-    project_name = kwargs["project_name"]
-    corpus_name = kwargs["corpus_name"]
-    cpath = kwargs["path"]
+        kwargs: dict = cast(dict, job.kwargs)
+        payload["cpath"] = kwargs["path"]
+        username = kwargs["user"]
+        payload["username"] = username
+        payload.update({p: kwargs[p] for p in ("room", "project", "project_name")})
+        user_acc = cast(dict[str, dict[Any, Any] | str], status["account"])
+        assert username == user_acc["email"], PermissionError("Invalid user ID")
+    except Exception as e:
+        return False, {"error": f"Unauthorized: {str(e)}"}
 
-    ziptar = [
-        (".zip", is_zipfile, ZipFile, "namelist"),
-        (".tar", is_tarfile, TarFile, "getnames"),
-        (".tar.gz", is_tarfile, TarFile, "getnames"),
-        (".tar.xz", is_tarfile, TarFile, "getnames"),
-        (".7z", is_7zfile, SevenZipFile, "getnames"),
+    if int(headers.get("Upload-Length", 0)) > 100_000_000_000:  # 100GB limit
+        return False, {"error": "File too large"}
+
+    payload["filename"] = filename
+    complete_files = job.meta.get("complete_files") or {}
+    complete_files.setdefault(filename, False)
+    job.meta["complete_files"] = complete_files
+    job.save_meta()
+
+    return True, payload
+
+
+def _get_upload_for_id(request: web.Request, upload_id) -> dict:
+    connection = request.app["redis"]
+    key = f"uploads::{upload_id}"
+    try:
+        upload = json.loads(connection.get(key))
+        connection.expire(key, UPLOAD_TTL)
+        return upload
+    except Exception as e:
+        print(f"Error with upload: {str(e)}")
+    return {}
+
+
+def _set_upload_for_id(request: web.Request, upload_id: str, upload: dict):
+    connection = request.app["redis"]
+    key = f"uploads::{upload_id}"
+    connection.set(key, json.dumps(upload))
+    connection.expire(key, UPLOAD_TTL)
+
+
+async def _complete_upload(request: web.Request, payload: dict) -> dict[str, str | int]:
+    cpath = payload.get("cpath", "")
+    authenticator: Authentication = request.app["auth_class"](request.app)
+    user_data = await authenticator.user_details(request)
+
+    ziptar: list[tuple[str, Callable, Callable, str, str]] = [
+        (".zip", is_zipfile, ZipFile, "namelist", "r"),
+        (".tar", tarfile.is_tarfile, tarfile.open, "getnames", "r"),
+        (".tar.gz", tarfile.is_tarfile, tarfile.open, "getnames", "r:gz"),
+        (".tar.xz", tarfile.is_tarfile, tarfile.open, "getnames", "r"),
+        (".7z", is_7zfile, SevenZipFile, "getnames", "r"),
     ]
 
-    # username = request.rel_url.query.get("user_id", "")
-    # room = request.rel_url.query.get("room", None)
-
-    if not project_id:
-        return web.json_response(
-            {"status": "failed", "error": "Could not find a corresponding project ID"}
-        )
-
-    data = await request.multipart()
-    has_file = False
-    bit: BodyPartReader
-    async for bit in data:
-        if not isinstance(bit.filename, str):
-            continue
-        if not bit.filename.endswith(
-            VALID_EXTENSIONS + COMPRESSED_EXTENTIONS + MEDIA_EXTENSIONS
-        ):
-            continue
-        ext = os.path.splitext(bit.filename)[-1]
-        path = os.path.join(UPLOADS_PATH, cpath, bit.filename)
-
-        has_file = await _save_file(path, bit, has_file)
-
-        for ext, check, opener, method in ziptar:
+    upload_path = os.path.join(UPLOADS_PATH, cpath)
+    for file in os.listdir(upload_path):
+        path = os.path.join(upload_path, file)
+        for ext, check, opener, method, mode in ziptar:
             if path.endswith(ext) and check(path):
-                _extract_file(bit, path, cpath, ext, opener, method)
+                _extract_file(path, cpath, ext, opener, method, mode)
             elif path.endswith(ext) and not check(path):
                 print(f"Something wrong with {path}. Ignoring...")
                 os.remove(path)
                 fp = os.path.basename(path)
-                ret = {"status": "failed", "msg": f"Problem uncompressing {fp}"}
-                return web.json_response(ret)
+                return {"status": "failed", "error": f"Problem uncompressing {fp}"}
 
-    if request.rel_url.query.get("media"):
+    if payload.get("media"):
+        job = Job.fetch(payload.get("job_id") or "", connection=request.app["redis"])
+        project_id = payload.get("project")
+        project_name = payload.get("project_name")
         ret = {
             "status": "finished",
             "job": job.id,
             "project": str(project_id),
             "project_name": project_name,
-            "corpus_name": corpus_name,
         }
         try:
             corpus = {}
+            corpus_super = payload.get("corpus_super")
+            is_super_admin = cast(dict, user_data["user"]).get("superAdmin")
             if corpus_super and is_super_admin:
                 corpus = request.app["config"][str(corpus_super)]
             else:
-                upload_job = Job.fetch(
-                    job.meta["upload_job"], connection=request.app["redis"]
+                insert_job = Job.fetch(
+                    job.meta["insert_job"], connection=request.app["redis"]
                 )
-                corpus = _row_to_value(upload_job.result)
-            # Need a better method than that - move to authenticate
-            # ud = cast(dict, user_data)
-            # user_projects: set = {p.get("id") for p in ud["publicProfiles"]}
-            # user_projects.update(
-            #     {p.get("id") for sb in ud["subscription"] for sbs in sb for p in sbs}
-            # )
-            # assert corpus_entry.get("project") in user_projects, PermissionError(
-            #     "User is not authorized to upload files to this project"
-            # )
+                corpus = cast(dict, _row_to_value(insert_job.result))
+            ret["corpus_name"] = corpus.get("name", "")
             _move_media_files(cpath, corpus.get("schema_path", ""))
-            # shutil.rmtree(cpath)  # todo: should we do this?
         except Exception as err:
             ret["status"] = "failed"
             ret["error"] = f"Something went wrong with uploading the media files: {err}"
-        return web.json_response(ret)
+        return ret
 
-    _ensure_partitioned0(os.path.join(UPLOADS_PATH, cpath))
-    _correct_doc(os.path.join(UPLOADS_PATH, cpath))
+    template = os.path.join(upload_path, "_data.json")
+    with open(template, "r") as fo:
+        data = json.load(fo)
+        data = data["template"]
+        _ensure_partitioned0(data, upload_path)
+        _correct_doc(data, upload_path)
 
     return_data: dict[str, str | int] = {}
-    if not has_file:
-        msg = "No file sent?"
-        return_data.update({"status": "failed", "info": msg})
-        return web.json_response(return_data)
 
     qs = request.app["query_service"]
     kwa = dict(
-        gui=gui_mode,
+        gui=False,
         user_data=user_data,
         delimiter=request.rel_url.query.get("delimiter", ""),
         quote=request.rel_url.query.get("quote", ""),
         escape=request.rel_url.query.get("escape", ""),
     )
-    path = os.path.join(UPLOADS_PATH, cpath)
+
     print(f"Uploading data to database: {cpath}")
-    upload_job = qs.upload(username, cpath, room, **kwa)
-    job.meta["upload_job"] = upload_job.id
+    username = payload.get("username", "")
+    room = payload.get("room", "")
+    insert_job = qs.insert_data(username, cpath, room, **kwa)
+    job = Job.fetch(payload.get("job_id", ""), connection=request.app["redis"])
+    job.meta["complete_files"] = {}  # we're done with the DB files
+    job.meta["insert_job"] = insert_job.id
     job.save()
-    short_url = str(url).split("?", 1)[0]
-    suggest_url = f"{short_url}?job={upload_job.id}"
-    info = f"""Data upload has begun. If you want to check the status, POST to:
-        {suggest_url}
-    """
+    short_url = str(request.url).split("?", 1)[0]
+    suggest_url = f"{short_url}?job={insert_job.id}"
+    info = f"Data insertion into the databse has begun. If you want to check the status, POST to:  {suggest_url}"
     return_data.update(
         {
             "status": "started",
-            "job": upload_job.id,
-            "project": str(project_id),
-            "project_name": project_name,
+            "job": insert_job.id,
+            "project": payload.get("project", ""),
+            "project_name": payload.get("project_name", ""),
             "info": info,
-            "target": f"/upload?job={upload_job.id}",
+            "target": f"/monitor_db_insert?job={insert_job.id}",
         }
     )
 
-    return web.json_response(return_data)
+    return return_data
+
+
+async def _complete_file(request: web.Request, payload: dict) -> dict[str, str | int]:
+    filename = payload.get("filename", "")
+    job = Job.fetch(payload.get("job_id", ""), connection=request.app["redis"])
+    complete_files = job.meta.get("complete_files") or {}
+    complete_files[filename] = True
+    job.save_meta()
+
+    files_md5 = hashlib.md5(
+        "".join(sorted(fn for fn in complete_files)).encode()
+    ).hexdigest()
+    if str(files_md5) == payload.get("files_md5"):
+        return await _complete_upload(request, payload)
+    return {}
+
+
+# POST /upload
+async def create_upload(request: web.Request) -> web.Response:
+    is_valid, payload = await _validate_upload_request(request)
+    if not is_valid:
+        return web.json_response({"error": payload.get("error", "")}, status=403)
+
+    upload_id = str(uuid4())
+    directory = os.path.join(UPLOADS_PATH, payload.get("cpath", ""))
+    os.makedirs(directory, exist_ok=True)
+    upload_path = os.path.join(directory, payload.get("filename", ""))
+    upload_info = {k: v for k, v in payload.items()}
+    upload_info.update(
+        {
+            "offset": 0,
+            "length": int(request.headers.get("Upload-Length", 0)),
+            "path": upload_path,
+        }
+    )
+    _set_upload_for_id(
+        request,
+        upload_id,
+        upload_info,
+    )
+    open(upload_path, "wb").close()  # Create empty file
+
+    response = web.Response(
+        status=201,
+        headers={"Location": f"/upload/{upload_id}"},
+    )
+    return response
+
+
+# PATCH /upload/<upload_id>
+async def upload_chunk(request: web.Request) -> web.Response:
+    upload_id = request.match_info["upload_id"]
+    is_valid, payload = await _validate_upload_request(request, upload_id)
+    if not is_valid:
+        return web.json_response({"error": payload.get("error", "")}, status=403)
+
+    upload = _get_upload_for_id(request, upload_id)
+    if not upload:
+        return web.Response(status=404)
+
+    offset = int(request.headers.get("Upload-Offset", 0))
+    if offset != upload["offset"]:
+        return web.Response(status=409)  # Offset mismatch
+
+    chunk = await request.read()
+    with open(upload["path"], "ab") as f:
+        f.write(chunk)
+    upload["offset"] += len(chunk)
+
+    headers = {"Upload-Offset": str(upload["offset"])}
+
+    # --- DETECT LAST CHUNK ---
+    if upload.get("length") is not None and upload["offset"] == upload["length"]:
+        print(f"✅ Last chunk received for {upload_id}")
+        response = await _complete_file(request, payload)
+        if response and response.get("status") not in ("started", "finished"):
+            return web.json_response({"error": response.get("error", "")}, status=500)
+        headers.update(
+            {
+                f"X-{_sanitize_header(k)}": _sanitize_header(str(v))
+                for k, v in response.items()
+            }
+        )
+
+    _set_upload_for_id(request, upload_id, upload)
+
+    return web.Response(
+        status=204,
+        headers=headers,
+    )
+
+
+# HEAD /upload/<upload_id>
+async def upload_info(request):
+    upload_id = request.match_info["upload_id"]
+    is_valid, payload = await _validate_upload_request(request, upload_id)
+    if not is_valid:
+        return web.json_response({"error": payload.get("error", "")}, status=403)
+
+    upload = _get_upload_for_id(request, upload_id)
+    if not upload:
+        return web.Response(status=404)
+
+    return web.Response(
+        status=200,
+        headers={
+            "Upload-Offset": str(upload["offset"]),
+            "Upload-Length": str(upload["length"]),
+        },
+    )
+
+
+async def monitor_db_insert(request: web.Request) -> web.Response:
+    """
+    Monitor upload of data to database
+    """
+    job_id = request.rel_url.query["job"]
+
+    return await _status_check(request, job_id)
 
 
 async def _save_file(path: str, bit: BodyPartReader, has_file: bool) -> bool:
@@ -383,13 +502,22 @@ async def _save_file(path: str, bit: BodyPartReader, has_file: bool) -> bool:
 
 
 def _extract_file(
-    bit: BodyPartReader, path: str, cpath: str, ext: str, opener: type, method: str
+    # bit: BodyPartReader,
+    path: str,
+    cpath: str,
+    ext: str,
+    opener: Callable,
+    method: str,
+    mode: str,
 ) -> None:
-    print(f"Extracting {ext} file: {bit.filename}")
-    with opener(path, "r") as compressed:
+    # print(f"Extracting {ext} file: {bit.filename}")
+    with opener(path, mode) as compressed:
         for f in getattr(compressed, method)():
             basef = os.path.basename(str(f))
-            if not str(f).endswith(VALID_EXTENSIONS):
+            if (
+                not str(f).endswith(VALID_EXTENSIONS + MEDIA_EXTENSIONS)
+                and not f == f"media{os.sep}"
+            ):
                 continue
             just_f = os.path.join(UPLOADS_PATH, cpath, basef)
             dest = os.path.join(UPLOADS_PATH, cpath)
@@ -399,7 +527,9 @@ def _extract_file(
             else:
                 compressed.extract(dest, [f])
             try:
-                os.rename(os.path.join(dest, str(f)), just_f)
+                if str(f).endswith(VALID_EXTENSIONS):
+                    # does not apply to media files
+                    os.rename(os.path.join(dest, str(f)), just_f)
             except Exception as err:
                 print(f"Warning: {err}")
                 pass
@@ -411,7 +541,7 @@ def _extract_file(
 
 def _move_media_files(cpath: str, corpus_dir: str) -> None:
     print("Moving media files")
-    media_path = os.environ.get("UPLOAD_MEDIA_PATH", os.path.join("media"))
+    media_path = os.environ.get("UPLOAD_MEDIA_PATH", "media")
     dest_path = os.path.join(media_path, corpus_dir)
     if not os.path.exists(dest_path):
         os.makedirs(dest_path)
@@ -424,15 +554,19 @@ def _move_media_files(cpath: str, corpus_dir: str) -> None:
         shutil.move(
             os.path.join(source_path, basename), os.path.join(dest_path, basename)
         )
-        # os.rename(
-        #     os.path.join(source_path, basename), os.path.join(dest_path, basename)
-        # )
 
 
 async def make_schema(request: web.Request) -> web.Response:
     """
     What happens when a user goes to /create and POSTs JSON
     """
+    if str(request.headers.get("X-LCPCLI-Version")) != str(lcpcli.__version__):
+        error = {
+            "status": "failed",
+            "message": f"Invalid version of LCPCLI -- please use version {lcpcli.__version__}",
+        }
+        return web.json_response(error)
+
     authenticator: Authentication = request.app["auth_class"](request.app)
 
     exists = request.rel_url.query.get("job")

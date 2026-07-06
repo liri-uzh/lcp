@@ -60,22 +60,12 @@ WITH RECURSIVE fixed_parts AS
           "t3_xpos2"
    FROM fixed_parts) ,
                match_list AS
-  (SELECT gather."d" AS "d",
-          gather."d_char_range" AS "d_char_range",
-          gather."d_classCode" AS "d_classCode",
-          gather."s" AS "s",
-          gather."s_char_range" AS "s_char_range",
-          gather."t1" AS "t1",
-          gather."t1_char_range" AS "t1_char_range",
-          gather."t1_xpos2" AS "t1_xpos2",
-          gather."t2" AS "t2",
-          gather."t2_char_range" AS "t2_char_range",
-          gather."t2_lemma" AS "t2_lemma",
-          gather."t2_xpos2" AS "t2_xpos2",
-          gather."t3" AS "t3",
-          gather."t3_char_range" AS "t3_char_range",
-          gather."t3_lemma" AS "t3_lemma",
-          gather."t3_xpos2" AS "t3_xpos2"
+  (SELECT "s",
+          "s_char_range",
+          "t1",
+          "t2",
+          "t3",
+          "t3_lemma"
    FROM gather),
                res1 AS
   (SELECT DISTINCT 1::int2 AS rstype,

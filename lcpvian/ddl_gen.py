@@ -84,21 +84,17 @@ class DDL:
     """
 
     def __init__(self) -> None:
-        self.create_scm: Callable[[str, str, str], str] = lambda x, y, z: dedent(
-            f"""
+        self.create_scm: Callable[[str, str, str], str] = lambda x, y, z: dedent(f"""
             CALL main.open_import('{x}'::uuid, '{y}'::uuid, '{z.replace("'","''")}');
-            SET search_path TO "{x}";"""
-        )
+            SET search_path TO "{x}";""")
 
-        self.create_prepared_segs: Callable[[str, str], str] = lambda x, y: dedent(
-            f"""
+        self.create_prepared_segs: Callable[[str, str], str] = lambda x, y: dedent(f"""
             CREATE TABLE prepared_{x.rstrip("0")} (
                 {y}         uuid    PRIMARY KEY REFERENCES {x} ({y}),
                 id_offset   int8,
                 content     jsonb,
                 annotations jsonb
-            );"""
-        )
+            );""")
 
         self.compute_prep_segs: Callable[[str, str, str], str] = lambda x, y, z: dedent(
             f"""
@@ -117,8 +113,7 @@ class DDL:
         )
 
         self.update_prep_segs: Callable[[str, list[str], str, str, list[str]], str] = (
-            lambda layer, attrs, seg, tok, joins: dedent(
-                f"""
+            lambda layer, attrs, seg, tok, joins: dedent(f"""
             UPDATE prepared_{seg.lower()} ps
             SET annotations = jsonb_set(ps.annotations, '{LB}LB{RB}{layer}{LB}RB{RB}', cte.annotations::jsonb)
             FROM (
@@ -146,19 +141,15 @@ class DDL:
                     GROUP BY {layer.lower()}_id{(', '+', '.join([a.split('.')[1] for a in attrs]) if attrs else '')}, {seg}_id
                 ) sub GROUP BY {seg}_id
             ) cte
-            WHERE cte.{seg}_id = ps.{seg}_id;"""
-            )
+            WHERE cte.{seg}_id = ps.{seg}_id;""")
         )
 
-        self.m_token_n: Callable[[str, str], str] = lambda x, y: dedent(
-            f"""
+        self.m_token_n: Callable[[str, str], str] = lambda x, y: dedent(f"""
                 CREATE MATERIALIZED VIEW {x}_n AS
                 SELECT count(*) AS freq
-                  FROM {y};"""
-        )
+                  FROM {y};""")
 
-        self.m_lemma_freq: Callable[[str, str], str] = lambda x, y: dedent(
-            f"""
+        self.m_lemma_freq: Callable[[str, str], str] = lambda x, y: dedent(f"""
                 CREATE MATERIALIZED VIEW m_lemma_freq{x} AS
                 SELECT x.lemma_id
                      , x.freq
@@ -168,17 +159,14 @@ class DDL:
                                count(*) AS freq
                           FROM {y}{x}
                          GROUP BY lemma_id) x
-                 ORDER BY x.freq DESC;"""
-        )
+                 ORDER BY x.freq DESC;""")
 
-        self.m_token_freq: Callable[[str, str, str], str] = lambda x, y, z: dedent(
-            f"""
+        self.m_token_freq: Callable[[str, str, str], str] = lambda x, y, z: dedent(f"""
                 CREATE MATERIALIZED VIEW {x}_freq AS
                   SELECT {y}
                        , count(*) AS freq
                     FROM {z}
-                GROUP BY CUBE ({y});"""
-        )
+                GROUP BY CUBE ({y});""")
 
         self.t = "\t"
         self.nl = "\n\t"
@@ -1133,7 +1121,8 @@ class CTProcessor:
             for a in props.get("attributes", {}):
                 info: dict[str, Any] = mapping_attrs.get(a, {})
                 if info.get("type") != "relation":
-                    attrs.append(f"ann.{a}")
+                    a_sql = sql.Identifier(a).as_string()
+                    attrs.append(f"ann.{a_sql}")
                     continue
                 table = info.get("name", "")
                 assert table, LookupError(f"Mapping missing 'name' for {layer}->{a}")

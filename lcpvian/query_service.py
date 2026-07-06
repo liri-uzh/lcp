@@ -47,11 +47,11 @@ from .callbacks import (
     _upload_failure,
     _queries,
     _schema,
-    _upload,
+    _inserted,
     _deleted,
 )
 from .export import _export_notifs
-from .jobfuncs import _db_query, _upload_data, _create_schema
+from .jobfuncs import _db_query, _insert_data, _create_schema
 from .typed import (
     BaseArgs,
     Config,
@@ -102,6 +102,7 @@ class QueryService:
         queue: str = "internal",
         kind: str = "audio",
         language: str = "",
+        limit: int = -1,
     ) -> Job:
         """
         Fetch document id + info from DB.
@@ -145,6 +146,8 @@ class QueryService:
             "corpus_id": corpus_id,
             "kind": kind,
         }
+        if limit > 0:
+            query += f" LIMIT {limit}"
         hashed = str(hasher((query, corpus_id)))
         job: Job
         if self.use_cache:
@@ -377,9 +380,10 @@ class QueryService:
         seg = config["segment"]
         seg_id = seg + "_id"
         query = aligned + sql_str(
-            "\nUNION ALL SELECT jsonb_build_array('_prepared', {}.{}, prep.id_offset, prep.content) AS res FROM {} JOIN {}.{} prep ON prep.{} = {}.{};",
+            "\nUNION ALL SELECT jsonb_build_array('_prepared', {}.{}, prep.id_offset, prep.content, {}.char_range) AS res FROM {} JOIN {}.{} prep ON prep.{} = {}.{};",
             seg,
             seg_id,
+            seg,
             seg,
             schema,
             f"prepared_{seg.lower()}",
@@ -810,7 +814,7 @@ class QueryService:
         )
         return job
 
-    def upload(
+    def insert_data(
         self,
         user: str,
         project: str,
@@ -821,12 +825,12 @@ class QueryService:
         **kwargs,
     ) -> Job:
         """
-        Upload a new corpus to the system
+        Insert a new corpus into the database
         """
         kwargs = {"gui": gui, "user_data": user_data, **kwargs}
         job: Job = self.app[queue].enqueue(
-            _upload_data,
-            on_success=Callback(_upload, self.callback_timeout),
+            _insert_data,
+            on_success=Callback(_inserted, self.callback_timeout),
             on_failure=Callback(_upload_failure, self.callback_timeout),
             result_ttl=self.query_ttl,
             job_timeout=self.upload_timeout,

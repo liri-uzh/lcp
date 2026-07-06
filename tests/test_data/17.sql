@@ -45,23 +45,15 @@ WITH RECURSIVE fixed_parts AS
           fixed_parts.t3 AS max_seq
    FROM fixed_parts) ,
                match_list AS
-  (SELECT ARRAY
+  (SELECT "s",
+          "s_char_range",
+          "t1_segment_id",
+          "t3",
+          ARRAY
      (SELECT "t"."token_id"
       FROM "bnc1"."tokenrest" "t"
       WHERE "t"."segment_id" = gather."s"
-        AND "t"."token_id" BETWEEN gather."min_seq"::bigint AND gather."max_seq"::bigint) AS "seq",
-          gather."s" AS "s",
-          gather."s_char_range" AS "s_char_range",
-          gather."t1" AS "t1",
-          gather."t1_char_range" AS "t1_char_range",
-          gather."t1_segment_id" AS "t1_segment_id",
-          gather."t1_xpos2" AS "t1_xpos2",
-          gather."t2" AS "t2",
-          gather."t2_char_range" AS "t2_char_range",
-          gather."t2_xpos2" AS "t2_xpos2",
-          gather."t3" AS "t3",
-          gather."t3_char_range" AS "t3_char_range",
-          gather."t3_xpos2" AS "t3_xpos2"
+        AND "t"."token_id" BETWEEN gather."min_seq"::bigint AND gather."max_seq"::bigint) AS "seq"
    FROM gather),
                res1 AS
   (SELECT DISTINCT 1::int2 AS rstype,
@@ -90,9 +82,9 @@ WITH RECURSIVE fixed_parts AS
                 count(*) AS o
          FROM collocates2
          JOIN bnc1.token_freq USING ("lemma_id")
-         WHERE token_freq.form_id IS NULL
-           AND token_freq.xpos1 IS NULL
-           AND token_freq.xpos2 IS NULL
+         WHERE "token_freq"."form_id" IS NULL
+           AND "token_freq"."xpos1" IS NULL
+           AND "token_freq"."xpos2" IS NULL
          GROUP BY "lemma_id",
                   freq) x
       CROSS JOIN "bnc1"."lemma" "collocates2_lemma"

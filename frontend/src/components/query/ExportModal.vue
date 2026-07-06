@@ -49,7 +49,7 @@
 export default {
   name: "ExportModal",
   props: ["exportTab", "nameExport", "nExport", "isSwissdox"],
-  emits: ["save"],
+  emits: ["save", "update"],
   data() {
     return {
       localExportTab: this.exportTab,
@@ -59,13 +59,14 @@ export default {
   },
   watch: {
     localExportTab(newVal) {
-      this.$emit('update:exportTab', newVal);
+      this.$emit('update', 'exportTab', newVal);
     },
     localNameExport(newVal) {
-      this.$emit('update:nameExport', newVal);
+      this.$emit('update', 'nameExport', newVal);
     },
     localNExport(newVal) {
-      this.$emit('update:nExport', newVal);
+      console.log("emitting update:nExport", newVal);
+      this.$emit('update', 'nExport', newVal);
     }
   }
 };

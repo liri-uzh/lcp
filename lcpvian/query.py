@@ -41,14 +41,16 @@ def batch_callback(job: Job, connection: RedisConnection, batch_name: str):
     qhash: str = job.args[0]
     qi: QueryInfo = QueryInfo(qhash, connection)
 
-    # do next batch (if needed)
-    schedule_next_batch(qhash, connection, batch_name)
+    # do next batch if needed (all already scheduled if full)
+    if not qi.full:
+        schedule_next_batch(qhash, connection, batch_name)
 
     # run needed segment+meta queries
     lines_before, lines_now = qi.get_lines_batch(batch_name)
     lines_so_far = lines_before + lines_now
+
     # send sentences if needed
-    if not qi.kwic_keys:
+    if not qi.kwic_keys or all(r.raw_hits for r in qi.requests):
         return
 
     min_offset = min(r.offset for r in qi.requests) if qi.requests else 0
@@ -96,6 +98,8 @@ async def do_segment_and_meta(
     connection = current_job.connection
     qi = QueryInfo(qhash, connection=connection)
     if not qi.requests:
+        return
+    if all(r.raw_hits for r in qi.requests):
         return
     batch_hash, _ = qi.query_batches[batch_name]
     batch_results: list = qi.get_from_cache(batch_hash)
@@ -286,12 +290,14 @@ def process_query(
     except json.JSONDecodeError:
         json_query = convert(request.query, config)
     json_query_str = json.dumps(json_query)
-    lang = cast(str | None, request.languages[0] if request.languages else None)
-    all_batches = _get_query_batches(config, request.languages)
+    languages = [str(l) for l in request.languages.to_list()]
+    lang = cast(str | None, languages[0] if languages else None)
+    all_batches = _get_query_batches(config, languages)
+    first_batch = all_batches[0]
     sql_query, meta_json, post_processes = json_to_sql(
         cast(QueryJSON, json_query),
         schema=config.get("schema_path", ""),
-        batch=cast(str, all_batches[0][0]),
+        batch=cast(str, first_batch[0]),  # batch_name
         config=config,
         lang=lang,
     )
@@ -303,10 +309,10 @@ def process_query(
     qi = QueryInfo(
         shash,
         app["redis"],
-        json.loads(json_query_str),  # discard any modifications made to json_query
+        json.loads(json_query_str),  # roll back any modifications made to json_query
         meta_json,
         post_processes,
-        request.languages,
+        languages,
         config,
         local_queries,
     )
@@ -322,6 +328,21 @@ def process_query(
     if should_run:
         qi.add_request(request)
         job = schedule_next_batch(shash, connection=app["redis"])
+        if job and qi.full:
+            # Schedule all batches in parallel if this is a full query
+            scheduled_batch, _ = job.args[1]
+            print(
+                f"Full query: batch {scheduled_batch} already scheduled -- adding the remaining ones now"
+            )
+            for remaining_batch in all_batches:
+                batch_name, _ = remaining_batch
+                if batch_name == scheduled_batch:
+                    continue
+                job = qi.enqueue(
+                    do_batch, shash, list(remaining_batch), callback=batch_callback
+                )
+                newly_scheduled_batch, _ = job.args[1] if job else ["", None]
+                print(f"Full query: scheduled {newly_scheduled_batch}")
     return (request, qi, job)
 
 

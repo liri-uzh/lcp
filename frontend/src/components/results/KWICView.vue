@@ -91,7 +91,7 @@
               class="btn btn-secondary btn-sm"
               data-bs-toggle="modal"
               :data-bs-target="`#detailsModal${randInt}`"
-              @click="showModal(resultIndex)"
+              @click="showModal({sentenceId: data[resultIndex][0], hits: []})"
             >
               {{ $t('common-details') }}
             </button>
@@ -161,11 +161,10 @@
           <div class="modal-body text-start">
             <div class="modal-body-content">
               <ResultsDetailsModalView
-                :data="data[modalIndex]"
-                :sentences="sentences[data[modalIndex][0]]"
+                :data="modalData"
                 :corpora="corpora"
                 :languages="languages"
-                :key="modalIndex"
+                :key="modalData.id"
                 v-if="modalVisible"
               />
             </div>
@@ -265,6 +264,9 @@
 </style>
 
 <script>
+import { mapState } from "pinia";
+import { useCorpusAnnotationsStore } from "@/stores/corpusAnnotations";
+
 import ResultsDetailsModalView from "@/components/results/DetailsModalView.vue";
 import PaginationComponent from "@/components/PaginationComponent.vue";
 
@@ -273,7 +275,6 @@ export default {
   emits: ["updatePage"],
   props: [
     "data",
-    "sentences",
     "languages",
     "attributes",
     "corpora",
@@ -287,7 +288,7 @@ export default {
       currentToken: null,
       currentResultIndex: null,
       modalVisible: false,
-      modalIndex: null,
+      modalData: null,
       currentPage: 1,
       groups: this.data ? this.getGroups(this.data, true) : [],
       randInt: Math.floor(Math.random() * 1000),
@@ -298,23 +299,6 @@ export default {
     PaginationComponent,
   },
   methods: {
-    // getGroups1(data) {
-    //   let groups = [];
-    //   let tmpGroup = [];
-    //   let tokenData = JSON.parse(JSON.stringify(data));
-    //   tokenData = tokenData.splice(1, tokenData.length)[0];
-    //   tokenData.forEach((tokenId, idx) => {
-    //     if (idx > 0 && Math.abs(tokenData[idx] - tokenData[idx - 1]) > 1) {
-    //       if (tmpGroup.length > 0) {
-    //         groups.push(tmpGroup.sort());
-    //       }
-    //       tmpGroup = [];
-    //     }
-    //     tmpGroup.push(tokenId);
-    //   });
-    //   groups.push(tmpGroup.sort());
-    //   return groups;
-    // },
     getGroups(data, initial=false) {
       let groups = [];
       if (data) {
@@ -328,8 +312,6 @@ export default {
             : [tokenOrArrayOfTokens]
         );
       }
-      if (groups.length > 0)
-        console.log("groups", groups, data);
       return groups;
     },
     showPopover(token, resultIndex, event) {
@@ -343,8 +325,8 @@ export default {
       this.currentToken = null;
       this.currentResultIndex = null;
     },
-    showModal(index) {
-      this.modalIndex = index + (this.currentPage - 1) * this.resultsPerPage;
+    showModal(dataLine) {
+      this.modalData = dataLine;
       this.modalVisible = true;
     },
     updatePage(currentPage) {
@@ -360,8 +342,8 @@ export default {
           resultIndex + (this.currentPage - 1) * this.resultsPerPage;
 
         let sentenceId = this.data[resultIndex][0];
-        if (!(sentenceId in this.sentences)) return classes;
-        let startId = this.sentences[sentenceId][0];
+        if (!(sentenceId in this.segments)) return classes;
+        let startId = this.segments[sentenceId].data.offset;
         let currentTokenId = 0;
         let groupStartIndex = 0;
 
@@ -406,6 +388,7 @@ export default {
     }
   },
   computed: {
+    ...mapState(useCorpusAnnotationsStore, ["segments"]),
     headToken() {
       let token = "-";
       let headIndex = this.columnHeaders.indexOf("head");
@@ -414,10 +397,11 @@ export default {
         let tokenId = this.currentToken[headIndex];
         if (tokenId) {
           let sentenceId = this.data[this.currentResultIndex][0];
-          if (!(sentenceId in this.sentences)) return token;
-          let startId = this.sentences[sentenceId][0];
+          if (!(sentenceId in this.segments)) return token;
+          const segment = this.segments[sentenceId].data;
+          let startId = segment.offset;
           let tokenIndexInList = tokenId - startId;
-          token = this.sentences[sentenceId][1][tokenIndexInList][lemmaIndex];
+          token = segment.content[tokenIndexInList][lemmaIndex];
         }
       }
       return token;
@@ -431,9 +415,10 @@ export default {
         })
         .map((row) => {
           let sentenceId = row[0];
-          if (!(sentenceId in this.sentences)) return [];
-          let startIndex = this.sentences[sentenceId][0];
-          let tokens = this.sentences[sentenceId][1];
+          if (!(sentenceId in this.segments)) return [];
+          const segment = this.segments[sentenceId].data;
+          let startIndex = segment.offset;
+          let tokens = segment.content;
           let tokenData = this.getGroups([0, ...row[1]]);
           // Handle sequences (arrays of tokens)
           let expandedTokenData = [];

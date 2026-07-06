@@ -1,0 +1,12 @@
+# test case insensitive searches
+
+Segment s
+
+Token@s t1
+    form = /^may$/i
+
+kwic => plain
+    context
+        s
+    entities
+        t1

@@ -19,16 +19,12 @@ WITH RECURSIVE fixed_parts AS
      AND "u_agent"."agent_id" = "u"."agent_id"
      AND ("u_agent"."agent"->>'annee_naissance')::text ~ concat('19[789][0-9]|2[0-9]', chr(123), '3', chr(125), '') ),
                match_list AS
-  (SELECT fixed_parts."t" AS "t",
-          fixed_parts."t_char_range" AS "t_char_range",
-          fixed_parts."t_form" AS "t_form",
-          fixed_parts."t_frame_range" AS "t_frame_range",
-          fixed_parts."u" AS "u",
-          fixed_parts."u_agent" AS "u_agent",
-          fixed_parts."u_agent_annee_naissance" AS "u_agent_annee_naissance",
-          fixed_parts."u_agent_region" AS "u_agent_region",
-          fixed_parts."u_char_range" AS "u_char_range",
-          fixed_parts."u_frame_range" AS "u_frame_range"
+  (SELECT "t",
+          "u",
+          "u_agent_annee_naissance",
+          "u_agent_region",
+          "u_char_range",
+          "u_frame_range"
    FROM fixed_parts),
                res1 AS
   (SELECT DISTINCT 1::int2 AS rstype,

@@ -164,7 +164,7 @@ const DEFAULT_ZOOM_LEVEL = 20;
 
 export default {
   name: "TimelineView",
-  props: ["data", "playerIsPlaying", "playerCurrentTime", "mediaDuration", "hoveredResult", "corpusId", "docId"],
+  props: ["data", "playerIsPlaying", "playerCurrentTime", "mediaDuration", "corpusId", "docId"],
   data() {
     return {
       defaultCurrentTime: this.playerCurrentTime,
@@ -188,11 +188,6 @@ export default {
       const rect = (newAnn || oldAnn).querySelector("rect:nth-child(2)");
       if (!rect) return;
       rect.setAttribute("opacity", newAnn ? 1 : 0.75);
-    },
-    hoveredResult() {
-      // console.log("hoveredResult", this.hoveredResult);
-      // if (this.hoveredResult && this.hoveredResult instanceof Array && this.hoveredResult.length > 2)
-      //   console.log("frame range of hovered line", [...this.hoveredResult[2]]);
     },
     playerIsPlaying() {
       playerState = this.playerIsPlaying;
@@ -744,6 +739,10 @@ export default {
       this.zoomValue = DEFAULT_ZOOM_LEVEL;
 
       this.updateCurrentPosition(this.currentTime > 0 ? this.currentTime : this.defaultCurrentTime);
+
+      // update selection in case it's needed
+      if (this.data._selection && this.data._selection instanceof Array && this.data._selection.length == 2)
+        this.select(...this.data._selection);
     },
     clipMedia() {
       const [x1,x2] = this.selectionStart < this.selectionEnd ? [this.selectionStart,this.selectionEnd] : [this.selectionEnd, this.selectionStart];

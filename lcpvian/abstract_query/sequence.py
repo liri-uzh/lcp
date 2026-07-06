@@ -425,7 +425,7 @@ class Cte:
             lay, _ = self.sequence.label_layer.get(lab, (None, None))
             if not lay:
                 continue
-            rgx = rf"\b({lab})\.{lay}_id\b"
+            rgx = rf'\b("?{lab}"?)\.({lay}_id\b|"{lay}_id")'
             big_disjunction = re.sub(rgx, "\\1", big_disjunction, flags=re.IGNORECASE)
             state_left_joins = {
                 re.sub(rgx, "\\1", slj, flags=re.IGNORECASE) for slj in state_left_joins
@@ -826,7 +826,7 @@ class SQLSequence:
             sql_corpus=self.sql,
         )
         # This hack needs to be handled upstream:
-        # override is only set when the table in not the main one (fixed_parts)
+        # override is only set when the table is not the main one (fixed_parts)
         # so we replace any occurrence of l.layer_id with just l
         seg_lab: str = next(
             (

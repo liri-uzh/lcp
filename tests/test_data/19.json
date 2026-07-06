@@ -1,0 +1,73 @@
+{
+    "query": [
+        {
+            "unit": {
+                "layer": "Document",
+                "label": "d"
+            }
+        },
+        {
+            "unit": {
+                "layer": "Segment",
+                "partOf": [
+                    {
+                        "partOfStream": "d"
+                    }
+                ],
+                "label": "s"
+            }
+        },
+        {
+            "unit": {
+                "layer": "Token",
+                "partOf": [
+                    {
+                        "partOfStream": "s"
+                    }
+                ],
+                "label": "t1"
+            }
+        },
+        {
+            "constraint": {
+                "comparison": {
+                    "left": {
+                        "reference": "d.classCode"
+                    },
+                    "comparator": "=",
+                    "right": {
+                        "regex": {
+                            "pattern": "^S"
+                        }
+                    }
+                }
+            }
+        },
+        {
+            "constraint": {
+                "comparison": {
+                    "left": {
+                        "reference": "t1.form"
+                    },
+                    "comparator": "=",
+                    "right": {
+                        "string": "hello"
+                    }
+                }
+            }
+        }
+    ],
+    "results": [
+        {
+            "label": "kwic",
+            "resultsPlain": {
+                "context": [
+                    "s"
+                ],
+                "entities": [
+                    "t1"
+                ]
+            }
+        }
+    ]
+}

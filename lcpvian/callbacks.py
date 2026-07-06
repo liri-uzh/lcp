@@ -71,12 +71,58 @@ def _document(
     if not room:
         return
     msg_id = str(uuid4())
+    warning = ""
     limit = cast(int, kwargs.get("limit", job_kwargs.get("limit", -1)))
     if limit > 0:
         if isinstance(result, dict):
             result = {k: v for n, (k, v) in enumerate(result.items()) if n < limit}
         elif isinstance(result, list):
+            # list each prepared segment along with its metadata in order, then subset
+            reordered_result = []
+            non_prepared = []
+            for (line, *_) in result:
+                layer_or_type = line[0]
+                xrange = []
+                xrange_str = (
+                    line[-1]
+                    if layer_or_type == "_prepared"
+                    else cast(dict, line[2]).get(
+                        "char_range",
+                        cast(dict, line[2]).get(
+                            "frame_range", cast(dict, line[2]).get("xy_box", "")
+                        ),
+                    )
+                )
+                try:
+                    xrange = json.loads(xrange_str.replace(")", "]"))
+                except:
+                    xrange = []
+                if layer_or_type != "_prepared":
+                    if not xrange or len(xrange) < 2:
+                        continue
+                    non_prepared.append(
+                        {
+                            "added": False,
+                            "line": (line,),
+                            "start": xrange[0],
+                            "end": xrange[1],
+                        }
+                    )
+                    continue
+                reordered_result.append((line,))
+                for non_p in non_prepared:
+                    if non_p.get("added"):
+                        continue
+                    ns = non_p.get("start", 0)
+                    ne = non_p.get("end", -1)
+                    if ne < 0 or ns > xrange[1] or ne < xrange[0]:
+                        continue
+                    reordered_result.append(non_p["line"])
+                    non_p["added"] = True
+            result = cast(list, reordered_result)
             result = [v for n, v in enumerate(result) if n < limit]
+            if len(result) < len(reordered_result):
+                warning = f"Payload includes only the first {limit} annotation lines from the document (out of {len(reordered_result)})"
     jso = {
         "document": result,
         "action": action,
@@ -86,6 +132,8 @@ def _document(
         "corpus": job_kwargs["corpus"],
         "doc_id": job_kwargs["doc"],
     }
+    if warning:
+        jso["warning"] = warning
     return _publish_msg(connection, jso, msg_id)
 
 
@@ -433,13 +481,13 @@ def _schema(
     return _publish_msg(connection, jso, msg_id)
 
 
-def _upload(
+def _inserted(
     job: Job,
     connection: RedisConnection,
     result: MainCorpus | None,
 ) -> None:
     """
-    Success callback when user has uploaded a dataset
+    Success callback when user has inserted a dataset into the database
     """
     if result is None:
         print("Result was none. Skipping callback.")

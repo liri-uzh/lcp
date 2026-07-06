@@ -53,6 +53,7 @@ async def search(request: web.Request) -> web.Response:
     offset = int(request_data.get("offset", 0))
     requested = int(request_data.get("requested", 200))
     full = bool(request_data.get("full", False))
+    raw_hits = bool(request_data.get("raw_hits", False))
     if partitions := corpus_conf.get("partitions", {}):
         lg = partitions.get("values", [""])[0]
     kwargs: dict[str, Any] = {"config": {cid: corpus_conf}, "corpus": cid}
@@ -72,6 +73,7 @@ async def search(request: web.Request) -> web.Response:
         "requested": requested,
         "synchronous": True,
         "full": full,
+        "raw_hits": raw_hits,
     }
     if "to_export" in request_data:
         data_to_process["to_export"] = request_data["to_export"]

@@ -48,12 +48,10 @@ WITH RECURSIVE fixed_parts AS
      AND "anonymous4_form"."form_id" = "anonymous4"."form_id"
      AND "anonymous4"."token_id" - "anonymous3"."token_id" = 1),
                match_list AS
-  (SELECT disjunction0."s" AS "s",
-          disjunction0."s_char_range" AS "s_char_range",
-          disjunction0."tv" AS "tv",
-          disjunction0."tv_char_range" AS "tv_char_range",
-          disjunction0."tv_xpos2" AS "tv_xpos2",
-          disjunction0.disjunction_matches AS disjunction_matches
+  (SELECT "disjunction_matches",
+          "s",
+          "s_char_range",
+          "tv"
    FROM disjunction0),
                res1 AS
   (SELECT DISTINCT 1::int2 AS rstype,

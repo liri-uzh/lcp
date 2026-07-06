@@ -1,0 +1,50 @@
+{
+  "query": [
+    {
+      "unit": {
+        "layer": "Segment",
+        "label": "s"
+      }
+    },
+    {
+      "unit": {
+        "layer": "Token",
+        "partOf": [
+          {
+            "partOfStream": "s"
+          }
+        ],
+        "label": "t1",
+        "constraints": [
+          {
+            "comparison": {
+              "left": {
+                "reference": "form"
+              },
+              "comparator": "=",
+              "right": {
+                "regex": {
+                  "pattern": "^may$",
+                  "caseInsensitive": "i"
+                }
+              }
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "results": [
+    {
+      "label": "kwic",
+      "resultsPlain": {
+        "context": [
+          "s"
+        ],
+        "entities": [
+          "t1"
+        ]
+      }
+    }
+  ]
+}

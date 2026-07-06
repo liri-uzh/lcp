@@ -13,14 +13,9 @@ WITH RECURSIVE fixed_parts AS
    WHERE "s"."segment_id" = "t"."segment_id"
      AND "s"."xy_box" && "sm"."xy_box" ),
                match_list AS
-  (SELECT fixed_parts."s" AS "s",
-          fixed_parts."s_char_range" AS "s_char_range",
-          fixed_parts."s_xy_box" AS "s_xy_box",
-          fixed_parts."sm" AS "sm",
-          fixed_parts."sm_xy_box" AS "sm_xy_box",
-          fixed_parts."t" AS "t",
-          fixed_parts."t_char_range" AS "t_char_range",
-          fixed_parts."t_xy_box" AS "t_xy_box"
+  (SELECT "s",
+          "s_char_range",
+          "t"
    FROM fixed_parts),
                res1 AS
   (SELECT DISTINCT 1::int2 AS rstype,

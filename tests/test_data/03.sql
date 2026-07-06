@@ -120,22 +120,15 @@ SET ordercol ,
              AND traversal0.t4 = traversal0.id + 1)
       ORDER BY ordercol) traversal0) ,
     match_list AS
-  (SELECT ARRAY
+  (SELECT "s",
+          "s_char_range",
+          "t1",
+          "t4",
+          ARRAY
      (SELECT "t"."token_id"
       FROM "bnc1"."tokenrest" "t"
       WHERE "t"."segment_id" = gather."s"
-        AND "t"."token_id" BETWEEN gather."min_seq"::bigint AND gather."max_seq"::bigint) AS "seq",
-          gather."d" AS "d",
-          gather."d_char_range" AS "d_char_range",
-          gather."d_classCode" AS "d_classCode",
-          gather."s" AS "s",
-          gather."s_char_range" AS "s_char_range",
-          gather."t1" AS "t1",
-          gather."t1_char_range" AS "t1_char_range",
-          gather."t1_xpos2" AS "t1_xpos2",
-          gather."t4" AS "t4",
-          gather."t4_char_range" AS "t4_char_range",
-          gather."t4_xpos2" AS "t4_xpos2"
+        AND "t"."token_id" BETWEEN gather."min_seq"::bigint AND gather."max_seq"::bigint) AS "seq"
    FROM gather),
     res1 AS
   (SELECT DISTINCT 1::int2 AS rstype,
