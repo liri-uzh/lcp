@@ -43,7 +43,6 @@ WITH RECURSIVE fixed_parts AS
      AND ("anonymous"."dependent" = "t3"."token_id"
           AND "anonymous"."head" = "t1"."token_id"
           AND ("anonymous"."udep")::text = ('dobj')::text)
-     AND ("e_aligned"."meta"->>'date')::text LIKE '2000%'
      AND ("e_aligned"."meta"->>'date')::text ~ '^2000' ),
                gather AS
   (SELECT "e",
