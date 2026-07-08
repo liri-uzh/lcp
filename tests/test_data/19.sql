@@ -14,7 +14,6 @@ WITH RECURSIVE fixed_parts AS
    WHERE "d"."char_range" && "s"."char_range"
      AND "s"."segment_id" = "t1"."segment_id"
      AND "t1_form"."form_id" = "t1"."form_id"
-     AND ("d"."meta"->>'classCode')::text LIKE 'S%'
      AND ("d"."meta"->>'classCode')::text ~ '^S'
      AND ("t1_form"."form")::text = ('hello')::text ),
                match_list AS

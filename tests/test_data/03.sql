@@ -27,7 +27,6 @@ WITH RECURSIVE fixed_parts AS
      AND ("t4"."xpos2")::text = ('VERB')::text
      AND "t4"."token_id" - "t1"."token_id" < 4
      AND "t4"."token_id" - "t1"."token_id" > 1
-     AND ("d"."meta"->>'classCode')::text LIKE 'S%'
      AND ("d"."meta"->>'classCode')::text ~ '^S' ),
                transition0 (source_state, dest_state, label, SEQUENCE) AS (
                                                                            VALUES (0,

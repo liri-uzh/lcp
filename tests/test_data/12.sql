@@ -21,7 +21,6 @@ WITH RECURSIVE fixed_parts AS
    WHERE "d"."char_range" && "s"."char_range"
      AND "s"."segment_id" = "t3"."segment_id"
      AND ("t3"."xpos2")::text = ('SUBST')::text
-     AND ("d"."meta"->>'classCode')::text LIKE 'S%'
      AND ("d"."meta"->>'classCode')::text ~ '^S' ),
                match_list AS
   (SELECT "prox_form",
