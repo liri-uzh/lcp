@@ -1393,7 +1393,6 @@ export default {
         }
 
         if (is_doc) {
-          // console.log("DOC", data)
           useWsStore().addMessageForPlayer(data);
           return;
         }
