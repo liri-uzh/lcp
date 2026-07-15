@@ -297,7 +297,7 @@ async def create_app(test: bool = False) -> web.Application:
         ("/settings", "GET", user_data),
         ("/store", "POST", store_query),
         ("/user/{user_id}/room/{room_id}/query/{query_id}", "DELETE", delete_query),
-        ("/monitor_db_insert", "POST", monitor_db_insert),
+        ("/monitor_db_insert", "GET", monitor_db_insert),
         ("/upload", "POST", create_upload),  # type: ignore
         ("/upload/{upload_id}", "PATCH", upload_chunk),
         ("/upload/{upload_id}", "HEAD", upload_info),

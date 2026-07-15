@@ -373,7 +373,9 @@ async def _complete_file(request: web.Request, payload: dict) -> dict[str, str |
     job.save_meta()
 
     files_md5 = hashlib.md5(
-        "".join(sorted(fn for fn in complete_files)).encode()
+        "".join(
+            sorted(fn for fn, complete in complete_files.items() if complete)
+        ).encode()
     ).hexdigest()
     if str(files_md5) == payload.get("files_md5"):
         return await _complete_upload(request, payload)
@@ -436,7 +438,7 @@ async def upload_chunk(request: web.Request) -> web.Response:
 
     # --- DETECT LAST CHUNK ---
     if upload.get("length") is not None and upload["offset"] == upload["length"]:
-        print(f"✅ Last chunk received for {upload_id}")
+        print(f"✅ Last chunk received for {upload_id} ({payload.get('filename','')})")
         response = await _complete_file(request, payload)
         if response and response.get("status") not in ("started", "finished"):
             return web.json_response({"error": response.get("error", "")}, status=500)
