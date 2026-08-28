@@ -212,11 +212,9 @@ async def do_batch(qhash: str, batch: list):
     if not qi.requests:
         return
     batch_name = cast(str, batch[0])
-    if batch_name == qi.running_batch:
+    if batch_name in qi.running_batches:
         # This batch is already running: stop here
         return
-    # Now this is the running batch
-    qi.running_batch = batch_name
     try:
         assert batch_name in qi.query_batches
         batch_hash, _ = qi.query_batches[batch_name]
@@ -224,11 +222,13 @@ async def do_batch(qhash: str, batch: list):
         print(f"Retrieved query from cache: {batch_name} -- {batch_hash}")
     except:
         print(f"No job in cache for {batch_name}, running it now")
+        qi.running_batches[batch_name] = 1
         await qi.run_query_on_batch(batch)
         batch_hash, _ = qi.query_batches.get(batch_name, ("", 0))
     min_offset = min(r.offset for r in qi.requests) if qi.requests else 0
     await qi.run_aggregate(min_offset, batch)
     qi.publish(batch_name, "main")
+    del qi.running_batches[batch_name]
     return batch_name
 
 
@@ -247,7 +247,7 @@ def schedule_next_batch(
     if previous_batch_name and not qi.full:
         lines_before, lines_batch = qi.get_lines_batch(previous_batch_name)
         if lines_before + lines_batch >= qi.required:
-            qi.running_batch = ""
+            qi.running_batches = {}
             return None
     next_batch = qi.decide_next_batch(previous_batch_name)
     min_offset = min(r.offset for r in qi.requests) if qi.requests else 0
@@ -257,7 +257,7 @@ def schedule_next_batch(
             break
         next_batch = qi.decide_next_batch(next_batch[0])
     if not next_batch:
-        qi.running_batch = ""
+        qi.running_batches = {}
         return None
     return qi.enqueue(do_batch, qhash, list(next_batch), callback=batch_callback)
 

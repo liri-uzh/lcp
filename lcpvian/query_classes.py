@@ -633,7 +633,7 @@ class QueryInfo:
         Notify the app that results are available
         """
         if typ == "failure":
-            self.running_batch = ""
+            self.running_batches = {}
         msg_id: str = str(uuid4())
         payload: dict[str, Any] = {
             "callback_query": typ,
@@ -732,12 +732,23 @@ class QueryInfo:
         return json.loads(self._json_query)
 
     @property
-    def running_batch(self) -> str:
-        return self.qi.get("running_batch", "")
+    def running_batches(self) -> dict[str, int]:
+        if "running_batches" not in self.qi:
+            self.qi["running_batches"] = {}
+        running_batches = cast(dict[str, int], self.qi["running_batches"])
+        return running_batches
 
-    @running_batch.setter
-    def running_batch(self, value: str):
-        self.qi["running_batch"] = value
+    @running_batches.setter
+    def running_batches(self, value: dict[str, int]):
+        if "running_batches" not in self.qi:
+            self.qi["running_batches"] = {}
+        old_keys = list(self.qi["running_batches"].keys())
+        for k in old_keys:
+            if k in value:
+                continue
+            del self.qi["running_batches"][k]
+        for k, v in value.items():
+            self.qi["running_batches"][k] = v
 
     @property
     def done_batches(self) -> dict[str, int]:
