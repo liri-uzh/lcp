@@ -43,7 +43,7 @@ from .utils import (
 
 load_env()
 
-from .api import list_corprora, get_corpus, search
+from .api import list_corprora, get_corpus, search, get_search
 from .check_file_permissions import check_file_permissions
 from .corpora import (
     corpora,
@@ -261,6 +261,11 @@ async def create_app(test: bool = False) -> web.Application:
         ("/api/corpora", "GET", list_corprora),
         ("/api/corpora/{corpus_id}", "GET", get_corpus),
         ("/api/corpora/{corpus_id}/search", "POST", search),
+        (
+            "/api/corpora/{corpus_id}/search/{query_hash}/{request_id}",
+            "GET",
+            get_search,
+        ),
         ("/check-file-permissions", "GET", check_file_permissions),
         ("/config", "POST", refresh_config),
         ("/corpora", "POST", corpora),

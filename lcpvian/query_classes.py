@@ -96,7 +96,9 @@ class Request:
             redis_request[k] = v
         # The attributes below are immutable
         self.id: str = cast(str, redis_request["id"] or id)
-        self.synchronous: bool = cast(bool, redis_request.get("synchronous", False))
+        synchronous = redis_request.get("synchronous", False)
+        self.synchronous: bool = cast(bool, synchronous)
+        self.to_buffer: bool = cast(bool, redis_request.get("to_buffer") or synchronous)
         self.requested: int = cast(int, redis_request.get("requested", 0))
         self.full: bool = cast(bool, redis_request.get("full", False))
         self.raw_hits: bool = cast(bool, redis_request.get("raw_hits", False))
@@ -346,8 +348,8 @@ class Request:
         if not self.is_done(qi):
             payload["more_data_available"] = True
         to_msg = (
-            "to sync request"
-            if self.synchronous
+            "to buffer"
+            if self.to_buffer
             else f"to user '{self.user}' room '{self.room}'"
         )
         batch_hash, _ = qi.query_batches[batch_name]
@@ -358,7 +360,7 @@ class Request:
             xp_format = self.to_export.get("format", "xml") or "xml"
             export = app["exporters"][xp_format].export
             qi.enqueue(export, self.id, self.hash, payload)
-        elif self.synchronous:
+        elif self.to_buffer:
             req_buffer = app["query_buffers"][self.id]
             _merge_results(req_buffer, results)
         else:
@@ -445,8 +447,8 @@ class Request:
         )
         payload["more_data_available"] = more_in_batch
         to_msg = (
-            "to sync request"
-            if self.synchronous
+            "to buffer"
+            if self.to_buffer
             else f"to user '{self.user}' room '{self.room}'"
         )
         actual_nlines = lines_so_far + 1 - offset_this_batch
@@ -457,7 +459,7 @@ class Request:
             xp_format = self.to_export.get("format", "xml") or "xml"
             export = app["exporters"][xp_format].export
             qi.enqueue(export, self.id, self.hash, payload)
-        elif self.synchronous:
+        elif self.to_buffer:
             req_buffer = app["query_buffers"][self.id]
             _merge_results(req_buffer, results)
         else:
@@ -485,7 +487,7 @@ class Request:
                 failure=True,
                 message=error,
             )
-        if self.synchronous:
+        if self.to_buffer:
             try:
                 req_buffer = app["query_buffers"][self.id]
                 req_buffer["error"] = error

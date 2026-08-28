@@ -270,7 +270,7 @@ def process_query(
     and return the corresponding Request + QueryInfo + job
     """
     request: Request = Request(app["redis"], request_data)
-    if request.synchronous:
+    if request.to_buffer:
         try:
             query_buffers = app["query_buffers"]
         except:
