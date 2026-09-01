@@ -458,7 +458,7 @@ async def upload_chunk(request: web.Request) -> web.Response:
 
 
 # HEAD /upload/<upload_id>
-async def upload_info(request):
+async def upload_info(request: web.Request) -> web.Response:
     upload_id = request.match_info["upload_id"]
     is_valid, payload = await _validate_upload_request(request, upload_id)
     if not is_valid:
