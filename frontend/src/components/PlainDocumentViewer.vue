@@ -166,9 +166,11 @@ export default {
         language: this.language
       });
     },
-    language() {
+    language(oldValue, newValue) {
+      if (!this.corpus.partitions) return;
       this.currentDocumentSelected = null;
       this.documentOptions = [];
+      console.log("loadDocuments from language", oldValue, newValue);
       this.loadDocuments();
     },
   },

@@ -78,51 +78,58 @@ def _document(
             result = {k: v for n, (k, v) in enumerate(result.items()) if n < limit}
         elif isinstance(result, list):
             # list each prepared segment along with its metadata in order, then subset
-            reordered_result = []
-            non_prepared = []
-            for (line, *_) in result:
-                layer_or_type = line[0]
-                xrange = []
-                xrange_str = (
-                    line[-1]
-                    if layer_or_type == "_prepared"
-                    else cast(dict, line[2]).get(
-                        "char_range",
-                        cast(dict, line[2]).get(
-                            "frame_range", cast(dict, line[2]).get("xy_box", "")
+            chopped = False
+            ranges = ("char_range", "frame_range", "xy_box")
+            sorted_preps = sorted(
+                [
+                    [json.loads(x[-1].replace(")", "]")), *x]
+                    for x, *_ in result
+                    if x[0] == "_prepared"
+                ],
+                key=lambda x: x[0][0],
+            )
+            sorted_non_preps = sorted(
+                [
+                    [
+                        json.loads(
+                            next(
+                                (cast(dict, x[2]).get(rg) or "").strip()
+                                for rg in ranges
+                                if (cast(dict, x[2]).get(rg) or "").strip()
+                            ).replace(")", "]")
                         ),
-                    )
+                        *x,
+                    ]
+                    for x, *_ in result
+                    if x[0] != "_prepared"
+                    and any((cast(dict, x[2]).get(rg) or "").strip() for rg in ranges)
+                ],
+                key=lambda x: x[0],
+            )
+            added_non_preps: dict[tuple[str, int | str], int] = {}
+            reordered_result: list = []
+            for prep in sorted_preps:
+                lb, ub = prep.pop(0)
+                to_add: list = [
+                    (prep,),
+                    *[
+                        (x[1:],)
+                        for x in sorted_non_preps
+                        if x[0][0] <= lb
+                        and x[0][1] >= ub
+                        and (x[1], x[2]) not in added_non_preps
+                    ],
+                ]
+                if len(reordered_result) + len(to_add) > limit:
+                    chopped = True
+                    break
+                added_non_preps.update(
+                    {(l, i): 1 for (l, i, *_), *_ in to_add if l[0] != "_prepared"}
                 )
-                try:
-                    xrange = json.loads(xrange_str.replace(")", "]"))
-                except:
-                    xrange = []
-                if layer_or_type != "_prepared":
-                    if not xrange or len(xrange) < 2:
-                        continue
-                    non_prepared.append(
-                        {
-                            "added": False,
-                            "line": (line,),
-                            "start": xrange[0],
-                            "end": xrange[1],
-                        }
-                    )
-                    continue
-                reordered_result.append((line,))
-                for non_p in non_prepared:
-                    if non_p.get("added"):
-                        continue
-                    ns = non_p.get("start", 0)
-                    ne = non_p.get("end", -1)
-                    if ne < 0 or ns > xrange[1] or ne < xrange[0]:
-                        continue
-                    reordered_result.append(non_p["line"])
-                    non_p["added"] = True
+                reordered_result += to_add
+            if chopped:
+                warning = f"Payload includes only the first {limit} annotation lines from the document (out of {len(result)})"
             result = cast(list, reordered_result)
-            result = [v for n, v in enumerate(result) if n < limit]
-            if len(result) < len(reordered_result):
-                warning = f"Payload includes only the first {limit} annotation lines from the document (out of {len(reordered_result)})"
     jso = {
         "document": result,
         "action": action,
