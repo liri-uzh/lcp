@@ -214,3 +214,143 @@ GRANT EXECUTE ON PROCEDURE main.cleanup TO lcp_production_importer;
 -- CREATE OR REPLACE PROCEDURE main.grant_permissions(db_user text, schema_path, text)
 -- AS $$
 -- $$
+
+
+
+
+
+CREATE TYPE main.meta_ops AS ENUM (
+   'rename_layer'
+ , 'rename_attribute'
+);
+
+
+CREATE OR REPLACE PROCEDURE main.change_meta(
+   p_corpus_id      int
+ , p_action         main.meta_ops
+ , p_data           jsonb
+)
+AS $proc$
+   DECLARE
+      old_value   text;
+      new_value   text;
+      layer_name  text;
+      selector    text[];
+   BEGIN
+      old_value := p_data ->> 'old';
+      new_value := p_data ->> 'new';
+
+       IF old_value IS NULL    THEN
+         RAISE EXCEPTION 'no layer to rename specified. aborting.';
+      ELSIF new_value IS NULL THEN
+         RAISE EXCEPTION 'no new name specified. aborting.';
+      ELSIF new_value ~ '"'   THEN
+         RAISE EXCEPTION 'layer names cannot contain the ''"'' character. aborting.';
+      ELSIF new_value ~ ''''  THEN
+         RAISE EXCEPTION 'layer names cannot contain the "''" character. aborting.';
+      END IF;
+
+      CASE p_action
+         WHEN 'rename_layer'
+            THEN
+
+               IF NOT new_value ~ '^[[:upper:]]' THEN
+                  RAISE EXCEPTION 'layer names must start with uppercase letters. aborting.';
+               END IF;
+
+               IF NOT (
+                  SELECT corpus_template
+                           -> 'layer'
+                       ? old_value
+                    FROM main.corpus
+                   WHERE corpus_id = p_corpus_id
+               ) THEN
+                  RAISE EXCEPTION 'layer "%" is not present. aborting.', old_value;
+               END IF;
+
+               selector := cast(format('{layer,%s}', old_value) AS text[]);
+
+               UPDATE main.corpus
+                  SET corpus_template = jsonb_set(
+                           corpus_template #- selector
+                         , cast(format('{layer,%s}', new_value) AS text[])
+                         , corpus_template #> selector
+                      )
+                WHERE corpus_id = p_corpus_id
+                    ;
+
+               UPDATE main.corpus
+                  SET mapping = jsonb_set(
+                           mapping #- selector
+                         , cast(format('{layer,%s}', new_value) AS text[])
+                         , mapping #> selector
+                      )
+                WHERE corpus_id = p_corpus_id
+                    ;
+
+         WHEN 'rename_attribute'
+            THEN
+
+               layer_name := p_data ->> 'layer';
+
+               IF layer_name IS NULL THEN
+                  RAISE EXCEPTION 'no target layer specified. aborting.';
+               ELSIF NOT new_value ~ '^[[:lower:]]' THEN
+                  RAISE EXCEPTION 'attribute names must start with lowercase letters. aborting.';
+               END IF;
+
+               IF NOT (
+                  SELECT corpus_template
+                           -> 'layer'
+                       ? layer_name
+                    FROM main.corpus
+                   WHERE corpus_id = p_corpus_id
+               ) THEN
+                  RAISE EXCEPTION 'layer "%" is not present. aborting.', layer_name;
+               ELSIF NOT (
+                  SELECT corpus_template
+                           -> 'layer'
+                           -> layer_name
+                           -> 'attributes'
+                       ? old_value
+                    FROM main.corpus
+                   WHERE corpus_id = p_corpus_id
+               ) THEN
+                  RAISE EXCEPTION 'attribute "%" is not present on layer "%". aborting.', old_value, layer_name;
+               END IF;
+
+               selector := cast(format('{layer,%s,attributes,%s}', layer_name, old_value) AS text[]);
+
+               UPDATE main.corpus
+                  SET corpus_template = jsonb_set(
+                           corpus_template #- selector
+                         , cast(format('{layer,%s,attributes,%s}', layer_name, new_value) AS text[])
+                         , corpus_template #> selector
+                      )
+                WHERE corpus_id = p_corpus_id
+                    ;
+
+               IF (
+                  SELECT mapping -> 'layer' -> layer_name -> 'attributes' ? old_value
+                    FROM main.corpus
+                   WHERE corpus_id = p_corpus_id
+               ) THEN
+                  UPDATE main.corpus
+                     SET mapping = jsonb_set(
+                              mapping #- selector
+                            , cast(format('{layer,%s,attributes,%s}', layer_name, new_value) AS text[])
+                            , mapping #> selector
+                         )
+                   WHERE corpus_id = p_corpus_id
+                       ;
+              END IF;
+
+      END CASE;
+   END
+$proc$ LANGUAGE plpgsql SECURITY DEFINER;
+
+ALTER PROCEDURE main.change_meta
+  SET search_path = pg_catalog,pg_temp;
+
+REVOKE EXECUTE ON PROCEDURE main.change_meta FROM public;
+GRANT EXECUTE ON PROCEDURE main.change_meta TO lcp_production_importer;
