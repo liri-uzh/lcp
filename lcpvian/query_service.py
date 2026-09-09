@@ -28,22 +28,22 @@ import os
 import re
 import uuid
 
-from typing import Any, final, cast
+from typing import Any, Callable, final, cast
 
 from aiohttp import web
-from redis import Redis as RedisConnection
-from rq import Callback
-from rq.command import send_stop_job_command
-from rq.exceptions import InvalidJobOperation, NoSuchJobError
-from rq.job import Job
+from redis.asyncio import Redis as RedisConnection
+
+# TODO(ARQ_MIGRATION): Replace rq.Callback with Arq equivalent or custom implementation
+# from rq import Callback
+# TODO(ARQ_MIGRATION): Replace rq.command.send_stop_job_command with Arq equivalent or custom implementation
+# from rq.command import send_stop_job_command
+# TODO(ARQ_MIGRATION): Replace rq.exceptions.InvalidJobOperation, NoSuchJobError with Arq equivalents
+# from rq.exceptions import InvalidJobOperation, NoSuchJobError
+from arq.jobs import Job, ResultNotFound  # Arq Job class
 
 from .callbacks import (
     _config,
-    _document,
-    _document_ids,
     _general_failure,
-    _clip_media,
-    _image_annotations,
     _upload_failure,
     _queries,
     _schema,
@@ -70,6 +70,7 @@ from .utils import (
     sql_str,
     SQLCorpus,
 )
+from .worker import arq_task, ctx, get_redis
 from .abstract_query.utils import _get_table
 
 
@@ -90,397 +91,6 @@ class QueryService:
         self.callback_timeout = int(os.getenv("QUERY_CALLBACK_TIMEOUT", 5000))
         self.upload_timeout = int(os.getenv("UPLOAD_TIMEOUT", 43200))
         self.query_ttl = int(os.getenv("QUERY_TTL", 5000))
-        self.use_cache = app["_use_cache"]
-
-    def document_ids(
-        self,
-        schema: str,
-        corpus_id: int,
-        user: str,
-        room: str | None,
-        config: dict,
-        queue: str = "internal",
-        kind: str = "audio",
-        language: str = "",
-        limit: int = -1,
-    ) -> Job:
-        """
-        Fetch document id + info from DB.
-        """
-        doc_layer = config.get("document", "document")
-        batch = next(x for x in config["_batches"])
-        partitions = config.get("partitions", {}).get("values", [""])
-        lang = language or next(x for x in partitions)
-        sqlc = SQLCorpus(config, schema, batch, lang)
-        # info: name -> column
-        info: dict[str, str] = {
-            "name": "name",
-            "media": "media",
-            "frame_range": "frame_range",
-        }
-        if kind == "image":
-            info = {"xy_box": "xy_box"}
-        elif kind == "plain":
-            info = {"char_range": "char_range"}
-        joins: dict = {}
-        layer_attrs = _get_all_attributes(doc_layer, config)
-        if "name" in layer_attrs:
-            name_ref = sqlc.attribute("d", doc_layer, "name")
-            joins = name_ref.joins
-            info["name"] = name_ref.ref
-        jsonb_info = (
-            "jsonb_build_object("
-            + ",".join(literal_sql(k) + "," + sql_str(v) for k, v in info.items())
-            + ")"
-        )
-        doc_id = sqlc.layer("d", doc_layer, pointer=True)
-        doc_table = next(x for x in doc_id.joins)
-        query = f"SELECT {doc_id.ref}, {jsonb_info} FROM {doc_table}"
-        for jtab, jconds in joins.items():
-            if not jconds:
-                continue
-            query += f" JOIN {jtab} ON " + " AND ".join(jconds)
-        kwargs: DocIDArgs = {
-            "user": user,
-            "room": room,
-            "corpus_id": corpus_id,
-            "kind": kind,
-        }
-        if limit > 0:
-            query += f" LIMIT {limit}"
-        hashed = str(hasher((query, corpus_id)))
-        job: Job
-        if self.use_cache:
-            try:
-                job = Job.fetch(hashed, connection=self.app["redis"])
-                if job and job.get_status(refresh=True) == "finished":
-                    _document_ids(job, self.app["redis"], job.result, **kwargs)
-                    return job
-            except NoSuchJobError:
-                pass
-        job = self.app[queue].enqueue(
-            _db_query,
-            on_success=Callback(_document_ids, self.timeout),
-            on_failure=Callback(_general_failure, self.callback_timeout),
-            args=(query, {}),
-            kwargs=kwargs,
-        )
-        return job
-
-    def document(
-        self,
-        schema: str,
-        corpus: int,
-        doc_id: int,
-        user: str,
-        room: str | None,
-        config: CorpusConfig,
-        queue: str = "internal",
-    ) -> Job:
-        """
-        Fetch info about a document from DB/cache
-        """
-        doc_low = config["document"].lower()
-        from_cte = sql_str(
-            "SELECT d.frame_range FROM {}.{} d WHERE d.{} = ",
-            schema,
-            doc_low,
-            f"{doc_low}_id",
-        ) + literal_sql(str(doc_id))
-
-        aligned = get_aligned_annotations(
-            cast(dict, config),
-            "",
-            "",
-            from_cte,
-            anchor="time",
-            # include={l: {} for l in tracks.get("layers", {})},
-            exclude={config["token"]: {}},
-            contains=False,
-            pointer_global_attributes=True,
-        )
-
-        seg = config["segment"]
-        seg_id = seg + "_id"
-        query = aligned + sql_str(
-            "\nUNION ALL SELECT jsonb_build_array('_prepared', {}.{}, prep.id_offset, prep.content, {}.char_range) AS res FROM {} JOIN {}.{} prep ON prep.{} = {}.{};",
-            seg,
-            seg_id,
-            seg,
-            seg,
-            schema,
-            f"prepared_{seg.lower()}",
-            f"{seg.lower()}_id",  # prep.segment_id
-            seg,
-            seg_id,
-        )
-        # print("document query", query)
-
-        hashed = str(hasher(query))
-        job: Job
-        if self.use_cache:
-            try:
-                job = Job.fetch(hashed, connection=self.app["redis"])
-                if job and job.get_status(refresh=True) == "finished":
-                    kwa: BaseArgs = {"user": user, "room": room}
-                    _document(job, self.app["redis"], job.result, **kwa)
-                    return job
-            except NoSuchJobError:
-                pass
-
-        kwargs = {
-            "document": True,
-            "corpus": corpus,
-            "user": user,
-            "room": room,
-            "doc": doc_id,
-        }
-        job = self.app[queue].enqueue(
-            _db_query,
-            on_success=Callback(_document, self.timeout),
-            on_failure=Callback(_general_failure, self.callback_timeout),
-            result_ttl=self.query_ttl,
-            job_timeout=self.timeout,
-            args=(query, {}),
-            # args=(query, params),
-            kwargs=kwargs,
-        )
-        return job
-
-    def annotations(
-        self,
-        config: CorpusConfig,
-        anchor: str,
-        rang: list[int],
-        corpus: str,
-        language: str,
-        limit: int,
-        user: str,
-        room: str | None,
-        queue: str = "internal",
-    ) -> Job:
-        """
-        Fetch all the annotations aligned with the anchor
-        """
-        schema: str = config["schema_path"]
-        col_name: str = "frame_range" if anchor == "time" else "char_range"
-        irange: str = get_corpus_int_range(config)
-        from_cte: str = f"SELECT {irange}({rang[0]},{rang[1]}) AS {col_name}"
-        aligned = get_aligned_annotations(
-            cast(dict, config),
-            "",
-            language,
-            from_cte,
-            anchor=anchor,
-            exclude={config["token"]: {}},
-            contains=False,
-            pointer_global_attributes=True,
-        )
-
-        seg = config["segment"]
-        seg_id = seg + "_id"
-        seg_map = config["mapping"]["layer"][seg]
-        prep_tab = (
-            seg_map.get("partitions", {})
-            .get(language, seg_map)
-            .get("prepared", {})
-            .get("relation", f"prepared_{seg}")
-        ).lower()
-        query = aligned + sql_str(
-            "\nUNION ALL SELECT jsonb_build_array('_prepared', {}.{}, prep.id_offset, prep.content, {}.char_range) AS res FROM {} JOIN {}.{} prep ON prep.{} = {}.{};",
-            seg,
-            seg_id,
-            seg,
-            seg,
-            schema,
-            prep_tab,
-            f"{seg.lower()}_id",  # prep.segment_id
-            seg,
-            seg_id,
-        )
-        print("annotation query", query)
-
-        hashed = str(hasher(query))
-        job: Job
-        if self.use_cache:
-            try:
-                job = Job.fetch(hashed, connection=self.app["redis"])
-                if job and job.get_status(refresh=True) == "finished":
-                    kwa: BaseArgs = {"user": user, "room": room}
-                    _document(job, self.app["redis"], job.result, **kwa)
-                    return job
-            except NoSuchJobError:
-                pass
-
-        kwargs = {
-            "document": True,
-            "corpus": corpus,
-            "limit": limit,
-            "user": user,
-            "room": room,
-            "doc": "",
-        }
-        job = self.app[queue].enqueue(
-            _db_query,
-            on_success=Callback(_document, self.timeout),
-            on_failure=Callback(_general_failure, self.callback_timeout),
-            result_ttl=self.query_ttl,
-            job_timeout=self.timeout,
-            args=(query, {}),
-            kwargs=kwargs,
-        )
-        return job
-
-    def image_annotations(
-        self,
-        config: CorpusConfig,
-        layer: str,
-        ids: list[int],
-        xy_box: list[int],
-        user: str,
-        room: str | None,
-        queue: str = "internal",
-    ) -> Job:
-        """
-        Fetch annotation related to an image layer from DB/cache
-        """
-        schema = config["schema_path"]
-        from_cte = ""
-        if ids:
-            from_cte = sql_str(
-                "SELECT d.xy_box FROM {}.{} d WHERE ",
-                schema,
-                layer.lower(),
-            ) + (
-                sql_str("d.{}", layer.lower() + "_id")
-                + f" IN ({','.join(str(id) for id in ids)})"
-            )
-        elif xy_box:
-            formed_box = literal_sql(
-                f"({xy_box[0]},{xy_box[1]}),({xy_box[2]},{xy_box[3]})"
-            )
-            from_cte = f"SELECT {formed_box}::box AS xy_box"
-
-        exclude: dict[str, Any] = {}
-        tok = config["token"]
-        if not config["layer"][tok].get("anchoring", {}).get("location", False):
-            exclude["exclude"] = {tok: {}}
-        print("exclude", exclude)
-
-        aligned = get_aligned_annotations(
-            cast(dict, config),
-            "",
-            "",
-            from_cte,
-            anchor="location",
-            contains=True,
-            **exclude,
-        )
-
-        seg = config["segment"]
-        seg_id = seg + "_id"
-        query = aligned + sql_str(
-            "\nUNION ALL SELECT jsonb_build_array('_prepared', {}.{}, prep.id_offset, prep.content, {}.char_range) AS res FROM {} JOIN {}.{} prep ON prep.{} = {}.{};",
-            seg,
-            seg_id,
-            seg,
-            seg,
-            schema,
-            f"prepared_{seg.lower()}",
-            f"{seg.lower()}_id",  # prep.segment_id
-            seg,
-            seg_id,
-        )
-        # print("document query", query)
-
-        hashed = str(hasher(query))
-        job: Job
-        if self.use_cache:
-            try:
-                job = Job.fetch(hashed, connection=self.app["redis"])
-                if job and job.get_status(refresh=True) == "finished":
-                    kwa: BaseArgs = {"user": user, "room": room}
-                    _image_annotations(job, self.app["redis"], job.result, **kwa)
-                    return job
-            except NoSuchJobError:
-                pass
-
-        kwargs = {"user": user, "room": room, "layer": layer}
-        job = self.app[queue].enqueue(
-            _db_query,
-            on_success=Callback(_image_annotations, self.timeout),
-            on_failure=Callback(_general_failure, self.callback_timeout),
-            result_ttl=self.query_ttl,
-            job_timeout=self.timeout,
-            args=(query, {}),
-            kwargs=kwargs,
-        )
-        return job
-
-    def clip_media(
-        self,
-        config: CorpusConfig,
-        span: list,
-        doc_id: str,
-        user: str,
-        room: str | None,
-        queue: str = "background",
-    ) -> Job:
-        """
-        Clip the media and export the correponding annotations
-        """
-        schema = config["schema_path"]
-
-        tok = config["token"]
-        seg = config["segment"]
-        doc = config["document"]
-        doc_l = doc.lower()
-        sp_from, sp_to = [round(float(x) * 25.0) for x in span]
-
-        doc_fr = "d.frame_range"
-        doc_low = f"lower({doc_fr})"
-        doc_up = f"upper({doc_fr})"
-        from_cte = f"SELECT int4range(least({doc_low} + {sp_from}, {doc_up}), least({doc_low} + {sp_to}, {doc_up})) AS frame_range"
-        from_cte += sql_str(
-            " FROM {}.{} d WHERE d.{} = ", schema, doc_l, f"{doc_l}_id"
-        ) + str(doc_id)
-
-        aligned = get_aligned_annotations(
-            cast(dict, config),
-            "",
-            "",
-            from_cte,
-            anchor="time",
-            contains=True,
-            exclude={tok: {}},
-        )
-
-        seg_id = seg + "_id"
-        query = aligned + sql_str(
-            "\nUNION ALL SELECT jsonb_build_array('_prepared', {}.{}, prep.id_offset, prep.content) AS res FROM {} JOIN {}.{} prep ON prep.{} = {}.{};",
-            seg,
-            seg_id,
-            seg,
-            schema,
-            f"prepared_{seg.lower()}",
-            f"{seg.lower()}_id",  # prep.segment_id
-            seg,
-            seg_id,
-        )
-        # print("document query", query)
-
-        job: Job
-        kwargs = {"user": user, "room": room, "conf": config, "span": span}
-        job = self.app[queue].enqueue(
-            _db_query,
-            on_success=Callback(_clip_media, self.timeout),
-            on_failure=Callback(_general_failure, self.callback_timeout),
-            result_ttl=self.query_ttl,
-            job_timeout=self.timeout,
-            args=(query, {}),
-            kwargs=kwargs,
-        )
-        return job
 
     async def get_config(self, force_refresh: bool = False) -> Job:
         """
@@ -495,18 +105,17 @@ class QueryService:
 
         redis: RedisConnection[bytes] = self.app["redis"]
         opts: dict[str, bool] = {"is_main": True}  # query on main.*
-        if self.use_cache and not force_refresh:
-            try:
-                already = Job.fetch(job_id, connection=redis)
-                if already and already.result is not None:
-                    payload: dict[str, str | bool | Config] = _config(
-                        already, redis, already.result, publish=False
-                    )
-                    await _set_config(cast(JSONObject, payload), self.app)
-                    print("Loaded config from redis (flush redis if new corpora added)")
-                    return already
-            except NoSuchJobError:
-                pass
+        try:
+            already = Job.fetch(job_id, connection=redis)
+            if already and already.result is not None:
+                payload: dict[str, str | bool | Config] = _config(
+                    already, redis, already.result, publish=False
+                )
+                await _set_config(cast(JSONObject, payload), self.app)
+                print("Loaded config from redis (flush redis if new corpora added)")
+                return already
+        except NoSuchJobError:
+            pass
         job = self.app["internal"].enqueue(
             _db_query,
             on_success=Callback(_config, self.callback_timeout),

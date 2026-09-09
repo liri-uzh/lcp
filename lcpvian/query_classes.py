@@ -4,7 +4,7 @@ import traceback
 import os
 
 from aiohttp import web
-from redis import Redis as RedisConnection
+from redis.asyncio import Redis as RedisConnection
 from rq import Callback, Queue
 from rq.command import send_stop_job_command
 from rq.job import Job

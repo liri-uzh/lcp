@@ -376,7 +376,6 @@ async def create_app(test: bool = False) -> web.Application:
         Queue,
         Queue("background", connection=redis, job_timeout=-1),
     )
-    app.addkey("_use_cache", bool, os.getenv("USE_CACHE", "1").lower() in TRUES)
 
     # so far unused, we could potentially provide users with detailed feedback by
     # exploiting the 'failed job registry' provided by RQ.

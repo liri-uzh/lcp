@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import os
@@ -9,18 +10,24 @@ from typing import Any, cast
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.sql import text
 
-from rq.connections import get_current_connection
-from rq.job import get_current_job, Job
+# TODO(ARQ_MIGRATION): Replace rq imports with Arq equivalents
+# from rq.connections import get_current_connection
+# from rq.job import get_current_job, Job
+from arq.jobs import Job
 
 from lcpvian.upload import _move_media_files
 
+from .callbacks import _general_failure
 from .impo import Importer
 from .project import refresh_config
 from .typed import DBQueryParams, JSONObject, MainCorpus, Sentence, UserQuery
 from .utils import _get_sent_ids, _row_to_value
+from .worker import arq_task
 
 
+@arq_task("background")
 async def _insert_data(
+    ctx,
     project: str,
     user: str,
     room: str | None,
@@ -28,7 +35,7 @@ async def _insert_data(
     **kwargs: dict[str, JSONObject | bool],
 ) -> MainCorpus | None:
     """
-    Script to be run by rq worker, convert data and upload to postgres
+    Script to be run by arq worker, convert data and upload to postgres
     """
     uploads_path = os.getenv("TEMP_UPLOADS_PATH", "uploads")
     corpus = os.path.join(uploads_path, project)
@@ -37,8 +44,7 @@ async def _insert_data(
     with open(data_path, "r") as fo:
         data: JSONObject = json.load(fo)
 
-    upool = get_current_job()._upool  # type: ignore
-    importer = Importer(upool, data, corpus, debug, **kwargs)
+    importer = Importer(ctx["_upool"], data, corpus, debug, **kwargs)
     extra = {"user": user, "room": room, "project": project}
     row: MainCorpus | None = None
     try:
@@ -68,61 +74,9 @@ async def _insert_data(
     return row
 
 
-async def _export_db(
-    query_hash: str,
-    format: str,
-    operation: str = "create",
-    offset: int = 0,
-    requested: int = 0,
-    **kwargs: int | str | None,
-) -> None:
-    """
-    To be run by rq worker, create/update entry in main.exports table
-    """
-    export_query: str
-    export_params = {
-        "query_hash": query_hash,
-        "format": format,
-        "offset": offset,
-        "requested": requested,
-    }
-    if operation == "create":
-        export_params["user_id"] = kwargs.get("user_id", "")
-        export_params["userpath"] = kwargs.get("userpath", "export")
-        export_params["corpus_id"] = kwargs.get("corpus_id", 0)
-        export_params["need_querying"] = "TRUE" if kwargs.get("should_run") else "FALSE"
-        export_query = "CALL main.init_export('{query_hash}', '{format}', {offset}, {requested}, '{user_id}', {need_querying}, '{userpath}', {corpus_id});"
-    elif operation == "update":
-        export_query = "CALL main.update_export('{query_hash}', '{format}', {offset}, {requested}, '{status}', '{message}');"
-        export_params.pop("user_id", "")
-        export_params["status"] = (
-            "export"
-            if "export" in kwargs
-            else ("query" if "query" in kwargs else "failure")
-        )
-        export_params["message"] = kwargs.get("message", "")
-    elif operation == "finish":
-        # if path := kwargs.get("path"):
-        #     RESULTS_DIR = os.getenv("RESULTS_USERS", os.path.join("results","users/"))
-        export_query = "CALL main.finish_export('{query_hash}', '{format}', {offset}, {requested}, {delivered});"
-        export_params.pop("user_id", "")
-        export_params["delivered"] = kwargs.get("delivered", 0)
-
-    query = export_query.format(**export_params)
-
-    async with get_current_job()._wpool.begin() as conn:  # type: ignore
-        raw = await conn.get_raw_connection()
-        con = raw._connection
-        async with con.transaction():
-            try:
-                print("Handling export...\n", query)
-                await con.execute(query)
-            except Exception as err:
-                print("Error when handling export", err)
-    return None
-
-
+@arq_task("background")
 async def _create_schema(
+    ctx,
     create: str,
     schema_name: str,
     # drops: list[str] | None,
@@ -131,13 +85,13 @@ async def _create_schema(
     **kwargs: str | None,
 ) -> None:
     """
-    To be run by rq worker, create schema in DB for a new corpus
+    To be run by arq worker, create schema in DB for a new corpus
     """
     # extra = {"user": user, "room": room, "drops": drops, "schema": schema_name}
     extra = {"user": user, "room": room, "schema": schema_name}
 
     # todo: figure out how to make this block a little nicer :P
-    async with get_current_job()._upool.begin() as conn:  # type: ignore
+    async with ctx["_upool"].begin() as conn:
         raw = await conn.get_raw_connection()
         con = raw._connection
         async with con.transaction():
@@ -150,6 +104,7 @@ async def _create_schema(
 
 
 async def _db_query(
+    ctx,
     query: str,
     params: DBQueryParams = {},
     config: bool = False,
@@ -170,7 +125,7 @@ async def _db_query(
     | None
 ):
     """
-    The function queued by RQ, which executes our DB query
+    The function queued by Arq, which executes our DB query
     """
     # this can only be done after the previous job finished...
     if "depends_on" in kwargs and "sentences_query" in kwargs:
@@ -179,7 +134,9 @@ async def _db_query(
         offset = cast(int, kwargs.get("offset", -1))
         needed = cast(int, kwargs.get("needed", total))
         needed = max(-1, needed)  # todo: fix this earlier?
-        ids: list[str] | list[int] | None = _get_sent_ids(dep, needed, offset=offset)
+        ids: list[str] | list[int] | None = await _get_sent_ids(
+            ctx["redis"], dep, needed, offset=offset
+        )
         if not ids:
             return None
         params = {"ids": ids}
@@ -189,22 +146,19 @@ async def _db_query(
         if (store or delete or is_import)
         else ("_wpool" if (config or is_main) else "_pool")
     )
-    job = get_current_job()
-    pool = getattr(job, name)
+    pool = ctx[name]
     method = "begin" if (store or delete or is_import) else "connect"
 
     first_job_id = cast(str, kwargs.get("first_job", ""))
     if first_job_id:
-        first_job: Job = Job.fetch(first_job_id, connection=get_current_connection())
-        if first_job:
-            first_job_status = first_job.get_status(refresh=True)
-            if first_job_status in ("stopped", "canceled"):
-                print("First job was stopped or canceled - not executing the query")
-                raise SQLAlchemyError("Job canceled")
+        first_job_result = await ctx["redis"].job(first_job_id)
+        if first_job_result and first_job_result.status in ("stopped", "canceled"):
+            print("First job was stopped or canceled - not executing the query")
+            raise SQLAlchemyError("Job canceled")
 
     params = params or {}
 
-    if job and cast(dict, job.kwargs).get("refresh_config", None):
+    if kwargs.get("refresh_config"):
         await refresh_config()
 
     async with getattr(pool, method)() as conn:

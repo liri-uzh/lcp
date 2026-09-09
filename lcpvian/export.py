@@ -1,7 +1,7 @@
 import os
 
 from aiohttp import web
-from redis import Redis as RedisConnection
+from redis.asyncio import Redis as RedisConnection
 from rq.job import Job
 from typing import Any, cast
 from uuid import uuid4
@@ -69,7 +69,7 @@ def _export_notifs(
         _publish_msg(connection, jso, msg_id)
     elif hash:
         for res in result:
-            (_, _, _, _, user_id, format, offset, requested, _, fn, _, _) = res
+            _, _, _, _, user_id, format, offset, requested, _, fn, _, _ = res
             full = requested <= 0
             exp_class = ExporterSwissdox if format == "swissdox" else ExporterXml
             user_folder = os.path.join(RESULTS_USERS, user_id)

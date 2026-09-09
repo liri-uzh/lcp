@@ -240,7 +240,6 @@ async def _handle_message(
         action not in errors
         and "msg_id" in payload
         and "no_restart" not in payload
-        and app["_use_cache"]
         # and False
     ):
         uu = payload["msg_id"]

@@ -1,3 +1,4 @@
+import asyncio
 import datetime
 import json
 import lxml.etree
@@ -11,7 +12,7 @@ from functools import cmp_to_key
 from io import TextIOWrapper
 from intervaltree import IntervalTree
 from lxml.builder import E
-from redis import Redis as RedisConnection
+from redis.asyncio import Redis as RedisConnection
 from rq import Callback, Queue
 from rq.job import get_current_job, Job
 from types import TracebackType
@@ -21,7 +22,6 @@ from uuid import uuid4
 from xml.sax.saxutils import escape, quoteattr
 
 from .callbacks import _general_failure
-from .jobfuncs import _export_db
 from .query_classes import Request, QueryInfo
 from .typed import CorpusConfig
 from .utils import (
@@ -33,6 +33,7 @@ from .utils import (
     range_from_str,
     sanitize_filename,
 )
+from .worker import arq_task
 
 EXPORT_TTL = 5000
 RESULTS_DIR = os.getenv("RESULTS", "results")
@@ -170,6 +171,103 @@ def _get_top_layer(config: CorpusConfig, restrict: set = set()) -> str:
     return top_layer
 
 
+@arq_task
+async def _export_db(
+    ctx,
+    query_hash: str,
+    xp_format: str,
+    operation: str = "create",
+    offset: int = 0,
+    requested: int = 0,
+    **kwargs: int | str | None,
+) -> None:
+    """
+    To be run by arq worker, create/update entry in main.exports table
+    """
+    wpool = ctx["_wpool"]
+    try:
+        export_query: str
+        export_params = {
+            "query_hash": query_hash,
+            "format": xp_format,
+            "offset": offset,
+            "requested": requested,
+        }
+        should_run: bool = cast(dict, kwargs).get("should_run", False)
+        if operation == "create":
+            export_params["user_id"] = kwargs.get("user_id", "")
+            export_params["userpath"] = kwargs.get("userpath", "export")
+            export_params["corpus_id"] = kwargs.get("corpus_id", 0)
+            export_params["need_querying"] = "TRUE" if should_run else "FALSE"
+            export_query = "CALL main.init_export('{query_hash}', '{format}', {offset}, {requested}, '{user_id}', {need_querying}, '{userpath}', {corpus_id});"
+        elif operation == "update":
+            export_query = "CALL main.update_export('{query_hash}', '{format}', {offset}, {requested}, '{status}', '{message}');"
+            export_params.pop("user_id", "")
+            export_params["status"] = (
+                "export"
+                if "export" in kwargs
+                else ("query" if "query" in kwargs else "failure")
+            )
+            export_params["message"] = kwargs.get("message", "")
+        elif operation == "finish":
+            # if path := kwargs.get("path"):
+            #     RESULTS_DIR = os.getenv("RESULTS_USERS", os.path.join("results","users/"))
+            export_query = "CALL main.finish_export('{query_hash}', '{format}', {offset}, {requested}, {delivered});"
+            export_params.pop("user_id", "")
+            export_params["delivered"] = kwargs.get("delivered", 0)
+
+        query = export_query.format(**export_params)
+
+        async with wpool.begin() as conn:
+            raw = await conn.get_raw_connection()
+            con = raw._connection
+            async with con.transaction():
+                print("Handling export...\n", query)
+                await con.execute(query)
+
+        if should_run:
+            return
+
+        full: bool = cast(dict, kwargs).get("full", False)
+        await Exporter.finish_export_db(
+            ctx["redis"],
+            query_hash,
+            offset,
+            requested,
+            requested,
+            full,
+            xp_format,
+        )
+
+    except asyncio.TimeoutError as e:
+        # job-specific timeout handling
+        msg = str("Export timed out")
+
+        export_query = "CALL main.update_export('{query_hash}', '{format}', {offset}, {requested}, '{status}', '{message}');"
+        export_params.pop("user_id", "")
+        export_params["status"] = "failure"
+        export_params["message"] = msg
+
+        query = export_query.format(**export_params)
+
+        async with wpool.begin() as conn:
+            raw = await conn.get_raw_connection()
+            con = raw._connection
+            async with con.transaction():
+                await con.execute(query)
+
+        await _general_failure(
+            ctx["job"], ctx["redis"], asyncio.TimeoutError, e, e.__traceback__
+        )
+        # Optionally re-raise so Arq retries or fails according to max_tries
+        raise
+    except Exception as e:
+        # on_failure for other errors
+        print("Error when handling export", e)
+        raise e
+    return None
+
+
 class Exporter:
     xp_format = "xml"
 
@@ -209,53 +307,8 @@ class Exporter:
             requested_folder = os.path.join(requested_folder, "results.xml")
         return requested_folder
 
-    @staticmethod
-    def try_finish_immediately(
-        job: Job,
-        connection: RedisConnection,
-        result: Any,
-    ) -> None:
-        """
-        Callback to initiate_db.
-        Immediately mark as finished if no need to run export.
-        """
-        should_run: bool = cast(dict, job.kwargs).get("should_run", True)
-        if should_run:
-            return
-        qhash, _, _, offset, requested = job.args
-        full: bool = cast(dict, job.kwargs).get("full", False)
-        xp_format: str = cast(str, job.args[1])
-        Exporter.finish_export_db(
-            connection, qhash, offset, requested, requested, full, xp_format
-        )
-
-    @staticmethod
-    def error_export(
-        job: Job,
-        connection: RedisConnection,
-        typ: type,
-        value: BaseException,
-        trace: TracebackType,
-    ) -> None:
-        """
-        Callback calling _general_failure
-        """
-        qhash, xp_format, _, offset, requested = job.args
-        msg = str(value)
-        q = Queue("internal", connection=connection)
-        q.enqueue(
-            _export_db,  # finish export
-            on_failure=Callback(_general_failure),
-            args=(qhash, xp_format, "update", offset, requested),
-            kwargs={
-                "failure": True,
-                "message": msg,
-            },
-        )
-        _general_failure(job, connection, typ, value, trace)
-
     @classmethod
-    def finish_export_db(
+    async def finish_export_db(
         cls,
         connection: RedisConnection,
         qhash: str,
@@ -268,23 +321,21 @@ class Exporter:
         """
         Mark an export in the DB as finished
         """
-        q = Queue("internal", connection=connection)
-        q.enqueue(
-            _export_db,  # finish export
-            on_failure=Callback(cls.error_export),
-            args=(qhash, xp_format, "finish", offset, requested),
-            kwargs={
-                "delivered": delivered,
-                "path": cls.get_dl_path_from_hash(
-                    qhash, offset, requested, full, filename=True
-                ),
-            },
+        path = cls.get_dl_path_from_hash(qhash, offset, requested, full, filename=True)
+        await _export_db(
+            qhash,
+            xp_format,
+            "finish",
+            offset,
+            requested,
+            delivered=delivered,
+            path=path,
         )
         payload: dict[str, Any] = {
             "action": "export_complete",
             "hash": qhash,
         }
-        _publish_msg(
+        await _publish_msg(
             connection,
             payload,
             msg_id=str(uuid4()),
@@ -327,8 +378,6 @@ class Exporter:
         should_run = not os.path.exists(filepath)
         app["internal"].enqueue(
             _export_db,  # init_export
-            on_success=Callback(cls.try_finish_immediately),
-            on_failure=Callback(cls.error_export),
             result_ttl=EXPORT_TTL,
             job_timeout=EXPORT_TTL,
             args=(shash, xp_format, "create", request.offset, request.requested),
@@ -362,8 +411,10 @@ class Exporter:
         requested = request.requested
         full = request.full
         try:
+            ctx = {"job": job, "redis": job.connection, "_wpool": None}
             upd_exp_args = (qhash, cls.xp_format, "update", offset, requested)
             await _export_db(
+                ctx,
                 *upd_exp_args,
                 export=True,
                 message=f"{payload.get('percentage_done', 'NA')}%",
@@ -374,6 +425,7 @@ class Exporter:
             if not request.is_done(qi):
                 return
             await _export_db(
+                ctx,
                 *upd_exp_args,
                 export=True,
                 message=f"100% - finalizing...",
@@ -401,7 +453,7 @@ class Exporter:
                 f"Exporting complete for request {request.id} (hash: {request.hash}) ; DELETED REQUEST"
             )
             qi.delete_request(request)
-            cls.finish_export_db(
+            await cls.finish_export_db(
                 qi._connection, qi.hash, offset, requested, delivered, full
             )
         except Exception as e:

@@ -5,10 +5,11 @@ import pandas
 import shutil
 
 from aiohttp import web
-from redis import Redis as RedisConnection
+from redis.asyncio import Redis as RedisConnection
 
 # from rq import Callback
-from rq.job import get_current_job, Job
+# TODO(ARQ_MIGRATION): Replace rq.job.get_current_job, Job with Arq equivalents
+from arq.jobs import Job
 from typing import Any, cast
 
 from .exporter import Exporter as ExporterXML
@@ -92,9 +93,18 @@ class Exporter(ExporterXML):
         """
         Entrypoint to export a payload; run finalize if all the payloads have been processed
         """
-        job: Job = cast(Job, get_current_job())
-        request: Request = Request(job.connection, {"id": request_id})
-        qi: QueryInfo = QueryInfo(qhash, job.connection)
+        # TODO(ARQ_MIGRATION): Replace get_current_job() with Arq equivalent (ctx)
+        # job: Job = cast(Job, get_current_job())
+        # request: Request = Request(job.connection, {"id": request_id})
+        # qi: QueryInfo = QueryInfo(qhash, job.connection)
+        job = None  # TODO(ARQ_MIGRATION): Implement Arq equivalent
+        connection = None  # TODO(ARQ_MIGRATION): Implement Arq equivalent
+        request: Request = Request(
+            connection, {"id": request_id}
+        )  # TODO(ARQ_MIGRATION): Implement Arq equivalent
+        qi: QueryInfo = QueryInfo(
+            qhash, connection
+        )  # TODO(ARQ_MIGRATION): Implement Arq equivalent
         offset = request.offset
         requested = request.requested
         full = request.full
@@ -122,8 +132,9 @@ class Exporter(ExporterXML):
                 f"SWISSDOX Exporting complete for request {request.id} (hash: {request.hash}) ; DELETED REQUEST"
             )
             qi.delete_request(request)
+            # TODO(ARQ_MIGRATION): job.connection may need to be accessed differently in Arq
             cls.finish_export_db(
-                job.connection,
+                connection,  # TODO(ARQ_MIGRATION): Implement Arq equivalent
                 qhash,
                 offset,
                 requested,

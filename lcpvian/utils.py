@@ -13,6 +13,8 @@ import shutil
 import traceback
 import uuid
 
+from arq import create_pool
+from arq.connections import RedisSettings
 from dotenv import load_dotenv
 from asyncpg import Connection, Range, Box
 from collections import Counter
@@ -21,12 +23,15 @@ from datetime import date, datetime
 from hashlib import md5
 from io import BytesIO
 from typing import Any, cast, TypeAlias
-from rq.registry import FinishedJobRegistry
+
+# TODO(ARQ_MIGRATION): Replace rq.registry.FinishedJobRegistry with Arq equivalent or custom implementation
+# from rq.registry import FinishedJobRegistry
 
 from aiohttp import web
 
 # here we remove __slots__ from these superclasses because mypy can't handle them...
-from redis import Redis as RedisConnection
+from arq import ArqRedis
+from redis.asyncio import Redis as RedisConnection
 from redis._parsers import _AsyncHiredisParser, _AsyncRESP3Parser  # type: ignore
 from redis.utils import HIREDIS_AVAILABLE
 
@@ -40,8 +45,11 @@ else:
 ParserClass = DefaultParser
 
 from rq.command import PUBSUB_CHANNEL_TEMPLATE
-from rq.connections import get_current_connection
-from rq.job import Job
+
+# TODO(ARQ_MIGRATION): Replace rq.connections.get_current_connection with Arq equivalent
+# from rq.connections import get_current_connection
+# TODO(ARQ_MIGRATION): Replace rq.job.Job with Arq equivalent
+from arq.jobs import Job
 
 from .authenticate import Authentication
 
@@ -308,7 +316,8 @@ async def _general_error_handler(
         tb = "".join(traceback.format_tb(exc.__traceback__))
     user = cast(str, request_data.get("user", ""))
     room = cast(str | None, request_data.get("room", None))
-    job = str(exc).split("rq:job:")[-1] if kind == "timeout" else ""
+    # TODO(ARQ_MIGRATION): Update job ID extraction for Arq
+    job = str(exc).split("arq:job:")[-1] if kind == "timeout" else ""
     jso = {
         "user": user,
         "room": room,
@@ -342,29 +351,36 @@ async def handle_bad_request(exc: Exception, request: web.Request) -> None:
     await _general_error_handler(str(exc), exc, request)
 
 
-def _get_redis_obj(connection: RedisConnection, key: str) -> dict[str, Any]:
-    obj = json.loads(connection.get(key) or "{}")
+async def _get_redis_obj(
+    connection: RedisConnection | ArqRedis, key: str
+) -> dict[str, Any]:
+    obj_str = await connection.get(key) or "{}"
+    obj = json.loads(obj_str)
     return obj
 
 
-def _update_redis_obj(
-    connection: RedisConnection,
+async def _update_redis_obj(
+    connection: RedisConnection | ArqRedis,
     key: str,
     info: dict[str, Any] = {},
 ) -> dict[str, Any]:
-    obj = json.loads(connection.get(key) or "{}")
+    obj_str = await connection.get(key) or "{}"
+    obj = json.loads(obj_str)
     for k, v in info.items():
         obj[k] = v
-    connection.set(key, json.dumps(obj, cls=CustomEncoder))
-    connection.expire(key, MESSAGE_TTL)
+    await connection.set(key, json.dumps(obj, cls=CustomEncoder))
+    await connection.expire(key, MESSAGE_TTL)
     return obj
 
 
-def _get_query_info(
-    connection: RedisConnection, hash: str = "", job: Job | None = None
+async def _get_query_info(
+    connection: RedisConnection | ArqRedis,
+    hash: str = "",
+    job: Job | None = None,  # TODO(ARQ_MIGRATION): Job type may need to be updated
 ) -> dict[str, Any]:
     qi_key = f"query_info::{hash}"
-    return _get_redis_obj(connection, qi_key)
+    qi = await _get_redis_obj(connection, qi_key)
+    return qi
 
 
 async def sem_coro(
@@ -509,7 +525,8 @@ async def refresh_config(request: web.Request) -> web.Response:
     """
     qs = request.app["query_service"]
     job: Job = await qs.get_config(force_refresh=True)
-    return web.json_response({"job": str(job.id)})
+    # TODO(ARQ_MIGRATION): job.id may need to be accessed differently in Arq
+    return web.json_response({"job": str(job.job_id)})
 
 
 subtype: TypeAlias = list[dict[str, str]]
@@ -613,25 +630,23 @@ def _row_to_value(
     return cast(CorpusConfig, together)
 
 
-def _get_sent_ids(
-    associated: str | list[str], total: int, offset: int = 0
+async def _get_sent_ids(
+    conn: ArqRedis, associated: str | list[str], total: int, offset: int = 0
 ) -> list[int] | list[str]:
     """
     Helper to format the query to retrieve sentences: get a list of unique sent
     ids needed in order to create KWIC results
     """
-    out: list[int] = []
-    conn = get_current_connection()
-    job = _get_associated_query_job(associated, conn)
-    if job.get_status(refresh=True) in ("stopped", "canceled"):
-        raise Interrupted()
-    if job.result is None:
-        raise Interrupted()
-    if not job.result:
-        return out
-    prev_results = job.result
     seg_ids: set[str | int] = set()
-    query_info = _get_query_info(conn, job=job)
+    out: list[int] = []
+    job = _get_associated_query_job(associated, conn)
+    job_result = await job.result_info()
+    if job.status in ("stopped", "canceled"):
+        raise Interrupted()
+    if job_result is None or job_result.result is None:
+        return out
+    prev_results = job_result.result
+    query_info = await _get_query_info(conn, job=job)
     rs = query_info.get("meta_json", {}).get("result_sets", [])
     kwics = set([i for i, r in enumerate(rs, start=1) if r.get("type") == "plain"])
     counts: Counter[int] = Counter()
@@ -659,75 +674,15 @@ def _get_sent_ids(
 
 def _get_associated_query_job(
     depends_on: str | list[str],
-    connection: "RedisConnection[bytes]",
+    connection: ArqRedis | RedisConnection,
 ) -> Job:
     """
     Helper to find the query job associated with sent job
     """
     if isinstance(depends_on, list):
         depends_on = depends_on[-1]
-    depended = Job.fetch(depends_on, connection=connection)
+    depended = Job(depends_on, connection)
     return depended
-
-
-def _get_all_jobs_from_hash(
-    hash: str,
-    connection: "RedisConnection[bytes]",
-) -> tuple[list[Job], list[Job], list[Job]]:
-    """
-    Helper to get all the query, sent and meta jobs from a hash
-    """
-    query_jobs: list[Job] = []
-    sent_jobs: list[Job] = []
-    meta_jobs: list[Job] = []
-
-    main_job = Job.fetch(hash, connection=connection)
-    finished_jobs = [
-        Job.fetch(jid, connection=connection)
-        for registry in [
-            FinishedJobRegistry(name=x, connection=connection)
-            for x in ("query", "background")
-        ]
-        + [main_job.finished_job_registry]
-        for jid in registry.get_job_ids()
-    ]
-    for j in finished_jobs:
-        j_kwargs = cast(dict, j.kwargs)
-        if j_kwargs.get("first_job") != hash and j.id != hash:
-            continue
-        if j_kwargs.get("meta_query"):
-            meta_jobs.append(j)
-        elif j_kwargs.get("sentences_query"):
-            sent_jobs.append(j)
-        else:
-            query_jobs.append(j)
-    query_jobs_sorted = sorted(
-        query_jobs, key=lambda j: len(cast(dict, j.kwargs).get("done_batches", []))
-    )
-    return (query_jobs_sorted, sent_jobs, meta_jobs)
-
-
-def _get_prep_segment(
-    segment_id: str, sentence_jobs: list[Job], first_job: Job
-) -> tuple[str, int, list]:
-    try:
-        sid, s_offset, s_tokens = next(
-            r for sj in sentence_jobs for r in sj.result if str(r[0]) == segment_id
-        )
-    except:
-        sid, s_offset, s_tokens = next(
-            (si, so, st)
-            for msg_id in first_job.meta.get("sent_job_ws_messages", {})
-            for si, (so, st) in cast(
-                dict,
-                json.loads(first_job.connection.get(msg_id) or b"{}"),
-            )
-            .get("result", {})
-            .get("-1", {})
-            .items()
-            if str(si) == segment_id
-        )
-    return (sid, s_offset, s_tokens)
 
 
 def _sanitize_corpus_name(corpus_name: str) -> str:
@@ -941,7 +896,7 @@ def _sign_payload(
         payload.pop("to_export", None)
 
 
-def _sharepublish_msg(message: JSONObject | str | bytes, msg_id: str) -> None:
+async def _sharepublish_msg(message: JSONObject | str | bytes, msg_id: str) -> None:
     """
     Connect to the shared redis instance (if it exists) and call _publish_msg on it
     """
@@ -956,20 +911,22 @@ def _sharepublish_msg(message: JSONObject | str | bytes, msg_id: str) -> None:
         else f"{redis_shared_url}/{redis_shared_db_index}"
     )
     shared_connection = RedisConnection.from_url(full_url)
-    _publish_msg(shared_connection, message, msg_id)
+    await _publish_msg(shared_connection, message, msg_id)
 
 
-def _publish_msg(
-    connection: "RedisConnection[bytes]", message: JSONObject | str | bytes, msg_id: str
+async def _publish_msg(
+    connection: ArqRedis | RedisConnection,
+    message: JSONObject | str | bytes,
+    msg_id: str,
 ) -> None:
     """
     Store a message with msg_id as key, and notify listener
     """
     if not isinstance(message, (str, bytes)):
         message = json.dumps(message, cls=CustomEncoder)
-    connection.set(msg_id, message)
-    connection.expire(msg_id, MESSAGE_TTL)
-    connection.publish(PUBSUB_CHANNEL, json.dumps({"msg_id": msg_id}))
+    await connection.set(msg_id, message)
+    await connection.expire(msg_id, MESSAGE_TTL)
+    await connection.publish(PUBSUB_CHANNEL, json.dumps({"msg_id": msg_id}))
     return None
 
 

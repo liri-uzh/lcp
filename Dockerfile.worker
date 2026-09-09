@@ -1,3 +1,5 @@
+ARG QUEUE
+
 # Use an official Python runtime as a parent image
 FROM python:3.11-slim
 
@@ -24,4 +26,4 @@ RUN pip install --no-cache-dir .
 RUN pip install --no-cache-dir ./lcpcli/
 
 # Default command to run when the container starts
-CMD ["python", "-m", "lcpvian", "worker"]
+CMD ["python", "-m", "lcpvian", "worker", "${QUEUE}"]

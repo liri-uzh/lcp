@@ -3,7 +3,8 @@ from uuid import uuid4
 from typing import cast
 
 from aiohttp import web
-from rq.job import Job
+# TODO(ARQ_MIGRATION): Replace rq.job.Job with Arq equivalent
+from arq.jobs import Job
 
 from .typed import JSONObject
 
@@ -25,7 +26,8 @@ async def fetch_queries(request: web.Request) -> web.Response:
     if not user or not room:
         return web.json_response({})
     job: Job = request.app["query_service"].fetch_queries(user, room, query_type)
-    info: dict[str, str] = {"status": "started", "job": job.id}
+    # TODO(ARQ_MIGRATION): job.id may need to be accessed differently in Arq
+    info: dict[str, str] = {"status": "started", "job": job.job_id}
     return web.json_response(info)
 
 
@@ -55,7 +57,8 @@ async def store_query(request: web.Request) -> web.Response:
     idx = uuid4()
     args = (to_store, idx, user, room)
     job: Job = request.app["query_service"].store_query(*args)
-    info: dict[str, str] = {"status": "started", "job": job.id, "query_id": str(idx)}
+    # TODO(ARQ_MIGRATION): job.id may need to be accessed differently in Arq
+    info: dict[str, str] = {"status": "started", "job": job.job_id, "query_id": str(idx)}
     return web.json_response(info)
 
 
@@ -74,5 +77,6 @@ async def delete_query(request: web.Request) -> web.Response:
         raise PermissionError("Could not verify the identity of the user")
 
     job: Job = request.app["query_service"].delete_query(user_id, room_id, query_id)
-    info: dict[str, str] = {"status": "started", "job": job.id}
+    # TODO(ARQ_MIGRATION): job.id may need to be accessed differently in Arq
+    info: dict[str, str] = {"status": "started", "job": job.job_id}
     return web.json_response(info)

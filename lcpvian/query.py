@@ -6,8 +6,10 @@ import traceback
 
 from aiohttp import web
 from intervaltree import IntervalTree
-from redis import Redis as RedisConnection
-from rq.job import get_current_job, Job
+from redis.asyncio import Redis as RedisConnection
+
+# TODO(ARQ_MIGRATION): Replace rq.job.get_current_job, Job with Arq equivalents
+from arq.jobs import Job
 from typing import cast, Any
 from uuid import uuid4
 
@@ -28,7 +30,9 @@ from .utils import (
 )
 
 
-def batch_callback(job: Job, connection: RedisConnection, batch_name: str):
+def batch_callback(
+    job: Job, connection: RedisConnection, batch_name: str
+):  # TODO(ARQ_MIGRATION): job parameter type may need to be updated
     """
     Publish a message that we got some results (to be captured by the requests)
     then schedule the query on the next batch
@@ -91,11 +95,14 @@ async def do_segment_and_meta(
     """
     Fetch from cache or run a segment+meta query on the given batch
     """
-    current_job: Job | None = get_current_job()
-    assert current_job, RuntimeError(
-        f"No current jbo found for do_segment_and_meta {batch_name}"
-    )
-    connection = current_job.connection
+    # TODO(ARQ_MIGRATION): Replace get_current_job() with Arq equivalent (ctx)
+    # current_job: Job | None = get_current_job()
+    # assert current_job, RuntimeError(
+    #     f"No current job found for do_segment_and_meta {batch_name}"
+    # )
+    # connection = current_job.connection
+    current_job = None  # TODO(ARQ_MIGRATION): Implement Arq equivalent
+    connection = None  # TODO(ARQ_MIGRATION): Implement Arq equivalent
     qi = QueryInfo(qhash, connection=connection)
     if not qi.requests:
         return
@@ -205,9 +212,12 @@ async def do_batch(qhash: str, batch: list):
     Fetch from cache or run a main query on a batch from within a worker
     and aggregate the results for stats if needed
     """
-    current_job: Job | None = get_current_job()
-    assert current_job, RuntimeError(f"No current job found for do_batch {batch}")
-    connection = current_job.connection
+    # TODO(ARQ_MIGRATION): Replace get_current_job() with Arq equivalent (ctx)
+    # current_job: Job | None = get_current_job()
+    # assert current_job, RuntimeError(f"No current job found for do_batch {batch}")
+    # connection = current_job.connection
+    current_job = None  # TODO(ARQ_MIGRATION): Implement Arq equivalent
+    connection = None  # TODO(ARQ_MIGRATION): Implement Arq equivalent
     qi = QueryInfo(qhash, connection=connection)
     if not qi.requests:
         return

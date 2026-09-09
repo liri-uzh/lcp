@@ -34,8 +34,10 @@ from collections import defaultdict
 from collections.abc import Sequence
 from typing import Any, cast
 
-from redis import Redis as RedisConnection
-from rq.job import Job
+from redis.asyncio import Redis as RedisConnection
+
+# TODO(ARQ_MIGRATION): Replace rq.job.Job with Arq equivalent
+from arq.jobs import Job
 
 from .typed import (
     Batch,
@@ -297,57 +299,6 @@ def _format_kwics(
         counts[key] += 1
 
     if max_kwic and not full:
-        out = _limit_kwic_to_max(out, current_lines, max_kwic)
-
-    return out
-
-
-def _get_all_sents(
-    job: Job,
-    query_info: dict,
-    meta_json: QueryMeta,
-    max_kwic: int,
-    current_lines: int,
-    full: bool,
-    connection: RedisConnection,
-) -> Results:
-    """
-    Combine all sent jobs into one -- only done at the end of a `full` query
-    """
-    sen: ResultSents = {}
-    out: Results = {0: meta_json, -1: sen}
-    is_first = True
-    got: Results
-    for jid in query_info["_sent_jobs"]:
-        j = job if job.id == jid else Job.fetch(jid, connection=connection)
-        jk = cast(dict, j.kwargs)
-        dep = _get_associated_query_job(jk["depends_on"], connection)
-        resume = jk.get("resume", False)
-        offset = jk.get("offset", 0) if resume else -1
-        needed = jk.get("needed", -1)
-        got = _format_kwics(
-            dep.result,
-            meta_json,
-            j.result,
-            needed,
-            is_first,
-            offset,
-            0,
-            0,
-            full,
-        )
-        if got.get(-1):
-            sents = cast(dict, out[-1])
-            sents.update(cast(dict, got[-1]))
-        for k, v in got.items():
-            if k < 1:
-                continue
-            if k not in out:
-                out[k] = []
-            add_to = cast(list, out[k])
-            add_to += cast(list, v)
-
-    if max_kwic > 0:
         out = _limit_kwic_to_max(out, current_lines, max_kwic)
 
     return out

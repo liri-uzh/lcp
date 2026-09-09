@@ -21,11 +21,49 @@ services:
       timeout: 180s
       retries: 10
 
-  worker:
+  worker_internal:
     build:
       context: .
       dockerfile: Dockerfile.worker
-    container_name: lcp-worker
+      args:
+        QUEUE: internal
+    container_name: lcp-worker-internal
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    volumes:
+      - ./media/:/opt/media/
+      - ./uploads:/app/uploads
+    networks:
+      - lcp-network
+
+  worker_query:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+      args:
+        QUEUE: query
+    container_name: lcp-worker-query
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    volumes:
+      - ./media/:/opt/media/
+      - ./uploads:/app/uploads
+    networks:
+      - lcp-network
+
+  worker_background:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+      args:
+        QUEUE: background
+    container_name: lcp-worker-background
     depends_on:
       db:
         condition: service_healthy
@@ -49,7 +87,11 @@ services:
         condition: service_healthy
       redis:
         condition: service_started
-      worker:
+      worker_internal:
+        condition: service_started
+      worker_query:
+        condition: service_started
+      worker_background:
         condition: service_started
     volumes:
       - ./media/:/opt/media/
@@ -61,7 +103,9 @@ services:
     build: ./frontend
     container_name: lcp-web
     depends_on:
-      - worker
+      - worker_internal
+      - worker_query
+      - worker_background
       - backend
     volumes:
       - ./media/:/opt/media/

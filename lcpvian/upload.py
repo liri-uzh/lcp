@@ -20,7 +20,8 @@ from zipfile import ZipFile, is_zipfile
 
 from aiohttp import web, BodyPartReader
 from py7zr import SevenZipFile, is_7zfile
-from rq.job import Job
+# TODO(ARQ_MIGRATION): Replace rq.job.Job with Arq equivalent
+from arq.jobs import Job
 
 from .authenticate import Authentication
 from .ddl_gen import generate_ddl
@@ -53,17 +54,18 @@ async def _create_status_check(request: web.Request, job_id: str) -> web.Respons
     if not job:
         ret = {"job": job_id, "status": "failed", "error": "Job not found."}
         return web.json_response(ret)
-    status = job.get_status(refresh=True)
+    # TODO(ARQ_MIGRATION): job.get_status, job.latest_result, job.kwargs may need to be accessed differently in Arq
+    status = job.get_status(refresh=True)  # TODO(ARQ_MIGRATION): Implement Arq equivalent
     msg = f"""Please wait: corpus processing in progress..."""
     # project = job.kwargs["project"]
     if status == "failed":
-        res = job.latest_result()
+        res = job.latest_result()  # TODO(ARQ_MIGRATION): Implement Arq equivalent
         msg = "Error"
         if res:
-            msg += f": {res.exc_string}"
+            msg += f": {res.exc_string}"  # TODO(ARQ_MIGRATION): Implement Arq equivalent
     elif status == "finished":
         msg = f"""Template validated successfully"""
-    kwargs: dict = cast(dict, job.kwargs)
+    kwargs: dict = cast(dict, job.kwargs)  # TODO(ARQ_MIGRATION): Implement Arq equivalent
     ret = {
         "job": job.id,
         "status": status,
@@ -224,11 +226,13 @@ async def _validate_upload_request(
         except Exception as e:
             return False, {"error": f"Unauthorized: {str(e)}"}
 
-    job: Job
+    job: Job  # TODO(ARQ_MIGRATION): job type may need to be updated
     try:
         payload["job_id"] = job_id
-        job = Job.fetch(job_id, connection=request.app["redis"])
-        kwargs: dict = cast(dict, job.kwargs)
+        # TODO(ARQ_MIGRATION): Replace Job.fetch with Arq equivalent
+        job = Job.fetch(job_id, connection=request.app["redis"])  # TODO(ARQ_MIGRATION): Implement Arq equivalent
+        # TODO(ARQ_MIGRATION): job.kwargs may need to be accessed differently in Arq
+        kwargs: dict = cast(dict, job.kwargs)  # TODO(ARQ_MIGRATION): Implement Arq equivalent
         payload["cpath"] = kwargs["path"]
         username = kwargs["user"]
         payload["username"] = username
@@ -242,10 +246,11 @@ async def _validate_upload_request(
         return False, {"error": "File too large"}
 
     payload["filename"] = filename
-    complete_files = job.meta.get("complete_files") or {}
+    # TODO(ARQ_MIGRATION): job.meta may need to be accessed differently in Arq
+    complete_files = job.meta.get("complete_files") or {}  # TODO(ARQ_MIGRATION): Implement Arq equivalent
     complete_files.setdefault(filename, False)
-    job.meta["complete_files"] = complete_files
-    job.save_meta()
+    job.meta["complete_files"] = complete_files  # TODO(ARQ_MIGRATION): Implement Arq equivalent
+    job.save_meta()  # TODO(ARQ_MIGRATION): Implement Arq equivalent
 
     return True, payload
 
@@ -295,12 +300,14 @@ async def _complete_upload(request: web.Request, payload: dict) -> dict[str, str
                 return {"status": "failed", "error": f"Problem uncompressing {fp}"}
 
     if payload.get("media"):
-        job = Job.fetch(payload.get("job_id") or "", connection=request.app["redis"])
+        # TODO(ARQ_MIGRATION): Replace Job.fetch with Arq equivalent
+        job = Job.fetch(payload.get("job_id") or "", connection=request.app["redis"])  # TODO(ARQ_MIGRATION): Implement Arq equivalent
         project_id = payload.get("project")
         project_name = payload.get("project_name")
         ret = {
             "status": "finished",
-            "job": job.id,
+            # TODO(ARQ_MIGRATION): job.id may need to be accessed differently in Arq
+            "job": job.job_id,  # TODO(ARQ_MIGRATION): Implement Arq equivalent
             "project": str(project_id),
             "project_name": project_name,
         }
@@ -311,10 +318,12 @@ async def _complete_upload(request: web.Request, payload: dict) -> dict[str, str
             if corpus_super and is_super_admin:
                 corpus = request.app["config"][str(corpus_super)]
             else:
+                # TODO(ARQ_MIGRATION): Replace Job.fetch with Arq equivalent
                 insert_job = Job.fetch(
                     job.meta["insert_job"], connection=request.app["redis"]
-                )
-                corpus = cast(dict, _row_to_value(insert_job.result))
+                )  # TODO(ARQ_MIGRATION): Implement Arq equivalent
+                # TODO(ARQ_MIGRATION): insert_job.result may need to be accessed differently in Arq
+                corpus = cast(dict, _row_to_value(insert_job.result))  # TODO(ARQ_MIGRATION): Implement Arq equivalent
             ret["corpus_name"] = corpus.get("name", "")
             _move_media_files(cpath, corpus.get("schema_path", ""))
         except Exception as err:
@@ -367,10 +376,12 @@ async def _complete_upload(request: web.Request, payload: dict) -> dict[str, str
 
 async def _complete_file(request: web.Request, payload: dict) -> dict[str, str | int]:
     filename = payload.get("filename", "")
-    job = Job.fetch(payload.get("job_id", ""), connection=request.app["redis"])
-    complete_files = job.meta.get("complete_files") or {}
+    # TODO(ARQ_MIGRATION): Replace Job.fetch with Arq equivalent
+    job = Job.fetch(payload.get("job_id", ""), connection=request.app["redis"])  # TODO(ARQ_MIGRATION): Implement Arq equivalent
+    # TODO(ARQ_MIGRATION): job.meta may need to be accessed differently in Arq
+    complete_files = job.meta.get("complete_files") or {}  # TODO(ARQ_MIGRATION): Implement Arq equivalent
     complete_files[filename] = True
-    job.save_meta()
+    job.save_meta()  # TODO(ARQ_MIGRATION): Implement Arq equivalent
 
     files_md5 = hashlib.md5(
         "".join(
