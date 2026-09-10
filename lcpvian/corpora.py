@@ -14,18 +14,22 @@ import os
 from aiohttp import web
 from aiohttp.client_exceptions import ClientOSError
 from json.decoder import JSONDecodeError
-from rq.job import Job
+from arq.jobs import Job
 from rq.exceptions import NoSuchJobError
 from typing import cast
 
 from .email import send_email
+from .configure import get_config
+from .jobfuncs import _db_query
 from .typed import JSONObject
+from .upload import _overwrite_corpus
 from .utils import (
     _filter_corpora,
     _remove_sensitive_fields_from_corpora,
     _structure_descriptions,
     get_pending_invites,
 )
+from .worker import arq_task, ctx
 
 MESSAGE_TTL = int(os.getenv("REDIS_WS_MESSSAGE_TTL", 5000))
 
@@ -176,6 +180,78 @@ LCP"""
     return web.json_response({"status": 200, "message": "Invitation request sent."})
 
 
+async def corpora_overwrite(request: web.Request) -> web.Response:
+    """
+    Replace corpus #overwrite with corpus #corpora_id
+    """
+    authenticator = request.app["auth_class"](request.app)
+    user_data: dict = await authenticator.user_details(request)
+    user: dict = user_data.get("user") or {}
+
+    try:
+        # Try to process as a GET request
+        job_id = request.match_info["job_id"]
+        if job_id:
+            job = Job(job_id, redis=request.app["aredis"])
+            job_status = await job.status()
+            status_response: dict[str, str] = {"status": job_status}
+            if job_status == "failed":  # TODO: arq doesn't return "failed"
+                try:
+                    status_response["error"] = str(job.latest_result().exc_string)  # type: ignore
+                except:
+                    status_response["error"] = "Unknownn error."
+            return web.json_response(status_response)
+    except NoSuchJobError:
+        return web.json_response(
+            {"error": f"Could not find a job with id {job_id}.", "status": 500}
+        )
+    except:
+        # proceed as an upload PUT request
+        pass
+
+    corpora_id: int = int(request.match_info["corpora_id"])
+    request_data: JSONObject = await request.json()
+    overwrite_id: int = int(cast(int, request_data.get("overwrite", -1)) or -1)
+
+    corpora = request.app["config"]
+    corpus = corpora.get(str(corpora_id))
+    assert corpus, ReferenceError(f"Could not find corpus id {corpora_id}")
+    to_be_overwritten = corpora.get(str(overwrite_id))
+    assert to_be_overwritten, ReferenceError(f"Could not find corpus id {overwrite_id}")
+
+    if any(
+        not authenticator.check_corpus_allowed(
+            str(cid),
+            user_data,
+            "lcp",
+        )
+        for cid in (corpora_id, overwrite_id)
+    ):
+        raise PermissionError(
+            f"This user is not authorized to access this pair of corpora ({corpora_id}, {overwrite_id})"
+        )
+    corpus_admin_ids, overwrite_admin_ids = [
+        await authenticator.get_corpus_admin_ids(request, cid)
+        for cid in (corpora_id, overwrite_id)
+    ]
+    if (
+        user.get("id") not in corpus_admin_ids
+        or user.get("id") not in overwrite_admin_ids
+    ):
+        raise PermissionError(
+            f"This user is not authorized to modify this pair of corpora ({corpora_id}, {overwrite_id})"
+        )
+
+    args_overwrite = (corpora_id, overwrite_id)
+    job_overwrite: Job | None = await _overwrite_corpus(ctx, *args_overwrite)
+
+    info: dict[str, str | list[str]] = {
+        "status": "1",
+        "job": str("" if job_overwrite is None else job_overwrite.job_id),
+    }
+    return web.json_response(info)
+
+
 async def corpora_meta_update(request: web.Request) -> web.Response:
     """
     Updates metadata for a given corpus
@@ -234,8 +310,14 @@ async def corpora_meta_update(request: web.Request) -> web.Response:
         sample_query=metadata.get("sample_query", ""),
         swissubase=swissubase,
     )
-    args_meta = (corpora_id, to_store_meta, request_data.get("lg") or "en")
-    job_meta: Job = request.app["query_service"].update_metadata(*args_meta)
+    existing_meta = request.app["config"][str(corpora_id)]["meta"]
+    job_meta: Job | None = await _update_metadata(
+        ctx,
+        corpora_id,
+        to_store_meta,
+        existing_meta=existing_meta,
+        lg=request_data.get("lg") or "en",
+    )
     to_store_desc = _structure_descriptions(descriptions)
     to_store_globals = {
         glob_name: {
@@ -251,9 +333,12 @@ async def corpora_meta_update(request: web.Request) -> web.Response:
         to_store_globals,
         request_data.get("lg") or "en",
     )
-    job_desc: Job = request.app["query_service"].update_descriptions(*args_desc)
+    job_desc: Job | None = await _update_descriptions(ctx, *args_desc)
 
-    jobs_payload = [str(job_meta.id), str(job_desc.id)]
+    jobs_payload = [
+        str("" if job_meta is None else job_meta.job_id),
+        str("" if job_desc is None else job_desc.job_id),
+    ]
     if "projects" in request_data:
         pids = cast(
             list, request_data["projects"] or ["00000000-0000-0000-0000-000000000000"]
@@ -266,81 +351,116 @@ async def corpora_meta_update(request: web.Request) -> web.Response:
                 raise PermissionError(
                     "This user is not authorized to modify this collection"
                 )
-        job_update_projects: Job = request.app["query_service"].update_projects(
-            corpora_id, pids
+        job_update_projects: Job | None = await _update_projects(ctx, corpora_id, pids)
+        jobs_payload.append(
+            str("" if job_update_projects is None else job_update_projects.job_id)
         )
-        jobs_payload.append(str(job_update_projects.id))
     info: dict[str, str | list[str]] = {
         "status": "1",
-        "jobs": [str(job_meta.id), str(job_desc.id)],
+        "jobs": jobs_payload,
     }
     return web.json_response(info)
 
 
-async def corpora_overwrite(request: web.Request) -> web.Response:
+@arq_task("internal")
+async def _update_descriptions(
+    ctx,
+    corpus_id: int,
+    layer_descs: JSONObject,
+    global_descs: JSONObject,
+    lg: str = "en",
+):
     """
-    Replace corpus #overwrite with corpus #corpora_id
+    Update the descriptions of the layers and attributes in a corpus
     """
-    authenticator = request.app["auth_class"](request.app)
-    user_data: dict = await authenticator.user_details(request)
-    user: dict = user_data.get("user") or {}
+    # TODO: check localizableString in corpus_template schema instead?
+    MONOLINGUAL = {"name", "revision", "license", "language"}
 
-    try:
-        # Try to process as a GET request
-        job_id = request.match_info["job_id"]
-        if job_id:
-            job = Job.fetch(job_id, connection=request.app["redis"])
-            job_status = job.get_status(refresh=True)
-            status_response: dict[str, str] = {"status": job_status}
-            if job_status == "failed":
-                try:
-                    status_response["error"] = str(job.latest_result().exc_string)  # type: ignore
-                except:
-                    status_response["error"] = "Unknownn error."
-            return web.json_response(status_response)
-    except NoSuchJobError:
-        return web.json_response(
-            {"error": f"Could not find a job with id {job_id}.", "status": 500}
-        )
-    except:
-        # proceed as an upload PUT request
-        pass
+    query = f"""CALL main.update_corpus_descriptions(:corpus_id, :descriptions ::jsonb, :globals ::jsonb);"""
+    params: dict = {
+        "corpus_id": corpus_id,
+        "descriptions": json.dumps(layer_descs),
+        "globals": json.dumps(global_descs),
+    }
+    await _db_query(
+        ctx,
+        query,
+        params,
+        store=True,
+        is_main=True,
+        has_return=False,
+    )
+    await get_config(ctx)
 
-    corpora_id: int = int(request.match_info["corpora_id"])
-    request_data: JSONObject = await request.json()
-    overwrite_id: int = int(cast(int, request_data.get("overwrite", -1)) or -1)
 
-    corpora = request.app["config"]
-    corpus = corpora.get(str(corpora_id))
-    assert corpus, ReferenceError(f"Could not find corpus id {corpora_id}")
-    to_be_overwritten = corpora.get(str(overwrite_id))
-    assert to_be_overwritten, ReferenceError(f"Could not find corpus id {overwrite_id}")
+@arq_task("internal")
+async def _update_metadata(
+    ctx,
+    corpus_id: int,
+    query_data: JSONObject,
+    existing_meta: dict = {},
+    lg: str = "en",
+):
+    """
+    Update metadata for a corpus
+    """
+    # TODO: check localizableString in corpus_template schema instead?
+    MONOLINGUAL = {"name", "revision", "license", "language", "swissubase"}
 
-    if any(
-        not authenticator.check_corpus_allowed(
-            str(cid),
-            user_data,
-            "lcp",
-        )
-        for cid in (corpora_id, overwrite_id)
-    ):
-        raise PermissionError(
-            f"This user is not authorized to access this pair of corpora ({corpora_id}, {overwrite_id})"
-        )
-    corpus_admin_ids, overwrite_admin_ids = [
-        await authenticator.get_corpus_admin_ids(request, cid)
-        for cid in (corpora_id, overwrite_id)
-    ]
-    if (
-        user.get("id") not in corpus_admin_ids
-        or user.get("id") not in overwrite_admin_ids
-    ):
-        raise PermissionError(
-            f"This user is not authorized to modify this pair of corpora ({corpora_id}, {overwrite_id})"
-        )
+    query = f"""CALL main.update_corpus_meta(:corpus_id, :metadata_json ::jsonb);"""
+    for k, v in query_data.items():
+        if k in MONOLINGUAL:
+            continue
+        is_str = isinstance(existing_meta.get(k), str)
+        if is_str:
+            if lg == "en" or existing_meta[k] == v:
+                continue
+            query_data[k] = {"en": existing_meta[k]}
+        if not isinstance(query_data[k], dict):
+            query_data[k] = (
+                {**existing_meta[k]} if isinstance(existing_meta.get(k), dict) else {}
+            )
+        query_data[k][lg] = v  # type: ignore
+        if "en" not in query_data[k]:  # type: ignore
+            query_data[k]["en"] = v  # type: ignore
+    params: dict = {
+        "corpus_id": corpus_id,
+        "metadata_json": json.dumps(query_data),
+    }
+    await _db_query(
+        ctx,
+        query,
+        params,
+        store=True,
+        is_main=True,
+        has_return=False,
+    )
+    await get_config(ctx)
 
-    args_overwrite = (corpora_id, overwrite_id)
-    job_overwrite: Job = request.app["query_service"].overwrite_corpus(*args_overwrite)
 
-    info: dict[str, str | list[str]] = {"status": "1", "job": str(job_overwrite.id)}
-    return web.json_response(info)
+@arq_task("internal")
+async def _update_projects(
+    ctx,
+    corpus_id: int,
+    project_ids: list,
+):
+    """
+    Update which project(s) a corpus belongs to
+    """
+    args = {
+        "corpus_id": corpus_id,
+        "pid": str(project_ids[0]),
+        "pids": "[" + ",".join(f'"{str(pid)}"' for pid in project_ids) + "]",
+    }
+    query = (
+        f"""CALL main.update_corpus_projects(:corpus_id, :pid ::uuid, :pids ::text);"""
+    )
+    await _db_query(
+        ctx,
+        query,
+        args,
+        store=True,
+        is_main=True,
+        has_return=False,
+    )
+    await get_config(ctx)

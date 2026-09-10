@@ -9,16 +9,14 @@ import asyncio
 from collections import defaultdict
 from collections.abc import Awaitable, Callable
 from datetime import datetime
-from typing import Any, Mapping, TypeAlias, TypedDict
+from typing import Any, Mapping, TypeAlias, TypedDict, Required, NotRequired, Sequence
 from uuid import UUID
 
 from aiohttp import web
+
 # TODO(ARQ_MIGRATION): Replace rq.job.Job with Arq equivalent
 from arq.jobs import Job
 from pydantic import JsonValue
-
-
-from .configure import CorpusConfig
 
 # arbitrary json we know nothing about
 JSON: TypeAlias = JsonValue
@@ -28,9 +26,6 @@ JSONObject: TypeAlias = dict[str, JSON]
 
 # all websocket connections to the app -- {room_id: {(ws_connection, user_id)...}}
 Websockets: TypeAlias = defaultdict[str, set[tuple[web.WebSocketResponse, str]]]
-
-# {corpus_id: corpus_config} shared between frontend and backend. keys are numbers cast to string
-Config: TypeAlias = dict[str, CorpusConfig]
 
 # corpus id, schema, table, size
 Batch: TypeAlias = tuple[int, str, str, int]
@@ -139,6 +134,81 @@ Iteration: TypeAlias = tuple[
 Endpoint: TypeAlias = Callable[
     [web.Request], Awaitable[web.Response | web.WebSocketResponse | web.FileResponse]
 ]
+
+
+class Meta(TypedDict, total=False):
+    date: str
+    name: str
+    author: str
+    version: int | str | float
+    website: NotRequired[str]
+    corpusDescription: NotRequired[str | None]
+    sample_query: NotRequired[str]
+
+
+class Attribute(TypedDict, total=False):
+    type: str
+    nullable: bool
+    isGlobal: NotRequired[bool]
+    name: NotRequired[str]
+
+
+class Layer(TypedDict, total=False):
+    abstract: bool
+    contains: NotRequired[str]
+    layerType: str
+    attributes: dict[str, Attribute | dict[str, Attribute]]
+    anchoring: NotRequired[dict[str, bool]]
+    values: NotRequired[list[str]]
+    partOf: NotRequired[list[dict[str, str]]]
+
+
+class FirstClass(TypedDict, total=False):
+    segment: Required[str]
+    token: Required[str]
+    document: Required[str]
+
+
+class Partitions(TypedDict, total=False):
+    values: list[str]
+
+
+NotRequired[dict[str, int]]
+
+
+class CorpusTemplate(TypedDict, total=False):
+    meta: Meta
+    layer: Required[dict[str, Layer]]
+    firstClass: Required[FirstClass]
+    partitions: NotRequired[Partitions]
+    projects: NotRequired[list[str]]
+    project: NotRequired[str]
+    uploaded: NotRequired[bool]
+    schema_name: NotRequired[str]
+
+
+class CorpusConfig(CorpusTemplate, total=False):
+    shortname: NotRequired[str]
+    corpus_id: Required[int]
+    current_version: Required[int | str | float]
+    version_history: str | None
+    description: str | None
+    schema_path: Required[str]
+    token_counts: dict[str, int]
+    mapping: Required[dict[str, Any]]
+    enabled: bool
+    segment: Required[str]
+    token: Required[str]
+    document: Required[str]
+    column_names: list[str]
+    sample_query: str
+    # doc ids is stored as [job_id, {1: "AKAW"}]
+    doc_ids: NotRequired[Sequence[str | dict[str, str]]]
+    _batches: NotRequired[dict[str, int]]
+
+
+# {corpus_id: corpus_config} shared between frontend and backend. keys are numbers cast to string
+Config: TypeAlias = dict[str, CorpusConfig]
 
 
 class BaseArgs(TypedDict, total=False):

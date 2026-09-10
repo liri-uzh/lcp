@@ -15,9 +15,8 @@ from typing import Sequence, Any, cast
 from uuid import uuid4
 from xml.sax.saxutils import escape, quoteattr
 
-from .configure import CorpusConfig
-from jobfuncs import _db_query
-from .typed import Config, DocIDArgs, JSONObject
+from .jobfuncs import _db_query
+from .typed import Config, CorpusConfig, JSONObject
 from .utils import (
     SQLCorpus,
     _get_all_attributes,

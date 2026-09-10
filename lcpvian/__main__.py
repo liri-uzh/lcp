@@ -7,10 +7,10 @@ Not compiled to c!
 import asyncio
 import sys
 
+from .configure import get_config
 from .ddl_gen import main
 from .dqd_parser import cmdline
 from .cqp_to_json import full_cqp_to_json
-from .project import refresh_config
 
 COMMANDS = {
     "start",
@@ -31,7 +31,7 @@ if command == "lcpvian" or command == "start":
     start()
 
 elif command == "config":
-    asyncio.run(refresh_config())
+    asyncio.run(get_config(None))
 
 elif command == "worker":
     from .worker import start_worker

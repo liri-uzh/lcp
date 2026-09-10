@@ -35,13 +35,16 @@ from arq import create_pool, Worker
 from arq.jobs import Job
 from arq.connections import RedisSettings
 from redis import Redis
+from redis.backoff import ConstantBackoff
+from redis.exceptions import ConnectionError
+from redis.retry import Retry
 
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.pool import NullPool
 
 from sshtunnel import SSHTunnelForwarder
 
-from .utils import load_env
+from .utils import load_env, get_redis_sleep_time
 
 load_env()
 
@@ -99,6 +102,7 @@ REDIS_DB_INDEX = int(os.getenv("REDIS_DB_INDEX", 0))
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
 redis_url: str = f"{REDIS_URL}/{REDIS_DB_INDEX}" if REDIS_DB_INDEX > -1 else REDIS_URL
 redis_conn = RedisSettings.from_dsn(redis_url)
+sync_redis: None | Redis = None
 
 tunnel: SSHTunnelForwarder
 if os.getenv("SSH_HOST"):
@@ -159,23 +163,54 @@ _functions = []
 ctx = None  # placeholder for calling decorated tasks
 
 
+def get_sync_redis():
+    global redis_url
+    sleep_time = get_redis_sleep_time(redis_url)
+    retry_policy: Retry = Retry(ConstantBackoff(sleep_time), 3)
+    return Redis.from_url(
+        redis_url,
+        health_check_interval=10,
+        retry_on_error=[ConnectionError],
+        retry=retry_policy,
+    )
+
+
 async def get_redis():
     global redis_conn
     return await create_pool(redis_conn)
+
+
+async def get_job_kwargs(job: Job) -> dict:
+    return {}
+
+
+async def set_job_kwargs(job: Job, kwargs: dict):
+    return {}
+
+
+async def get_job_meta(job: Job) -> dict:
+    return {}
+
+
+async def set_job_meta(job: Job, meta: dict):
+    return {}
 
 
 def arq_task(queue: str = "query"):
     def decorator(
         func: Callable[..., Any],
     ) -> Callable[..., CoroutineType[Any, Any, Job | None]]:
-        _functions.append(func)
         func_name = f"{func.__module__}.{func.__qualname__}"
+        _functions.append(func)
 
+        # wrap so as to keep the function's name all the way through
+        @functools.wraps(func)
         async def wrapper(*args, **kwargs) -> Job | None:
             redis = await get_redis()
-            job_id = kwargs.pop("job_id") or None
+            job_id = kwargs.pop("job_id", None) or None
+            arq_queue = kwargs.pop("arq_queue", queue) or queue
             job = await redis.enqueue_job(
-                func_name, *args, **kwargs, _queue_name=queue, _job_id=job_id
+                func_name, *args, **kwargs, _queue_name=arq_queue, _job_id=job_id
             )
             return job
 
@@ -196,7 +231,7 @@ async def on_shutdown(ctx: dict) -> None:
     ctx["_wpool"].dispose()
 
 
-async def work(queue: str = "internal") -> None:
+async def work(queue: str = "internal"):
     global _functions, redis_conn
 
     valid_queues = ("internal", "query", "background")
@@ -211,7 +246,9 @@ async def work(queue: str = "internal") -> None:
         on_startup=on_startup,
         on_shutdown=on_shutdown,
     )
-    w.run()
+    print(f"Running worker on queue {queue}")
+
+    await w.async_run()
 
 
 def start_worker(queue: str = "internal") -> None:

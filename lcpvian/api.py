@@ -104,7 +104,7 @@ async def search(request: web.Request) -> web.Response:
     if "to_export" in request_data:
         data_to_process["to_export"] = request_data["to_export"]
     app = cast(LCPApplication, request.app)
-    req, qi, job = process_query(app, data_to_process)
+    req, qi, job = await process_query(app, data_to_process)
 
     # No job means no query is being run: delete the request
     if job is None and qi.has_request(req):

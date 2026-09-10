@@ -1,7 +1,6 @@
 from aiohttp import web
 from typing import cast
 
-from .configure import CorpusConfig
 from .typed import JSONObject, TypeAlias
 
 subtype: TypeAlias = list[dict[str, str]]

@@ -4,7 +4,6 @@ from typing import Any, cast
 from yarl import URL
 
 from .authenticate import Authentication
-from .configure import CorpusConfig
 from .lama import (
     _lama_user_details,
     _lama_project_user_update,
@@ -18,7 +17,7 @@ from .lama import (
     _lama_api_revoke,
     _lama_check_api_key,
 )
-from .typed import JSONObject, TypeAlias
+from .typed import CorpusConfig, JSONObject, TypeAlias
 from .utils import _filter_corpora
 
 subtype: TypeAlias = list[dict[str, str]]

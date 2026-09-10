@@ -22,10 +22,7 @@ MESSAGE_TTL = int(os.getenv("REDIS_WS_MESSSAGE_TTL", 5000))
 async def project_check_title(request: web.Request) -> web.Response:
     authenticator: Authentication = request.app["auth_class"](request.app)
     request_data: dict[str, str] = await request.json()
-    res = await authenticator.project_check_title(
-        request,
-        request_data["title"]
-    )
+    res = await authenticator.project_check_title(request, request_data["title"])
     return web.json_response(res)
 
 
@@ -124,15 +121,3 @@ async def project_users_invitation_remove(request: web.Request) -> web.Response:
     invitation_id: str = request.match_info["invitation"]
     res = await authenticator.project_users_invitation_remove(request, invitation_id)
     return web.json_response(res)
-
-
-async def refresh_config() -> JSONObject:
-    """
-    Helper to force a refresh of the configuration
-    """
-    url = f"http://localhost:{AIO_PORT}/config"
-    headers: JSONObject = {}
-    async with ClientSession() as session:
-        async with session.post(url, headers=headers) as resp:
-            result: JSONObject = await resp.json()
-            return result

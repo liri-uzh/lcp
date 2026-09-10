@@ -4,10 +4,9 @@ import traceback
 import os
 
 from aiohttp import web
-from redis.asyncio import Redis as RedisConnection
-from rq import Callback, Queue
+from redis import Redis as RedisConnection
 from rq.command import send_stop_job_command
-from rq.job import Job
+from arq.jobs import Job
 from types import TracebackType
 from typing import cast, Any, Callable
 from uuid import uuid4
@@ -16,7 +15,7 @@ from .abstract_query.create import json_to_sql
 from .abstract_query.typed import QueryJSON
 from .callbacks import _general_failure
 from .convert import _aggregate_results
-from .jobfuncs import _db_query, _export_db
+from .jobfuncs import _db_query
 from .redis_proxies import RedisDict, RedisList
 from .typed import JSONObject, Batch
 from .utils import (
@@ -26,6 +25,7 @@ from .utils import (
     push_msg,
     CustomEncoder,
 )
+from .worker import get_job_meta, get_redis, set_job_meta, ctx
 
 MESSAGE_TTL = int(os.getenv("REDIS_WS_MESSSAGE_TTL", 5000))
 QUERY_TTL = int(os.getenv("QUERY_TTL", 5000))
@@ -48,18 +48,19 @@ SERIALIZABLES = (
 )
 
 
-def _qi_job_failure(
+async def _qi_job_failure(
     job: Job,
     connection: RedisConnection,
     typ: type,
     value: BaseException,
     trace: TracebackType,
 ) -> None:
-    qi_hash: str = job.meta.get("qi_hash", "")
+    job_meta = await get_job_meta(job)
+    qi_hash: str = job_meta.get("qi_hash", "")
     qi: QueryInfo = QueryInfo(qi_hash, connection)
     tb = traceback.format_exc()
-    qi.publish("\n".join([str(value), tb]), "failure")
-    return _general_failure(job, connection, typ, value, trace)
+    await qi.publish("\n".join([str(value), tb]), "failure")
+    # await _general_failure(job, connection, typ, value, trace)
 
 
 def _merge_results(exisitng: dict, incoming: dict):
@@ -358,8 +359,9 @@ class Request:
         )
         if self.to_export:
             xp_format = self.to_export.get("format", "xml") or "xml"
-            export = app["exporters"][xp_format].export
-            qi.enqueue(export, self.id, self.hash, payload)
+            req = next(r for r in qi.requests)
+            exporter = app["exporters"][xp_format](req, qi)
+            await exporter.launch_export(payload)
         elif self.to_buffer:
             req_buffer = app["query_buffers"][self.id]
             _merge_results(req_buffer, results)
@@ -408,7 +410,7 @@ class Request:
                 )
             )
         self.lines_batch[batch_hash] = [offset_this_batch, lines_this_batch, n_seg_ids]
-        _, results = qi.get_stats_results()  # fetch any stats results first
+        _, results = await qi.get_stats_results()  # fetch any stats results first
         is_full = True if self.full else False
         lines_so_far = -1
         kwic_keys = [str(k) for k in qi.kwic_keys]
@@ -457,8 +459,9 @@ class Request:
         )
         if self.to_export:
             xp_format = self.to_export.get("format", "xml") or "xml"
-            export = app["exporters"][xp_format].export
-            qi.enqueue(export, self.id, self.hash, payload)
+            req = next(r for r in qi.requests if r.to_export)
+            exporter = app["exporters"][xp_format](req, qi)
+            await exporter.launch_export(payload)
         elif self.to_buffer:
             req_buffer = app["query_buffers"][self.id]
             _merge_results(req_buffer, results)
@@ -477,16 +480,10 @@ class Request:
     ):
         print(f"[{self.id}] Error while running the query:", error)
         if self.to_export:
-            qi.enqueue(
-                _export_db,
-                qi.hash,
-                self.to_export.get("format", "xml"),
-                "update",
-                self.offset,
-                self.requested,
-                failure=True,
-                message=error,
-            )
+            xp_format = self.to_export.get("format", "xml") or "xml"
+            req = next(r for r in qi.requests if r.to_export)
+            exporter = app["exporters"][xp_format](req, qi)
+            await exporter.error(error)
         if self.to_buffer:
             try:
                 req_buffer = app["query_buffers"][self.id]
@@ -533,7 +530,7 @@ class Request:
             self.delete_if_done(qi)
         except Exception as e:
             tb = traceback.format_exc()
-            qi.publish("\n".join([str(e), tb]), "failure")
+            await qi.publish("\n".join([str(e), tb]), "failure")
 
 
 class QueryInfo:
@@ -571,12 +568,11 @@ class QueryInfo:
         if isinstance(self.result_sets, RedisList):
             self.result_sets = self.result_sets.to_list()
 
-    def enqueue(
+    async def enqueue(
         self,
         method,
         *args,
         job_id: str | None = None,
-        callback: Callable | None = None,
         **kwargs,
     ) -> Job:
         """
@@ -586,30 +582,21 @@ class QueryInfo:
         queue: str = (
             "background" if all(r.to_export for r in self.requests) else "query"
         )
-        q = Queue(queue, connection=self._connection)
         enqueued_job_ids = [jid for jid in self.enqueued_jobs]
         # Clear any job that needs to be cleared
         for jid in enqueued_job_ids:
             try:
-                job = Job.fetch(jid, self._connection)
-                if not (job.is_started or job.is_scheduled or job.is_queued):
+                redis = await get_redis()
+                job = Job(jid, redis=redis)
+                job_status = await job.status()
+                if job_status in ("complete", "not_found"):
                     self.enqueued_jobs.pop(jid, "")
             except:
                 self.enqueued_jobs.pop(jid, "")
-        on_success: Callback | None = (
-            Callback(callback, QUERY_TIMEOUT) if callback else None
-        )
-        j = q.enqueue(
-            method,
-            on_success=on_success,
-            on_failure=Callback(_qi_job_failure, QUERY_TIMEOUT),
-            result_ttl=QUERY_TTL,
-            job_timeout=FULL_QUERY_TIMEOUT if self.full else QUERY_TIMEOUT,
-            args=args,
-            job_id=job_id,
-        )
-        j.meta["qi_hash"] = self.hash  # used in failure callback
-        j.save_meta()
+        j = await method(ctx, args, job_id=job_id, arq_queue=queue)
+        j_meta = await get_job_meta(j)
+        j_meta["qi_hash"] = self.hash  # used in failure callback
+        await set_job_meta(j, j_meta)
         self.enqueued_jobs[j.id] = 1
         return j
 
@@ -626,11 +613,13 @@ class QueryInfo:
         """
         Helper to make sure the results are stored in redis
         """
-        res = await _db_query(script, params=params)
+        res = await _db_query(ctx, script, params=params)
         self.set_cache(qhash, res)
         return res
 
-    def publish(self, batch_name: str, typ: str, custom_payload: dict[str, Any] = {}):
+    async def publish(
+        self, batch_name: str, typ: str, custom_payload: dict[str, Any] = {}
+    ):
         """
         Notify the app that results are available
         """
@@ -647,7 +636,7 @@ class QueryInfo:
                 payload.pop(k, None)
                 continue
             payload[k] = v
-        _publish_msg(
+        await _publish_msg(
             self._connection,
             payload,
             msg_id=msg_id,
@@ -817,7 +806,7 @@ class QueryInfo:
             return
         self.qi["requests"].pop(idx)
 
-    def stop_request(self, request: Request):
+    async def stop_request(self, request: Request):
         """
         Stop an active request and cancels any related active query as applicable
         """
@@ -827,11 +816,11 @@ class QueryInfo:
         jids = [jid for jid in self.enqueued_jobs]
         for jid in jids:
             try:
-                job = Job.fetch(jid, self._connection)
-                if job.is_started or job.is_scheduled or job.is_queued:
-                    job.cancel()
-                    send_stop_job_command(self._connection, jid)
-                    self.enqueued_jobs.pop(jid, "")
+                redis = await get_redis()
+                job = Job(jid, redis=redis)
+                await job.abort()
+                send_stop_job_command(self._connection, jid)
+                self.enqueued_jobs.pop(jid, "")
             except:
                 self.enqueued_jobs.pop(jid, "")
 
@@ -849,18 +838,19 @@ class QueryInfo:
             lines_before_batch += nlines
         return (lines_before_batch, lines_this_batch)
 
-    def get_stats_results(self) -> tuple[list, dict]:
+    async def get_stats_results(self) -> tuple[list, dict]:
         """
         All the non-KWIC results
         """
         if not self.query_batches:
             return ([], {})
         try:
+            redis = await get_redis()
             first_job = next(
-                Job.fetch(qjid, self._connection)
-                for qjid, _ in self.query_batches.values()
+                Job(qjid, redis=redis) for qjid, _ in self.query_batches.values()
             )
-            batches, stats = first_job.meta.get("stats_results", ([], {}))
+            first_job_meta = await get_job_meta(first_job)
+            batches, stats = first_job_meta.get("stats_results", ([], {}))
             return (batches, stats)
         except:
             return ([], {})

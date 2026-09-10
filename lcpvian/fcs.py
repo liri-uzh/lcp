@@ -99,7 +99,7 @@ async def _check_request_complete(
             if rprops.get("done")
         )
         if n_results >= requested:
-            qi.stop_request(request)
+            await qi.stop_request(request)
             break
     return
 
@@ -263,7 +263,7 @@ async def search_retrieve(
                 if queryType == "cql"
                 else textsearch_to_json(query, conf)
             )
-            req, qi, job = process_query(
+            req, qi, job = await process_query(
                 app,
                 {
                     "appType": "lcp",

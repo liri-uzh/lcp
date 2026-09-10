@@ -6,9 +6,8 @@ import traceback
 
 from aiohttp import web
 from intervaltree import IntervalTree
-from redis.asyncio import Redis as RedisConnection
+from redis import Redis as RedisConnection
 
-# TODO(ARQ_MIGRATION): Replace rq.job.get_current_job, Job with Arq equivalents
 from arq.jobs import Job
 from typing import cast, Any
 from uuid import uuid4
@@ -28,65 +27,12 @@ from .utils import (
     CustomEncoder,
     LCPApplication,
 )
+from .worker import arq_task, ctx, get_sync_redis
 
 
-def batch_callback(
-    job: Job, connection: RedisConnection, batch_name: str
-):  # TODO(ARQ_MIGRATION): job parameter type may need to be updated
-    """
-    Publish a message that we got some results (to be captured by the requests)
-    then schedule the query on the next batch
-    and run the appropriate segment/meta queries now (if applicable)
-    """
-
-    if not batch_name:
-        return
-
-    qhash: str = job.args[0]
-    qi: QueryInfo = QueryInfo(qhash, connection)
-
-    # do next batch if needed (all already scheduled if full)
-    if not qi.full:
-        schedule_next_batch(qhash, connection, batch_name)
-
-    # run needed segment+meta queries
-    lines_before, lines_now = qi.get_lines_batch(batch_name)
-    lines_so_far = lines_before + lines_now
-
-    # send sentences if needed
-    if not qi.kwic_keys or all(r.raw_hits for r in qi.requests):
-        return
-
-    min_offset = min(r.offset for r in qi.requests) if qi.requests else 0
-    # Send only if this batch exceeds the offset and this batch starts before what's required
-    need_segments_this_batch = (
-        lines_now > 0
-        and lines_so_far >= min_offset
-        and (qi.full or qi.required > lines_before)
-    )
-    print(
-        f"need segments for {batch_name}?",
-        min_offset,
-        lines_so_far,
-        need_segments_this_batch,
-    )
-    if not need_segments_this_batch:
-        return
-
-    offset_this_batch = max(0, min_offset - lines_so_far)
-    lines_this_batch = (
-        lines_now if qi.full else min(lines_now, qi.required - lines_before)
-    )
-    qi.enqueue(
-        do_segment_and_meta,
-        qi.hash,
-        batch_name,
-        offset_this_batch,
-        lines_this_batch,
-    )
-
-
+@arq_task("query")
 async def do_segment_and_meta(
+    ctx,
     qhash: str,
     batch_name: str,
     offset_this_batch: int,
@@ -95,14 +41,7 @@ async def do_segment_and_meta(
     """
     Fetch from cache or run a segment+meta query on the given batch
     """
-    # TODO(ARQ_MIGRATION): Replace get_current_job() with Arq equivalent (ctx)
-    # current_job: Job | None = get_current_job()
-    # assert current_job, RuntimeError(
-    #     f"No current job found for do_segment_and_meta {batch_name}"
-    # )
-    # connection = current_job.connection
-    current_job = None  # TODO(ARQ_MIGRATION): Implement Arq equivalent
-    connection = None  # TODO(ARQ_MIGRATION): Implement Arq equivalent
+    connection = get_sync_redis()
     qi = QueryInfo(qhash, connection=connection)
     if not qi.requests:
         return
@@ -204,20 +143,16 @@ async def do_segment_and_meta(
             if sqid in r.segment_lines_for_hash:
                 continue
             r.segment_lines_for_hash[sqid] = reqs_nlines[r.id]
-    qi.publish(batch_name, "segments")
+    await qi.publish(batch_name, "segments")
 
 
-async def do_batch(qhash: str, batch: list):
+@arq_task("query")
+async def do_batch(ctx, qhash: str, batch: list):
     """
     Fetch from cache or run a main query on a batch from within a worker
     and aggregate the results for stats if needed
     """
-    # TODO(ARQ_MIGRATION): Replace get_current_job() with Arq equivalent (ctx)
-    # current_job: Job | None = get_current_job()
-    # assert current_job, RuntimeError(f"No current job found for do_batch {batch}")
-    # connection = current_job.connection
-    current_job = None  # TODO(ARQ_MIGRATION): Implement Arq equivalent
-    connection = None  # TODO(ARQ_MIGRATION): Implement Arq equivalent
+    connection = get_sync_redis()
     qi = QueryInfo(qhash, connection=connection)
     if not qi.requests:
         return
@@ -237,12 +172,55 @@ async def do_batch(qhash: str, batch: list):
         batch_hash, _ = qi.query_batches.get(batch_name, ("", 0))
     min_offset = min(r.offset for r in qi.requests) if qi.requests else 0
     await qi.run_aggregate(min_offset, batch)
-    qi.publish(batch_name, "main")
+    await qi.publish(batch_name, "main")
     del qi.running_batches[batch_name]
-    return batch_name
+
+    if not batch_name:
+        return
+
+    # do next batch if needed (all already scheduled if full)
+    if not qi.full:
+        await schedule_next_batch(qhash, connection, batch_name)
+
+    # run needed segment+meta queries
+    lines_before, lines_now = qi.get_lines_batch(batch_name)
+    lines_so_far = lines_before + lines_now
+
+    # send sentences if needed
+    if not qi.kwic_keys or all(r.raw_hits for r in qi.requests):
+        return
+
+    min_offset = min(r.offset for r in qi.requests) if qi.requests else 0
+    # Send only if this batch exceeds the offset and this batch starts before what's required
+    need_segments_this_batch = (
+        lines_now > 0
+        and lines_so_far >= min_offset
+        and (qi.full or qi.required > lines_before)
+    )
+    print(
+        f"need segments for {batch_name}?",
+        min_offset,
+        lines_so_far,
+        need_segments_this_batch,
+    )
+    if not need_segments_this_batch:
+        return
+
+    offset_this_batch = max(0, min_offset - lines_so_far)
+    lines_this_batch = (
+        lines_now if qi.full else min(lines_now, qi.required - lines_before)
+    )
+    await qi.enqueue(
+        do_segment_and_meta,
+        ctx,
+        qi.hash,
+        batch_name,
+        offset_this_batch,
+        lines_this_batch,
+    )
 
 
-def schedule_next_batch(
+async def schedule_next_batch(
     qhash: str,
     connection: RedisConnection,
     previous_batch_name: str | None = None,
@@ -269,10 +247,11 @@ def schedule_next_batch(
     if not next_batch:
         qi.running_batches = {}
         return None
-    return qi.enqueue(do_batch, qhash, list(next_batch), callback=batch_callback)
+    job = await qi.enqueue(do_batch, ctx, qhash, list(next_batch))
+    return cast(Job | None, job)
 
 
-def process_query(
+async def process_query(
     app: LCPApplication, request_data: dict
 ) -> tuple[Request, QueryInfo, Any]:
     """
@@ -326,21 +305,20 @@ def process_query(
         config,
         local_queries,
     )
-    # if local_kind and local_kind not in qi.local_queries:
-    #     qi.update({"local_queries": {**qi.local_queries, local_kind: local_query}})
     job: Job | None = None
     should_run: bool = True
     if request.to_export and request.user:
         xp_format: str = request.to_export.get("format", "xml") or "xml"
-        should_run = app["exporters"][xp_format].initiate_db(
+        should_run = await app["exporters"][xp_format].initiate_db(
             app, shash, config, request
         )
     if should_run:
         qi.add_request(request)
-        job = schedule_next_batch(shash, connection=app["redis"])
+        job = await schedule_next_batch(shash, connection=app["redis"])
         if job and qi.full:
+            job_info = await job.info()
             # Schedule all batches in parallel if this is a full query
-            scheduled_batch, _ = job.args[1]
+            scheduled_batch, _ = ("", "") if not job_info else job_info.args[1]
             print(
                 f"Full query: batch {scheduled_batch} already scheduled -- adding the remaining ones now"
             )
@@ -348,10 +326,13 @@ def process_query(
                 batch_name, _ = remaining_batch
                 if batch_name == scheduled_batch:
                     continue
-                job = qi.enqueue(
-                    do_batch, shash, list(remaining_batch), callback=batch_callback
+                extra_job = await qi.enqueue(
+                    do_batch, ctx, shash, list(remaining_batch)
                 )
-                newly_scheduled_batch, _ = job.args[1] if job else ["", None]
+                extra_job_info = await extra_job.info()
+                newly_scheduled_batch, _ = (
+                    extra_job_info.args[1] if extra_job_info else ["", None]
+                )
                 print(f"Full query: scheduled {newly_scheduled_batch}")
     return (request, qi, job)
 
@@ -399,7 +380,7 @@ async def post_query(request: web.Request) -> web.Response:
         raise web.HTTPForbidden(text=msg)
 
     try:
-        req, qi, job = process_query(app, request_data)
+        req, qi, job = await process_query(app, request_data)
     except Exception as e:
         print("Could not process query", e)
         traceback.print_exc()

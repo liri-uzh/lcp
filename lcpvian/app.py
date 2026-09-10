@@ -4,9 +4,13 @@ The main setup for the aiohttp backend.
 Register URLs and endpoints, add redis, query_service, websockets, etc.
 """
 
+from arq import create_pool
+from arq.connections import RedisSettings
+
 import importlib
 import logging
 import os
+import traceback
 
 import aiohttp_cors
 import asyncio
@@ -38,13 +42,14 @@ from .utils import (
     handle_bad_request,
     handle_timeout,
     load_env,
-    refresh_config,
+    get_redis_sleep_time,
 )
 
 load_env()
 
 from .api import list_corprora, get_corpus, search, get_search
 from .check_file_permissions import check_file_permissions
+from .configure import get_config, refresh_config
 from .corpora import (
     corpora,
     corpora_meta_update,
@@ -321,12 +326,7 @@ async def create_app(test: bool = False) -> web.Application:
     redis_url: str = (
         f"{REDIS_URL}/{REDIS_DB_INDEX}" if REDIS_DB_INDEX > -1 else REDIS_URL
     )
-    redis_settings = Redis.from_url(redis_url)
-    limit = "client-output-buffer-limit"
-    pubsub_limit = redis_settings.config_get(limit)[limit]
-    redis_settings.quit()
-    _pieces = pubsub_limit.split()
-    sleep_time = int(_pieces[-1]) + 2
+    sleep_time = get_redis_sleep_time(redis_url)
     app.addkey("redis_pubsub_limit_sleep", int, sleep_time)
     retry_policy: Retry = Retry(ConstantBackoff(sleep_time), 3)
     async_retry_policy: AsyncRetry = AsyncRetry(ConstantBackoff(sleep_time), 3)
@@ -398,7 +398,7 @@ async def create_app(test: bool = False) -> web.Application:
     qs: QueryService = QueryService(app)
     app.addkey("query_service", QueryService, qs)
     if not test:
-        await qs.get_config()
+        await get_config(None, force_refresh=False)
     app.addkey("canceled", deque[str], deque(maxlen=99999))
 
     if test:
@@ -424,7 +424,7 @@ async def start_app() -> None:
     except KeyboardInterrupt:
         return None
     except (asyncio.exceptions.CancelledError, OSError) as err:
-        print(f"Port in use? : {err}")
+        print(f"Port in use? : {err}", traceback.format_exc())
         return None
 
 
@@ -441,7 +441,7 @@ def start() -> None:
     except KeyboardInterrupt:
         print("Application stopped.")
     except (BaseException, OSError) as err:
-        print(f"Port in use? : {err}")
+        print(f"Port in use? : {err}", traceback.format_exc())
     return None
 
 

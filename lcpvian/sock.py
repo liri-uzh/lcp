@@ -40,11 +40,11 @@ from redis.exceptions import ConnectionError
 
 from .configure import _get_batches, CorpusConfig
 from .email import send_email
+from .export import _export_notifs
 from .query_service import QueryService
 from .query_classes import QueryInfo, Request
 from .utils import push_msg
 from .validate import validate
-
 from .typed import JSON, JSONObject, RedisMessage, Websockets
 from .utils import (
     PUBSUB_CHANNEL,
@@ -248,7 +248,7 @@ async def _handle_message(
         app["redis"].expire(uu, MESSAGE_TTL)
 
     if action == "export_complete":
-        await app["query_service"].get_export_notifs(hash=payload.get("hash", ""))
+        await _export_notifs({}, hash=payload.get("hash", ""))
         if email := payload.get("email"):
             fn = payload.get("filename", "")
             message = f"""Hello,<br><br>
@@ -435,7 +435,7 @@ async def _handle_sock(
         if not req:
             return
         qi: QueryInfo = QueryInfo(req.hash, app["redis"])
-        qi.stop_request(req)
+        await qi.stop_request(req)
         # jobs = qs.cancel_running_jobs(user_id, session_id)
         # jobs = list(set(jobs))
         # if jobs:

@@ -8,7 +8,9 @@ from uuid import uuid4
 
 from .exporter import Exporter as ExporterXml
 from .exporter_swissdox import Exporter as ExporterSwissdox
+from .jobfuncs import _db_query
 from .utils import _publish_msg
+from .worker import arq_task, ctx
 
 EXPORT_TTL = 5000
 RESULTS_USERS = os.environ.get("RESULTS_USERS", os.path.join("results", "users"))
@@ -43,20 +45,26 @@ async def download_export(request: web.Request) -> web.FileResponse:
     return web.FileResponse(filepath, headers=headers)
 
 
-def _export_notifs(
-    job: Job,
-    connection: RedisConnection,
-    result: list | None,
-) -> None:
+@arq_task("internal")
+async def _export_notifs(ctx, user_id: str = "", ehash: str = "") -> None:
     """
     Callback when getting the export rows from the DB
     """
+    query: str
+    if user_id:
+        assert ";" not in user_id and "'" not in user_id
+        query = f"SELECT * FROM main.exports WHERE user_id = '{user_id}';"
+    elif ehash:
+        assert ";" not in ehash and "'" not in ehash
+        query = f"SELECT * FROM main.exports WHERE query_hash = '{ehash}';"
+
+    result = await _db_query(ctx, query, {}, user=user_id, hash=ehash, is_main=True)
+
     if not result:
         return None
+
     RESULTS_USERS = os.environ.get("RESULTS_USERS", os.path.join("results", "users"))
-    j_kwargs: dict = cast(dict, job.kwargs)
-    user = j_kwargs.get("user", "")
-    hash = j_kwargs.get("hash", "")
+    user = user_id
     jso: dict[str, Any]
     if user:
         msg_id = str(uuid4())
@@ -66,9 +74,10 @@ def _export_notifs(
             "msg_id": msg_id,
             "exports": result,
         }
-        _publish_msg(connection, jso, msg_id)
-    elif hash:
+        await _publish_msg(ctx["redis"], jso, msg_id)
+    elif ehash:
         for res in result:
+            res = cast(list, res)
             _, _, _, _, user_id, format, offset, requested, _, fn, _, _ = res
             full = requested <= 0
             exp_class = ExporterSwissdox if format == "swissdox" else ExporterXml
@@ -98,6 +107,4 @@ def _export_notifs(
                 "msg_id": msg_id,
                 "exports": [res],
             }
-            _publish_msg(connection, jso, msg_id)
-            continue
-    return None
+            await _publish_msg(ctx["redis"], jso, msg_id)

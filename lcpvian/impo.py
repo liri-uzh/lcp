@@ -56,8 +56,7 @@ from sqlalchemy.engine.row import Row
 from sqlalchemy.ext.asyncio import AsyncEngine
 from sqlalchemy.sql import text
 
-from .configure import CorpusTemplate, Meta
-from .typed import JSONObject, MainCorpus, Params, RunScript
+from .typed import CorpusTemplate, Meta, JSONObject, MainCorpus, Params, RunScript
 from .utils import (
     copy_to_table,
     _format_config_query,

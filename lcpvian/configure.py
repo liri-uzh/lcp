@@ -4,75 +4,22 @@ Model the various parts of the corpus template/corpus config
 Code for generating batches is also in here
 """
 
-from typing import Any, Required, NotRequired, Sequence, TypedDict
+from aiohttp import web
+from arq.jobs import Job, ResultNotFound
+from typing import cast
+from uuid import uuid4
 
+from .jobfuncs import _db_query
+from .typed import CorpusConfig, JSONObject
+from .utils import (
+    Config,
+    _format_config_query,
+    _row_to_value,
+    _sharepublish_msg,
+    ensure_authorised,
+)
 
-class Meta(TypedDict, total=False):
-    date: str
-    name: str
-    author: str
-    version: int | str | float
-    website: NotRequired[str]
-    corpusDescription: NotRequired[str | None]
-    sample_query: NotRequired[str]
-
-
-class Attribute(TypedDict, total=False):
-    type: str
-    nullable: bool
-    isGlobal: NotRequired[bool]
-    name: NotRequired[str]
-
-
-class Layer(TypedDict, total=False):
-    abstract: bool
-    contains: NotRequired[str]
-    layerType: str
-    attributes: dict[str, Attribute | dict[str, Attribute]]
-    anchoring: NotRequired[dict[str, bool]]
-    values: NotRequired[list[str]]
-    partOf: NotRequired[list[dict[str, str]]]
-
-
-class FirstClass(TypedDict, total=False):
-    segment: Required[str]
-    token: Required[str]
-    document: Required[str]
-
-
-class Partitions(TypedDict, total=False):
-    values: list[str]
-
-
-class CorpusTemplate(TypedDict, total=False):
-    meta: Meta
-    layer: Required[dict[str, Layer]]
-    firstClass: Required[FirstClass]
-    partitions: NotRequired[Partitions]
-    projects: NotRequired[list[str]]
-    project: NotRequired[str]
-    uploaded: NotRequired[bool]
-    schema_name: NotRequired[str]
-
-
-class CorpusConfig(CorpusTemplate, total=False):
-    shortname: NotRequired[str]
-    corpus_id: Required[int]
-    current_version: Required[int | str | float]
-    version_history: str | None
-    description: str | None
-    schema_path: Required[str]
-    token_counts: dict[str, int]
-    mapping: Required[dict[str, Any]]
-    enabled: bool
-    segment: Required[str]
-    token: Required[str]
-    document: Required[str]
-    column_names: list[str]
-    sample_query: str
-    # doc ids is stored as [job_id, {1: "AKAW"}]
-    doc_ids: NotRequired[Sequence[str | dict[str, str]]]
-    _batches: NotRequired[dict[str, int]]
+from .worker import arq_task, ctx
 
 
 def _generate_batches(n_batches: int, basename: str, size: int) -> dict[str, int]:
@@ -135,3 +82,59 @@ def _get_batches(config: CorpusConfig) -> dict[str, int]:
     if not batches:
         return counts
     return batches
+
+
+@arq_task("internal")
+async def get_config(ctx, force_refresh: bool = False, publish: bool = True):
+    """
+    Get initial app configuration JSON
+    """
+    job_id = "app_config"
+
+    query = _format_config_query(
+        "SELECT {selects} FROM main.corpus mc {join}"  # WHERE mc.enabled = true;"
+    )
+
+    redis = ctx["redis"]
+    try:
+        assert not force_refresh, ResultNotFound()
+        job = Job(job_id, redis=redis)
+        result = await job.result()
+        print("Loading config from redis (flush redis if new corpora added)")
+    except ResultNotFound:
+        result = await _db_query(ctx, query, {}, is_main=True)
+
+    action = "set_config"
+    fixed: Config = {}
+    msg_id = str(uuid4())
+    # TODO(ARQ_MIGRATION): job.result may need to be accessed differently in Arq
+    for tup in cast(list, result):
+        made = _row_to_value(tup)
+        # if not made.get("enabled"):
+        #     continue
+        fixed[str(made["corpus_id"])] = made
+
+    for conf in fixed.values():
+        if "_batches" not in conf:
+            conf["_batches"] = _get_batches(conf)
+
+    jso: dict[str, str | bool | Config] = {
+        "config": fixed,
+        "_is_config": True,
+        "action": action,
+        "msg_id": msg_id,
+    }
+    if publish:  # refresh the config for all instances
+        await _sharepublish_msg(cast(JSONObject, jso), msg_id)
+        # _publish_msg(connection, cast(JSONObject, jso), msg_id)
+
+    return jso
+
+
+@ensure_authorised
+async def refresh_config(request: web.Request) -> web.Response:
+    """
+    Force a refresh of the config via the /config endpoint
+    """
+    job: Job | None = await get_config(ctx, force_refresh=True)
+    return web.json_response({"job": str("" if job is None else job.job_id)})

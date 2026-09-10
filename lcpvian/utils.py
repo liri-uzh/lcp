@@ -13,8 +13,6 @@ import shutil
 import traceback
 import uuid
 
-from arq import create_pool
-from arq.connections import RedisSettings
 from dotenv import load_dotenv
 from asyncpg import Connection, Range, Box
 from collections import Counter
@@ -22,6 +20,7 @@ from collections.abc import Awaitable, Callable, Coroutine, Mapping
 from datetime import date, datetime
 from hashlib import md5
 from io import BytesIO
+from redis import Redis
 from typing import Any, cast, TypeAlias
 
 # TODO(ARQ_MIGRATION): Replace rq.registry.FinishedJobRegistry with Arq equivalent or custom implementation
@@ -31,7 +30,7 @@ from aiohttp import web
 
 # here we remove __slots__ from these superclasses because mypy can't handle them...
 from arq import ArqRedis
-from redis.asyncio import Redis as RedisConnection
+from redis.asyncio import Redis as AsyncRedis
 from redis._parsers import _AsyncHiredisParser, _AsyncRESP3Parser  # type: ignore
 from redis.utils import HIREDIS_AVAILABLE
 
@@ -46,17 +45,15 @@ ParserClass = DefaultParser
 
 from rq.command import PUBSUB_CHANNEL_TEMPLATE
 
-# TODO(ARQ_MIGRATION): Replace rq.connections.get_current_connection with Arq equivalent
-# from rq.connections import get_current_connection
-# TODO(ARQ_MIGRATION): Replace rq.job.Job with Arq equivalent
 from arq.jobs import Job
 
 from .authenticate import Authentication
 
 # from .callbacks import _general_failure
-from .configure import CorpusConfig, CorpusTemplate
 from .typed import (
     Config,
+    CorpusConfig,
+    CorpusTemplate,
     JSON,
     JSONObject,
     MainCorpus,
@@ -352,35 +349,56 @@ async def handle_bad_request(exc: Exception, request: web.Request) -> None:
 
 
 async def _get_redis_obj(
-    connection: RedisConnection | ArqRedis, key: str
+    connection: Redis | AsyncRedis | ArqRedis, key: str
 ) -> dict[str, Any]:
-    obj_str = await connection.get(key) or "{}"
+    obj_str = "{}"
+    if isinstance(connection, Redis):
+        obj_str = connection.get(key) or "{}"
+    else:
+        obj_str = await connection.get(key) or "{}"
     obj = json.loads(obj_str)
     return obj
 
 
 async def _update_redis_obj(
-    connection: RedisConnection | ArqRedis,
+    connection: Redis | AsyncRedis | ArqRedis,
     key: str,
     info: dict[str, Any] = {},
 ) -> dict[str, Any]:
-    obj_str = await connection.get(key) or "{}"
+    obj_str = "{}"
+    if isinstance(connection, Redis):
+        obj_str = connection.get(key) or "{}"
+    else:
+        obj_str = await connection.get(key) or "{}"
     obj = json.loads(obj_str)
     for k, v in info.items():
         obj[k] = v
-    await connection.set(key, json.dumps(obj, cls=CustomEncoder))
-    await connection.expire(key, MESSAGE_TTL)
+    if isinstance(connection, Redis):
+        connection.set(key, json.dumps(obj, cls=CustomEncoder))
+        connection.expire(key, MESSAGE_TTL)
+    else:
+        await connection.set(key, json.dumps(obj, cls=CustomEncoder))
+        await connection.expire(key, MESSAGE_TTL)
     return obj
 
 
 async def _get_query_info(
-    connection: RedisConnection | ArqRedis,
+    connection: Redis | AsyncRedis | ArqRedis,
     hash: str = "",
     job: Job | None = None,  # TODO(ARQ_MIGRATION): Job type may need to be updated
 ) -> dict[str, Any]:
     qi_key = f"query_info::{hash}"
     qi = await _get_redis_obj(connection, qi_key)
     return qi
+
+
+def get_redis_sleep_time(redis_url: str) -> int:
+    redis_settings = Redis.from_url(redis_url)
+    limit = "client-output-buffer-limit"
+    pubsub_limit = redis_settings.config_get(limit)[limit]
+    redis_settings.quit()
+    _pieces = pubsub_limit.split()
+    return int(_pieces[-1]) + 2
 
 
 async def sem_coro(
@@ -516,17 +534,6 @@ def _structure_descriptions(descs: dict) -> dict:
         if not ret[k]:
             ret.pop(k)
     return ret
-
-
-@ensure_authorised
-async def refresh_config(request: web.Request) -> web.Response:
-    """
-    Force a refresh of the config via the /config endpoint
-    """
-    qs = request.app["query_service"]
-    job: Job = await qs.get_config(force_refresh=True)
-    # TODO(ARQ_MIGRATION): job.id may need to be accessed differently in Arq
-    return web.json_response({"job": str(job.job_id)})
 
 
 subtype: TypeAlias = list[dict[str, str]]
@@ -674,7 +681,7 @@ async def _get_sent_ids(
 
 def _get_associated_query_job(
     depends_on: str | list[str],
-    connection: ArqRedis | RedisConnection,
+    connection: ArqRedis | AsyncRedis,
 ) -> Job:
     """
     Helper to find the query job associated with sent job
@@ -910,12 +917,12 @@ async def _sharepublish_msg(message: JSONObject | str | bytes, msg_id: str) -> N
         if redis_shared_db_index < 0
         else f"{redis_shared_url}/{redis_shared_db_index}"
     )
-    shared_connection = RedisConnection.from_url(full_url)
+    shared_connection = AsyncRedis.from_url(full_url)
     await _publish_msg(shared_connection, message, msg_id)
 
 
 async def _publish_msg(
-    connection: ArqRedis | RedisConnection,
+    connection: ArqRedis | AsyncRedis | Redis,
     message: JSONObject | str | bytes,
     msg_id: str,
 ) -> None:
@@ -924,9 +931,14 @@ async def _publish_msg(
     """
     if not isinstance(message, (str, bytes)):
         message = json.dumps(message, cls=CustomEncoder)
-    await connection.set(msg_id, message)
-    await connection.expire(msg_id, MESSAGE_TTL)
-    await connection.publish(PUBSUB_CHANNEL, json.dumps({"msg_id": msg_id}))
+    if isinstance(connection, Redis):
+        connection.set(msg_id, message)
+        connection.expire(msg_id, MESSAGE_TTL)
+        connection.publish(PUBSUB_CHANNEL, json.dumps({"msg_id": msg_id}))
+    else:
+        await connection.set(msg_id, message)
+        await connection.expire(msg_id, MESSAGE_TTL)
+        await connection.publish(PUBSUB_CHANNEL, json.dumps({"msg_id": msg_id}))
     return None
 
 

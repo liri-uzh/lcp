@@ -1,5 +1,6 @@
 import asyncio
 import datetime
+import importlib
 import json
 import lxml.etree
 import os
@@ -13,9 +14,6 @@ from io import TextIOWrapper
 from intervaltree import IntervalTree
 from lxml.builder import E
 from redis.asyncio import Redis as RedisConnection
-from rq import Callback, Queue
-from rq.job import get_current_job, Job
-from types import TracebackType
 from typing import Any, cast
 from uuid import uuid4
 
@@ -33,7 +31,7 @@ from .utils import (
     range_from_str,
     sanitize_filename,
 )
-from .worker import arq_task
+from .worker import arq_task, ctx, get_sync_redis
 
 EXPORT_TTL = 5000
 RESULTS_DIR = os.getenv("RESULTS", "results")
@@ -171,7 +169,7 @@ def _get_top_layer(config: CorpusConfig, restrict: set = set()) -> str:
     return top_layer
 
 
-@arq_task
+@arq_task("internal")
 async def _export_db(
     ctx,
     query_hash: str,
@@ -182,7 +180,7 @@ async def _export_db(
     **kwargs: int | str | None,
 ) -> None:
     """
-    To be run by arq worker, create/update entry in main.exports table
+    Run on an "internal" arq worker, create/update entry in main.exports table
     """
     wpool = ctx["_wpool"]
     try:
@@ -268,6 +266,79 @@ async def _export_db(
     return None
 
 
+@arq_task("background")
+async def export(ctx, class_name: str, request_id: str, qhash: str, payload: dict):
+    """
+    The core of the export pipeline, run in a worker
+    """
+    mod, clas = class_name.split(".", 1)
+    cls = importlib.import_module(mod).__dict__[clas]
+    connection = get_sync_redis()
+    request: Request = Request(connection, {"id": request_id})
+    qi: QueryInfo = QueryInfo(qhash, connection)
+    offset = request.offset
+    requested = request.requested
+    full = request.full
+    try:
+        upd_exp_args = (qhash, cls.xp_format, "update", offset, requested)
+        await _export_db(
+            ctx,
+            *upd_exp_args,
+            export=True,
+            message=f"{payload.get('percentage_done', 'NA')}%",
+        )
+        exporter = cls(request, qi)
+        wpath = exporter.get_working_path()
+        await exporter.process_lines(payload)
+        if not request.is_done(qi):
+            return
+        await _export_db(
+            ctx,
+            *upd_exp_args,
+            export=True,
+            message=f"100% - finalizing...",
+        )  # each payload needs corresponding *_query/*_segments subfolders
+        qb_hashes = [bh for bh, _ in qi.query_batches.values()]
+        for h, nlines in request.sent_hashes.items():
+            if h not in qb_hashes or cast(int, nlines) <= 0:
+                continue
+            hpath = os.path.join(wpath, h)
+            if not os.path.exists(f"{hpath}_query"):
+                return
+            seg_exists = os.path.exists(f"{hpath}_segments")
+            if qi.kwic_keys and not seg_exists:
+                return
+        delivered: int = cast(int, request.lines_sent_so_far)
+        await exporter.finalize()
+        shutil.rmtree(exporter.get_working_path())
+        for h in request.sent_hashes:
+            hpath = os.path.join(wpath, h)
+            if os.path.exists(f"{hpath}_query"):
+                shutil.rmtree(f"{hpath}_query")
+            if os.path.exists(f"{hpath}_segments"):
+                shutil.rmtree(f"{hpath}_segments")
+        print(
+            f"Exporting complete for request {request.id} (hash: {request.hash}) ; DELETED REQUEST"
+        )
+        qi.delete_request(request)
+        await cls.finish_export_db(
+            qi._connection, qi.hash, offset, requested, delivered, full
+        )
+    except Exception as e:
+        shutil.rmtree(cls.get_dl_path_from_hash(qhash, offset, requested, full))
+        await _export_db(
+            ctx,
+            qhash,
+            cls.xp_format,
+            "update",
+            offset,
+            requested,
+            failure=True,
+            message=str(e),
+        )
+        raise e
+
+
 class Exporter:
     xp_format = "xml"
 
@@ -323,6 +394,7 @@ class Exporter:
         """
         path = cls.get_dl_path_from_hash(qhash, offset, requested, full, filename=True)
         await _export_db(
+            ctx,
             qhash,
             xp_format,
             "finish",
@@ -342,7 +414,7 @@ class Exporter:
         )
 
     @classmethod
-    def initiate_db(
+    async def initiate_db(
         cls,
         app: web.Application,
         shash: str,
@@ -376,11 +448,12 @@ class Exporter:
             shash, request.offset, request.requested, request.full, filename=True
         )
         should_run = not os.path.exists(filepath)
-        app["internal"].enqueue(
-            _export_db,  # init_export
-            result_ttl=EXPORT_TTL,
-            job_timeout=EXPORT_TTL,
-            args=(shash, xp_format, "create", request.offset, request.requested),
+        await _export_db(
+            shash,
+            xp_format,
+            "create",
+            request.offset,
+            request.requested,
             kwargs={
                 "user_id": request.user,
                 "userpath": userpath,
@@ -399,75 +472,26 @@ class Exporter:
                     print(f"Problem with creating symlink {filepath}->{userpath}", e)
         return should_run
 
-    @classmethod
-    async def export(cls, request_id: str, qhash: str, payload: dict) -> None:
-        """
-        Entrypoint to export a payload; run finalize if all the payloads have been processed
-        """
-        job: Job = cast(Job, get_current_job())
-        request: Request = Request(job.connection, {"id": request_id})
-        qi: QueryInfo = QueryInfo(qhash, job.connection)
-        offset = request.offset
-        requested = request.requested
-        full = request.full
-        try:
-            ctx = {"job": job, "redis": job.connection, "_wpool": None}
-            upd_exp_args = (qhash, cls.xp_format, "update", offset, requested)
-            await _export_db(
-                ctx,
-                *upd_exp_args,
-                export=True,
-                message=f"{payload.get('percentage_done', 'NA')}%",
-            )
-            exporter = cls(request, qi)
-            wpath = exporter.get_working_path()
-            await exporter.process_lines(payload)
-            if not request.is_done(qi):
-                return
-            await _export_db(
-                ctx,
-                *upd_exp_args,
-                export=True,
-                message=f"100% - finalizing...",
-            )  # each payload needs corresponding *_query/*_segments subfolders
-            qb_hashes = [bh for bh, _ in qi.query_batches.values()]
-            for h, nlines in request.sent_hashes.items():
-                if h not in qb_hashes or cast(int, nlines) <= 0:
-                    continue
-                hpath = os.path.join(wpath, h)
-                if not os.path.exists(f"{hpath}_query"):
-                    return
-                seg_exists = os.path.exists(f"{hpath}_segments")
-                if qi.kwic_keys and not seg_exists:
-                    return
-            delivered: int = cast(int, request.lines_sent_so_far)
-            await exporter.finalize()
-            shutil.rmtree(exporter.get_working_path())
-            for h in request.sent_hashes:
-                hpath = os.path.join(wpath, h)
-                if os.path.exists(f"{hpath}_query"):
-                    shutil.rmtree(f"{hpath}_query")
-                if os.path.exists(f"{hpath}_segments"):
-                    shutil.rmtree(f"{hpath}_segments")
-            print(
-                f"Exporting complete for request {request.id} (hash: {request.hash}) ; DELETED REQUEST"
-            )
-            qi.delete_request(request)
-            await cls.finish_export_db(
-                qi._connection, qi.hash, offset, requested, delivered, full
-            )
-        except Exception as e:
-            shutil.rmtree(cls.get_dl_path_from_hash(qhash, offset, requested, full))
-            await _export_db(
-                qhash,
-                cls.xp_format,
-                "update",
-                offset,
-                requested,
-                failure=True,
-                message=str(e),
-            )
-            raise e
+    async def error(self, error: str) -> None:
+        await _export_db(
+            ctx,
+            self._qi.hash,
+            self.__class__.xp_format,
+            "update",
+            self._request.offset,
+            self._request.requested,
+            failure=True,
+            message=error,
+        )
+
+    async def launch_export(self, payload: dict) -> None:
+        await export(
+            ctx,
+            f"{self.__class__.__module__}.{self.__class__.__name__}",
+            self._request.id,
+            self._qi.hash,
+            payload,
+        )
 
     def get_working_path(self, subdir: str = "") -> str:
         """

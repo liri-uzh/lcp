@@ -7,11 +7,12 @@ status information about the current task
 import base64
 import hashlib
 import json
+import logging
 import os
-
 import shutil
 import traceback
 
+from arq.jobs import Job
 from datetime import datetime, timedelta
 import tarfile
 from typing import cast, Any, Callable
@@ -20,19 +21,23 @@ from zipfile import ZipFile, is_zipfile
 
 from aiohttp import web, BodyPartReader
 from py7zr import SevenZipFile, is_7zfile
-# TODO(ARQ_MIGRATION): Replace rq.job.Job with Arq equivalent
-from arq.jobs import Job
 
 from .authenticate import Authentication
+from .configure import get_config
 from .ddl_gen import generate_ddl
 from .dqd_parser import convert
-from .typed import JSON
+from .impo import Importer
+from .jobfuncs import _db_query
+from .typed import DBQueryParams, JSON, JSONObject, MainCorpus, Sentence, UserQuery
 from .utils import (
     _sanitize_corpus_name,
     _row_to_value,
     _sanitize_header,
     _load_top_module_file,
+    _publish_msg,
+    _sharepublish_msg,
 )
+from .worker import arq_task, ctx, get_job_kwargs, get_job_meta, set_job_meta
 
 lcpcli = _load_top_module_file(
     "lcpcli", os.path.join("lcpcli", "lcpcli", "__init__.py")
@@ -49,25 +54,17 @@ async def _create_status_check(request: web.Request, job_id: str) -> web.Respons
     """
     What to do when user check status on an upload job
     """
-    qs = request.app["query_service"]
-    job: Job | None = qs.get(job_id)
-    if not job:
-        ret = {"job": job_id, "status": "failed", "error": "Job not found."}
-        return web.json_response(ret)
-    # TODO(ARQ_MIGRATION): job.get_status, job.latest_result, job.kwargs may need to be accessed differently in Arq
-    status = job.get_status(refresh=True)  # TODO(ARQ_MIGRATION): Implement Arq equivalent
+    job = Job(job_id, redis=request.app["aredis"])
+    status = await job.status()
     msg = f"""Please wait: corpus processing in progress..."""
     # project = job.kwargs["project"]
-    if status == "failed":
-        res = job.latest_result()  # TODO(ARQ_MIGRATION): Implement Arq equivalent
-        msg = "Error"
-        if res:
-            msg += f": {res.exc_string}"  # TODO(ARQ_MIGRATION): Implement Arq equivalent
-    elif status == "finished":
+    if status == "complete":
         msg = f"""Template validated successfully"""
-    kwargs: dict = cast(dict, job.kwargs)  # TODO(ARQ_MIGRATION): Implement Arq equivalent
+    else:
+        msg = f"Error: {status}"
+    kwargs = await get_job_kwargs(job)
     ret = {
-        "job": job.id,
+        "job": job_id,
         "status": status,
         "info": msg,
         "project": kwargs["project"],
@@ -82,34 +79,37 @@ async def _status_check(request: web.Request, job_id: str) -> web.Response:
     """
     What to do when user check status on an upload job
     """
-    qs = request.app["query_service"]
-    job = qs.get(job_id)
-    project = job.args[0]
+    job = Job(job_id, request.app["aredis"])
+    kwargs = await get_job_kwargs(job)
+    project = kwargs.get("project", "")
     progfile = os.path.join(UPLOADS_PATH, project, ".progress.txt")
     progress = _get_progress(progfile)
 
     if not job:
         ret = {"job": job_id, "status": "failed", "error": "Job not found."}
         return web.json_response(ret)
-    status = job.get_status(refresh=True)
+    status = await job.status()
     msg = f"""Please wait: corpus processing in progress..."""
 
-    if status == "failed":
-        msg = f"Error: {str(job.latest_result().exc_string)}"
-    elif status == "finished":
+    if status == "failed":  # TODO: no "failed" status in Arq
+        msg = f"Error: {status}"
+    elif status == "complete":
         msg = f"""
         Upload is complete. You should be able to see your
         corpus in the web app. You may need to grant permission to
         other users if you want to allow them to access it.
         """
     ret = {
-        "job": job.id,
+        "job": job_id,
         "status": status,
         "info": " ".join(msg.split()),
         "project": project,
     }
-    if job.result:
-        ret["corpus_id"] = job.result[0]
+    try:
+        result = await job.result()
+        ret["corpus_id"] = result[0]
+    except:
+        pass
     if progress:
         ret["progress"] = "/".join(str(x) for x in progress)
     return web.json_response(ret)
@@ -230,9 +230,9 @@ async def _validate_upload_request(
     try:
         payload["job_id"] = job_id
         # TODO(ARQ_MIGRATION): Replace Job.fetch with Arq equivalent
-        job = Job.fetch(job_id, connection=request.app["redis"])  # TODO(ARQ_MIGRATION): Implement Arq equivalent
+        job = Job(job_id, redis=request.app["aredis"])
         # TODO(ARQ_MIGRATION): job.kwargs may need to be accessed differently in Arq
-        kwargs: dict = cast(dict, job.kwargs)  # TODO(ARQ_MIGRATION): Implement Arq equivalent
+        kwargs = await get_job_kwargs(job)
         payload["cpath"] = kwargs["path"]
         username = kwargs["user"]
         payload["username"] = username
@@ -247,10 +247,11 @@ async def _validate_upload_request(
 
     payload["filename"] = filename
     # TODO(ARQ_MIGRATION): job.meta may need to be accessed differently in Arq
-    complete_files = job.meta.get("complete_files") or {}  # TODO(ARQ_MIGRATION): Implement Arq equivalent
+    job_meta = await get_job_meta(job)
+    complete_files = job_meta.get("complete_files") or {}
     complete_files.setdefault(filename, False)
-    job.meta["complete_files"] = complete_files  # TODO(ARQ_MIGRATION): Implement Arq equivalent
-    job.save_meta()  # TODO(ARQ_MIGRATION): Implement Arq equivalent
+    job_meta["complete_files"] = complete_files
+    await set_job_meta(job, job_meta)
 
     return True, payload
 
@@ -300,14 +301,12 @@ async def _complete_upload(request: web.Request, payload: dict) -> dict[str, str
                 return {"status": "failed", "error": f"Problem uncompressing {fp}"}
 
     if payload.get("media"):
-        # TODO(ARQ_MIGRATION): Replace Job.fetch with Arq equivalent
-        job = Job.fetch(payload.get("job_id") or "", connection=request.app["redis"])  # TODO(ARQ_MIGRATION): Implement Arq equivalent
+        job = Job(payload.get("job_id") or "", redis=request.app["aredis"])
         project_id = payload.get("project")
         project_name = payload.get("project_name")
         ret = {
             "status": "finished",
-            # TODO(ARQ_MIGRATION): job.id may need to be accessed differently in Arq
-            "job": job.job_id,  # TODO(ARQ_MIGRATION): Implement Arq equivalent
+            "job": job.job_id,
             "project": str(project_id),
             "project_name": project_name,
         }
@@ -318,12 +317,12 @@ async def _complete_upload(request: web.Request, payload: dict) -> dict[str, str
             if corpus_super and is_super_admin:
                 corpus = request.app["config"][str(corpus_super)]
             else:
-                # TODO(ARQ_MIGRATION): Replace Job.fetch with Arq equivalent
-                insert_job = Job.fetch(
-                    job.meta["insert_job"], connection=request.app["redis"]
+                job_meta = await get_job_meta(job)
+                insert_job = Job(job_meta["insert_job"], redis=request.app["aredis"])
+                insert_job_result = await insert_job.result()
+                corpus = cast(
+                    dict, _row_to_value(insert_job_result)
                 )  # TODO(ARQ_MIGRATION): Implement Arq equivalent
-                # TODO(ARQ_MIGRATION): insert_job.result may need to be accessed differently in Arq
-                corpus = cast(dict, _row_to_value(insert_job.result))  # TODO(ARQ_MIGRATION): Implement Arq equivalent
             ret["corpus_name"] = corpus.get("name", "")
             _move_media_files(cpath, corpus.get("schema_path", ""))
         except Exception as err:
@@ -340,7 +339,6 @@ async def _complete_upload(request: web.Request, payload: dict) -> dict[str, str
 
     return_data: dict[str, str | int] = {}
 
-    qs = request.app["query_service"]
     kwa = dict(
         gui=False,
         user_data=user_data,
@@ -352,22 +350,24 @@ async def _complete_upload(request: web.Request, payload: dict) -> dict[str, str
     print(f"Uploading data to database: {cpath}")
     username = payload.get("username", "")
     room = payload.get("room", "")
-    insert_job = qs.insert_data(username, cpath, room, **kwa)
-    job = Job.fetch(payload.get("job_id", ""), connection=request.app["redis"])
-    job.meta["complete_files"] = {}  # we're done with the DB files
-    job.meta["insert_job"] = insert_job.id
-    job.save()
+    insert_job = await insert_data(username, cpath, room, **kwa)
+    insert_job_id = "" if insert_job is None else insert_job.job_id
+    job = Job(payload.get("job_id", ""), redis=request.app["aredis"])
+    job_meta = await get_job_meta(job)
+    job_meta["complete_files"] = {}  # we're done with the DB files
+    job_meta["insert_job"] = insert_job_id
+    await set_job_meta(job, job_meta)
     short_url = str(request.url).split("?", 1)[0]
-    suggest_url = f"{short_url}?job={insert_job.id}"
+    suggest_url = f"{short_url}?job={insert_job_id}"
     info = f"Data insertion into the databse has begun. If you want to check the status, POST to:  {suggest_url}"
     return_data.update(
         {
             "status": "started",
-            "job": insert_job.id,
+            "job": insert_job_id,
             "project": payload.get("project", ""),
             "project_name": payload.get("project_name", ""),
             "info": info,
-            "target": f"/monitor_db_insert?job={insert_job.id}",
+            "target": f"/monitor_db_insert?job={insert_job_id}",
         }
     )
 
@@ -376,12 +376,11 @@ async def _complete_upload(request: web.Request, payload: dict) -> dict[str, str
 
 async def _complete_file(request: web.Request, payload: dict) -> dict[str, str | int]:
     filename = payload.get("filename", "")
-    # TODO(ARQ_MIGRATION): Replace Job.fetch with Arq equivalent
-    job = Job.fetch(payload.get("job_id", ""), connection=request.app["redis"])  # TODO(ARQ_MIGRATION): Implement Arq equivalent
-    # TODO(ARQ_MIGRATION): job.meta may need to be accessed differently in Arq
-    complete_files = job.meta.get("complete_files") or {}  # TODO(ARQ_MIGRATION): Implement Arq equivalent
+    job = Job(payload.get("job_id", ""), redis=request.app["aredis"])
+    job_meta = await get_job_meta(job)
+    complete_files = job_meta.get("complete_files") or {}
     complete_files[filename] = True
-    job.save_meta()  # TODO(ARQ_MIGRATION): Implement Arq equivalent
+    await set_job_meta(job, job_meta)
 
     files_md5 = hashlib.md5(
         "".join(
@@ -723,25 +722,207 @@ async def make_schema(request: web.Request) -> web.Response:
     with open(os.path.join(directory, "_data.json"), "w") as fo:
         json.dump(pieces, fo)
 
-    job = request.app["query_service"].create(
+    job = await create(
+        ctx,
         pieces["create"],
-        project=proj_id,
-        path=corpus_path,
-        schema_name=schema_name,
         user=user_id,
         room=room,
-        # drops=drops,
+        project=proj_id,
         project_name=existing_project["title"],
         corpus_name=corpus_name,
     )
+    job_id = "" if job is None else job.job_id
     return web.json_response(
         {
             "status": "started",
-            "job": job.id,
+            "job": job_id,
             "project": proj_id,
             "schema": schema_name,
             "path": corpus_path,
-            "target": f"/create?job={job.id}",
+            "target": f"/create?job={job_id}",
             "user_id": user_id,
         }
     )
+
+
+@arq_task("background")
+async def _overwrite_corpus(
+    ctx, corpus_id: int, to_be_overwritten: int, queue: str = "internal"
+):
+    """
+    Overwrite corpus id to_be_overwritten with corpus id corpus_id in the DB
+    """
+    kwargs = {
+        "store": True,
+        "is_main": True,  # query on main.*
+        "has_return": False,
+    }
+    args = {"corpus_id": corpus_id, "overwrite": to_be_overwritten}
+    query = f"""CALL main.update_corpus(:overwrite, :corpus_id);"""
+    await _db_query(ctx, query, cast(DBQueryParams, args), **kwargs)
+    await get_config(ctx)
+
+
+@arq_task("background")
+async def insert_data(
+    ctx,
+    user: str,
+    project: str,
+    room: str | None = None,
+    gui: bool = False,
+    user_data: JSONObject | None = None,
+    **kwargs,
+):
+    """
+    Insert a new corpus into the database
+    """
+    try:
+        kwargs = {"gui": gui, "user_data": user_data, **kwargs}
+        uploads_path = os.getenv("TEMP_UPLOADS_PATH", "uploads")
+        corpus = os.path.join(uploads_path, project)
+        data_path = os.path.join(corpus, "_data.json")
+
+        with open(data_path, "r") as fo:
+            data: JSONObject = json.load(fo)
+
+        debug = False
+        importer = Importer(ctx["_upool"], data, corpus, debug, **kwargs)
+        extra = {"user": user, "room": room, "project": project}
+        row: MainCorpus | None = None
+        try:
+            msg = f"Starting corpus import for {user}: {project}"
+            logging.info(msg, extra=extra)
+            row = await importer.pipeline()
+            config = _row_to_value(row, project=project)
+            media_path = os.path.join(corpus, "media")
+            has_media = config.get("meta", {}).get("mediaSlots", {})
+            if has_media and os.path.isdir(media_path):
+                msg = f"Moving media files for {user}: {project}"
+                logging.info(msg, extra=extra)
+                _move_media_files(
+                    os.path.join(project, "media"), config.get("schema_path", "")
+                )
+        except Exception as err:
+            tb = traceback.format_exc()
+            msg = f"Error during import/upload: {err}"
+            print(msg, tb)
+            extra["traceback"] = tb
+            logging.error(msg, extra=extra)
+            await importer.cleanup()
+        finally:
+            shutil.rmtree(corpus)  # todo: should we do this?
+        if not row:
+            raise RuntimeError(msg)
+
+        msg_id = str(uuid4())
+        action = "uploaded"
+
+        # if not room or not result:
+        #     return None
+        jso = {
+            "user": user,
+            "room": room,
+            "id": row[0],
+            "user_data": user_data,
+            "entry": _row_to_value(row, project=project),
+            "status": "success" if not row else "error",
+            "project": project,
+            "action": action,
+            "gui": gui,
+            "msg_id": msg_id,
+        }
+
+        await _sharepublish_msg(cast(JSONObject, jso), msg_id)
+    except Exception as e:
+        tb = traceback.format_exc()
+        print(f"Upload failure: {e.__class__} : {e}; {tb}")
+        msg_id = str(uuid4())
+        uploads_path = os.getenv("TEMP_UPLOADS_PATH", "uploads")
+        path = os.path.join(uploads_path, project)
+        if os.path.isdir(path):
+            shutil.rmtree(path)
+            print(f"Deleted: {path}")
+
+        action = "upload_fail"
+
+        if user and room:
+            jso = {
+                "user": user,
+                "room": room,
+                "project": project,
+                "action": action,
+                "status": "failed",
+                "job": ctx["job_id"],
+                "msg_id": msg_id,
+                "traceback": tb,
+                "kind": str(e.__class__),
+                "value": str(e),
+            }
+            await _publish_msg(ctx["redis"], jso, msg_id)
+
+
+@arq_task("background")
+async def create(
+    ctx,
+    create: str,
+    user: str = "",
+    room: str = "",
+    project: str = "",
+    project_name: str = "",
+    corpus_name: str = "",
+):
+    status = "success"
+    error = ""
+    tb = ""
+    async with ctx["_upool"].begin() as conn:
+        raw = await conn.get_raw_connection()
+        con = raw._connection
+        async with con.transaction():
+            try:
+                print("Creating schema...\n", create)
+                await con.execute(create)
+            except Exception as err:
+                print("Error when creating the schema", err)
+                status = "error"
+                error = str(err)
+                tb = traceback.format_exc()
+    if not room:
+        return None
+    msg_id = str(uuid4())
+    action = "uploaded"
+    jso = {
+        "user": user,
+        "status": status,
+        "project": project,
+        "project_name": project_name,
+        "corpus_name": corpus_name,
+        "action": action,
+        "gui": False,
+        "room": room,
+        "msg_id": msg_id,
+    }
+    if status == "error":
+        jso["error"] = error
+        uploads_path = os.getenv("TEMP_UPLOADS_PATH", "uploads")
+        path = os.path.join(uploads_path, project)
+        if os.path.isdir(path):
+            shutil.rmtree(path)
+            print(f"Deleted: {path}")
+
+        action = "upload_fail"
+        if user and room:
+            jso = {
+                "user": user,
+                "room": room,
+                "project": project,
+                "action": action,
+                "status": "failed",
+                "job": ctx["job_id"],
+                "msg_id": msg_id,
+                "traceback": tb,
+                "kind": "unknown",
+                "value": error,
+            }
+            await _publish_msg(ctx["redis"], jso, msg_id)
+
+    await _publish_msg(ctx["redis"], jso, msg_id)
