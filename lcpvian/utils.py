@@ -16,19 +16,16 @@ import uuid
 from dotenv import load_dotenv
 from asyncpg import Connection, Range, Box
 from collections import Counter
-from collections.abc import Awaitable, Callable, Coroutine, Mapping
+from collections.abc import Awaitable, Callable, Coroutine
 from datetime import date, datetime
 from hashlib import md5
 from io import BytesIO
 from redis import Redis
 from typing import Any, cast, TypeAlias
 
-# TODO(ARQ_MIGRATION): Replace rq.registry.FinishedJobRegistry with Arq equivalent or custom implementation
-# from rq.registry import FinishedJobRegistry
 
 from aiohttp import web
 
-# here we remove __slots__ from these superclasses because mypy can't handle them...
 from arq import ArqRedis
 from redis.asyncio import Redis as AsyncRedis
 from redis._parsers import _AsyncHiredisParser, _AsyncRESP3Parser  # type: ignore
@@ -50,6 +47,7 @@ from arq.jobs import Job
 from .authenticate import Authentication
 
 # from .callbacks import _general_failure
+from .redis import get_shared_redis
 from .typed import (
     Config,
     CorpusConfig,
@@ -80,6 +78,9 @@ TRUES = {"true", "1", "y", "yes"}
 FALSES = {"", "0", "null", "none"}
 
 MESSAGE_TTL = int(os.getenv("REDIS_WS_MESSSAGE_TTL", 5000))
+
+MEDIA_EXTENSIONS = ("mp3", "mp4", "wav", "ogg", "png", "jpg", "jpeg", "bmp")
+UPLOADS_PATH = os.getenv("TEMP_UPLOADS_PATH", "uploads")
 
 # The query in get_config is complex because we inject the possible values of the global attributes in corpus_template
 CONFIG_SELECT = """
@@ -390,15 +391,6 @@ async def _get_query_info(
     qi_key = f"query_info::{hash}"
     qi = await _get_redis_obj(connection, qi_key)
     return qi
-
-
-def get_redis_sleep_time(redis_url: str) -> int:
-    redis_settings = Redis.from_url(redis_url)
-    limit = "client-output-buffer-limit"
-    pubsub_limit = redis_settings.config_get(limit)[limit]
-    redis_settings.quit()
-    _pieces = pubsub_limit.split()
-    return int(_pieces[-1]) + 2
 
 
 async def sem_coro(
@@ -771,6 +763,68 @@ def _get_iso639_3(lang: str) -> str:
     return ""
 
 
+def _generate_batches(n_batches: int, basename: str, size: int) -> dict[str, int]:
+    """
+    We can create batchnames if we know three things:
+
+    total number of batches
+    the prefix of the table name
+    the total size of the corpus
+    """
+    batches: dict[str, int] = {}
+    if n_batches < 2:
+        named = basename.replace("<batch>", "") + "0"
+        return {named: size}
+    for i in range(1, n_batches):
+        if i + 1 == n_batches and n_batches > 1:
+            name = "rest"
+        else:
+            name = str(i)
+        batch = basename.replace("<batch>", name)
+        size = int(size / 2 if name != "rest" else size)
+        batches[batch] = int(size)
+    return batches
+
+
+def _get_batches(config: CorpusConfig) -> dict[str, int]:
+    """
+    Get a dict of batch_name: size for a given corpus
+    """
+    batches: dict[str, int] = {}
+    counts: dict[str, int] = config.get("token_counts", {})
+    try:
+        mapping = (
+            config.get("mapping", {}).get("layer", {}).get(config.get("token", ""))
+        )
+    except (KeyError, TypeError):
+        return counts
+    if not mapping:
+        return counts
+    if "partitions" in mapping:
+        for lang, details in mapping["partitions"].items():
+            basename = details["relation"]
+            if "<language>" in basename:
+                basename = basename.replace("<language>", lang)
+            count_key = basename.replace("<batch>", "0").lower()
+            size = next(v for k, v in counts.items() if k.lower() == count_key)
+            n_batches = details["batches"]
+            more = _generate_batches(n_batches, basename, size)
+            batches.update(more)
+    else:
+        n_batches = mapping["batches"]
+        name = mapping["relation"]
+        count_key = name.replace("<batch>", "0").lower()
+        try:
+            size = next(v for k, v in counts.items() if k.lower() == count_key)
+        except:
+            size = sum(v for v in counts.values())
+        more = _generate_batches(n_batches, name, size)
+        batches.update(more)
+    if not batches:
+        return counts
+    return batches
+
+
 def _determine_language(batch: str) -> str | None:
     """
     Helper to find language from batch
@@ -907,17 +961,8 @@ async def _sharepublish_msg(message: JSONObject | str | bytes, msg_id: str) -> N
     """
     Connect to the shared redis instance (if it exists) and call _publish_msg on it
     """
-    redis_shared_db_index = int(os.getenv("REDIS_SHARED_DB_INDEX", -1))
-    redis_shared_url = os.getenv(
-        "REDIS_SHARED_URL", os.getenv("REDIS_URL", "redis://localhost:6379")
-    )
+    shared_connection = get_shared_redis()
 
-    full_url = (
-        redis_shared_url
-        if redis_shared_db_index < 0
-        else f"{redis_shared_url}/{redis_shared_db_index}"
-    )
-    shared_connection = AsyncRedis.from_url(full_url)
     await _publish_msg(shared_connection, message, msg_id)
 
 
@@ -1392,3 +1437,20 @@ def get_pending_invites(request: web.Request, subscriptions: list) -> dict:
             "emails": existing_invites,
         }
     return ret
+
+
+def move_media_files(cpath: str, corpus_dir: str) -> None:
+    print("Moving media files")
+    media_path = os.environ.get("UPLOAD_MEDIA_PATH", "media")
+    dest_path = os.path.join(media_path, corpus_dir)
+    if not os.path.exists(dest_path):
+        os.makedirs(dest_path)
+    source_path = os.path.join(UPLOADS_PATH, cpath)
+    for f in os.listdir(source_path):
+        print("File in cpath", f)
+        if not str(f).endswith(MEDIA_EXTENSIONS):
+            continue
+        basename = os.path.basename(f)
+        shutil.move(
+            os.path.join(source_path, basename), os.path.join(dest_path, basename)
+        )

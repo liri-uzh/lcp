@@ -28,7 +28,7 @@ from .utils import (
     Interrupted,
     _publish_msg,
 )
-from .worker import get_job_kwargs
+from .redis import get_job_kwargs
 
 PUBSUB_LIMIT = int(os.getenv("PUBSUB_LIMIT", 31999999))
 MESSAGE_TTL = int(os.getenv("REDIS_WS_MESSSAGE_TTL", 5000))

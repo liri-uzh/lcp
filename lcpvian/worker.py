@@ -20,34 +20,24 @@ resources on the deployment server.
 
 from __future__ import annotations
 
-import asyncio
-import functools
-import logging
-import os
-import urllib.parse
-
-from types import CoroutineType
-from typing import Any, Callable
-
-import uvloop
-
-from arq import create_pool, Worker
-from arq.jobs import Job
-from arq.connections import RedisSettings
-from redis import Redis
-from redis.backoff import ConstantBackoff
-from redis.exceptions import ConnectionError
-from redis.retry import Retry
-
-from sqlalchemy.ext.asyncio import create_async_engine
-from sqlalchemy.pool import NullPool
-
-from sshtunnel import SSHTunnelForwarder
-
-from .utils import load_env, get_redis_sleep_time
+from .utils import load_env
 
 load_env()
 
+import asyncio
+import logging
+import os
+import urllib.parse
+import uvloop
+
+from arq import Worker
+from redis import Redis
+from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy.pool import NullPool
+from sshtunnel import SSHTunnelForwarder
+
+from .redis import redis_conn
+from .tasks import _registered_tasks
 
 SENTRY_DSN = os.getenv("SENTRY_DSN", None)
 
@@ -98,10 +88,6 @@ UPLOAD_TIMEOUT = int(os.getenv("UPLOAD_TIMEOUT", 43200))
 
 PORT = int(os.getenv("SQL_PORT", 25432))
 
-REDIS_DB_INDEX = int(os.getenv("REDIS_DB_INDEX", 0))
-REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
-redis_url: str = f"{REDIS_URL}/{REDIS_DB_INDEX}" if REDIS_DB_INDEX > -1 else REDIS_URL
-redis_conn = RedisSettings.from_dsn(redis_url)
 sync_redis: None | Redis = None
 
 tunnel: SSHTunnelForwarder
@@ -158,68 +144,17 @@ if not UPLOAD_POOL:
     upload_kwargs["pool_class"] = NullPool  # type: ignore
 
 
-# Arq requires registering callables, so we use a decorator to store them in _functions
-_functions = []
-ctx = None  # placeholder for calling decorated tasks
-
-
-def get_sync_redis():
-    global redis_url
-    sleep_time = get_redis_sleep_time(redis_url)
-    retry_policy: Retry = Retry(ConstantBackoff(sleep_time), 3)
-    return Redis.from_url(
-        redis_url,
-        health_check_interval=10,
-        retry_on_error=[ConnectionError],
-        retry=retry_policy,
-    )
-
-
-async def get_redis():
-    global redis_conn
-    return await create_pool(redis_conn)
-
-
-async def get_job_kwargs(job: Job) -> dict:
-    return {}
-
-
-async def set_job_kwargs(job: Job, kwargs: dict):
-    return {}
-
-
-async def get_job_meta(job: Job) -> dict:
-    return {}
-
-
-async def set_job_meta(job: Job, meta: dict):
-    return {}
-
-
-def arq_task(queue: str = "query"):
-    def decorator(
-        func: Callable[..., Any],
-    ) -> Callable[..., CoroutineType[Any, Any, Job | None]]:
-        func_name = f"{func.__module__}.{func.__qualname__}"
-        _functions.append(func)
-
-        # wrap so as to keep the function's name all the way through
-        @functools.wraps(func)
-        async def wrapper(*args, **kwargs) -> Job | None:
-            redis = await get_redis()
-            job_id = kwargs.pop("job_id", None) or None
-            arq_queue = kwargs.pop("arq_queue", queue) or queue
-            job = await redis.enqueue_job(
-                func_name, *args, **kwargs, _queue_name=arq_queue, _job_id=job_id
-            )
-            return job
-
-        return wrapper
-
-    return decorator
-
-
 async def on_startup(ctx: dict) -> None:
+    from .exporter import Exporter as ExporterXml
+    from .exporter_swissdox import Exporter as ExporterSwissdox
+    from .query_classes import Request, QueryInfo
+
+    # Pass some objects in ctx so as not to import them in the tasks' scripts
+    ctx["_exporterXml"] = ExporterXml
+    ctx["_exporterSwissdox"] = ExporterSwissdox
+    ctx["_request"] = Request
+    ctx["_queryInfo"] = QueryInfo
+
     ctx["_pool"] = create_async_engine(query_connstr, **query_kwargs)
     ctx["_upool"] = create_async_engine(upload_connstr, **upload_kwargs)
     ctx["_wpool"] = create_async_engine(web_connstr, **upload_kwargs)
@@ -232,22 +167,20 @@ async def on_shutdown(ctx: dict) -> None:
 
 
 async def work(queue: str = "internal"):
-    global _functions, redis_conn
 
     valid_queues = ("internal", "query", "background")
     assert queue in valid_queues, TypeError(
         f"Tried to run a worker with an invalid queue name ({queue}). The queue should be one of: {', '.join(q for q in valid_queues)}"
     )
     w = Worker(
-        functions=_functions,
+        functions=_registered_tasks,
         queue_name=queue,
         max_jobs=QUERY_MAX_NUM_CONNS if queue == "query" else UPLOAD_MAX_NUM_CONNS,
         redis_settings=redis_conn,
         on_startup=on_startup,
         on_shutdown=on_shutdown,
     )
-    print(f"Running worker on queue {queue}")
-
+    print(f"Now running {queue} worker")
     await w.async_run()
 
 

@@ -4,9 +4,6 @@ The main setup for the aiohttp backend.
 Register URLs and endpoints, add redis, query_service, websockets, etc.
 """
 
-from arq import create_pool
-from arq.connections import RedisSettings
-
 import importlib
 import logging
 import os
@@ -42,14 +39,13 @@ from .utils import (
     handle_bad_request,
     handle_timeout,
     load_env,
-    get_redis_sleep_time,
 )
 
 load_env()
 
 from .api import list_corprora, get_corpus, search, get_search
 from .check_file_permissions import check_file_permissions
-from .configure import get_config, refresh_config
+from .configure import refresh_config
 from .corpora import (
     corpora,
     corpora_meta_update,
@@ -79,9 +75,11 @@ from .project import project_users_invite, project_users
 from .project import project_users_invitation_remove, project_user_update
 from .query import post_query
 from .query_service import QueryService
+from .redis import get_async_redis, get_sync_redis, get_shared_redis
 from .sock import listen_to_redis, sock, ws_cleanup
 from .store import fetch_queries, store_query, delete_query
 from .swissubase import swissubase_check_api, swissubase_submit
+from .tasker import enqueue
 from .typed import Config, Endpoint, Task, Websockets
 from .upload import (
     make_schema,
@@ -97,10 +95,7 @@ from .video import video
 _LOADER = importlib.import_module(handle_timeout.__module__).__loader__
 C_COMPILED = "SourceFileLoader" not in str(_LOADER)
 SENTRY_DSN: str = os.getenv("SENTRY_DSN", "")
-REDIS_DB_INDEX = int(os.getenv("REDIS_DB_INDEX", 0))
 REDIS_SHARED_DB_INDEX = int(os.getenv("REDIS_SHARED_DB_INDEX", -1))
-REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
-REDIS_SHARED_URL = os.getenv("REDIS_SHARED_URL", REDIS_URL)
 APP_PORT = int(os.getenv("AIO_PORT", 9090))
 DEBUG = bool(os.getenv("DEBUG", "false").lower() in TRUES)
 
@@ -323,47 +318,23 @@ async def create_app(test: bool = False) -> web.Application:
         resources[url] = resource
         cors.add(resource.add_route(method, func))
 
-    redis_url: str = (
-        f"{REDIS_URL}/{REDIS_DB_INDEX}" if REDIS_DB_INDEX > -1 else REDIS_URL
-    )
-    sleep_time = get_redis_sleep_time(redis_url)
-    app.addkey("redis_pubsub_limit_sleep", int, sleep_time)
-    retry_policy: Retry = Retry(ConstantBackoff(sleep_time), 3)
-    async_retry_policy: AsyncRetry = AsyncRetry(ConstantBackoff(sleep_time), 3)
-
     app.addkey(
         "aredis",
         aioredis.Redis,
-        aioredis.Redis.from_url(
-            redis_url,
-            health_check_interval=10,
-            retry_on_error=[ConnectionError],
-            retry=async_retry_policy,
-        ),
+        get_async_redis(),
     )
     app.addkey(
         "redis",
         Redis,
-        Redis.from_url(
-            redis_url,
-            health_check_interval=10,
-            retry_on_error=[ConnectionError],
-            retry=retry_policy,
-        ),
+        get_sync_redis(),
     )
     app.addkey("exporters", dict, {"xml": ExporterXML, "swissdox": ExporterSwissdox})
 
     if REDIS_SHARED_DB_INDEX > -1:
-        shared_redis_url: str = f"{REDIS_SHARED_URL}/{REDIS_SHARED_DB_INDEX}"
         app.addkey(
             "shared_redis",
             Redis,
-            Redis.from_url(
-                shared_redis_url,
-                health_check_interval=10,
-                retry_on_error=[ConnectionError],
-                retry=retry_policy,
-            ),
+            get_shared_redis(),
         )
 
     redis = cast(web.Application, app)["redis"]
@@ -398,7 +369,7 @@ async def create_app(test: bool = False) -> web.Application:
     qs: QueryService = QueryService(app)
     app.addkey("query_service", QueryService, qs)
     if not test:
-        await get_config(None, force_refresh=False)
+        await enqueue("configure.get_config", force_refresh=False, queue="internal")
     app.addkey("canceled", deque[str], deque(maxlen=99999))
 
     if test:

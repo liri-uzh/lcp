@@ -13,7 +13,8 @@ from uuid import uuid4
 
 from .abstract_query.create import json_to_sql
 from .abstract_query.typed import QueryJSON
-from .callbacks import _general_failure
+
+# from .callbacks import _general_failure
 from .convert import _aggregate_results
 from .jobfuncs import _db_query
 from .redis_proxies import RedisDict, RedisList
@@ -25,7 +26,8 @@ from .utils import (
     push_msg,
     CustomEncoder,
 )
-from .worker import get_job_meta, get_redis, set_job_meta, ctx
+from .redis import get_redis, get_job_meta, set_job_meta
+from .tasker import enqueue
 
 MESSAGE_TTL = int(os.getenv("REDIS_WS_MESSSAGE_TTL", 5000))
 QUERY_TTL = int(os.getenv("QUERY_TTL", 5000))
@@ -570,11 +572,11 @@ class QueryInfo:
 
     async def enqueue(
         self,
-        method,
+        method: str,
         *args,
         job_id: str | None = None,
         **kwargs,
-    ) -> Job:
+    ) -> Job | None:
         """
         Adds a job to the query or background queue, as appropriate
         Can be called either from the main app or from a worker
@@ -593,11 +595,11 @@ class QueryInfo:
                     self.enqueued_jobs.pop(jid, "")
             except:
                 self.enqueued_jobs.pop(jid, "")
-        j = await method(ctx, args, job_id=job_id, arq_queue=queue)
-        j_meta = await get_job_meta(j)
+        j = await enqueue(method, *args, **kwargs, job_id=job_id, queue=queue)
+        j_meta = await get_job_meta(cast(Job, j))
         j_meta["qi_hash"] = self.hash  # used in failure callback
-        await set_job_meta(j, j_meta)
-        self.enqueued_jobs[j.id] = 1
+        await set_job_meta(cast(Job, j), j_meta)
+        self.enqueued_jobs["" if j is None else j.job_id] = 1
         return j
 
     def set_cache(self, key: str, data: Any):
@@ -609,7 +611,9 @@ class QueryInfo:
         self._connection.expire(key, QUERY_TTL)
         return cast(list, json.loads(res_json))
 
-    async def query(self, qhash: str, script: str, params: dict = {}) -> Any:
+    async def query(
+        self, qhash: str, script: str, params: dict = {}, ctx: dict = {}
+    ) -> Any:
         """
         Helper to make sure the results are stored in redis
         """
@@ -1026,7 +1030,7 @@ class QueryInfo:
         self.set_cache(stats_key, [new_stats_batches, new_stats_results])
         return
 
-    async def run_query_on_batch(self, batch) -> str:
+    async def run_query_on_batch(self, batch, ctx: dict = {}) -> str:
         """
         Send and run a SQL query againt the DB
         then update the QueryInfo and Request's accordingly
@@ -1047,7 +1051,7 @@ class QueryInfo:
             lang=self.languages[0] if self.languages else None,
         )
         batch_hash = hasher(sql_query)
-        res = await self.query(batch_hash, sql_query)
+        res = await self.query(batch_hash, sql_query, ctx=ctx)
         res = res if res else []
         kwic_keys = [str(k) for k in self.kwic_keys]
         n_res = sum(1 if str(r) in kwic_keys else 0 for r, *_ in res)

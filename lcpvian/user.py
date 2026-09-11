@@ -1,7 +1,7 @@
 from aiohttp import web
 
-from .export import _export_notifs
 from .utils import get_pending_invites
+from .tasker import enqueue
 
 
 async def user_data(request: web.Request) -> web.Response:
@@ -13,7 +13,7 @@ async def user_data(request: web.Request) -> web.Response:
     res["debug"] = request.app["_debug"]
     user_id = res.get("user", {}).get("id")
     if user_id:
-        await _export_notifs({}, user_id=user_id)
+        await enqueue("export.export_notifs", user_id=user_id, queue="internal")
     subscriptions = res.get("subscription", {}).get("subscriptions", {})
     pending_invites = get_pending_invites(request, subscriptions)
     if pending_invites:

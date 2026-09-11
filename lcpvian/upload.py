@@ -7,7 +7,6 @@ status information about the current task
 import base64
 import hashlib
 import json
-import logging
 import os
 import shutil
 import traceback
@@ -23,21 +22,18 @@ from aiohttp import web, BodyPartReader
 from py7zr import SevenZipFile, is_7zfile
 
 from .authenticate import Authentication
-from .configure import get_config
 from .ddl_gen import generate_ddl
 from .dqd_parser import convert
-from .impo import Importer
-from .jobfuncs import _db_query
-from .typed import DBQueryParams, JSON, JSONObject, MainCorpus, Sentence, UserQuery
+from .typed import JSON
 from .utils import (
     _sanitize_corpus_name,
     _row_to_value,
     _sanitize_header,
     _load_top_module_file,
-    _publish_msg,
-    _sharepublish_msg,
+    move_media_files,
 )
-from .worker import arq_task, ctx, get_job_kwargs, get_job_meta, set_job_meta
+from .redis import get_job_kwargs, get_job_meta, set_job_meta
+from .tasker import enqueue
 
 lcpcli = _load_top_module_file(
     "lcpcli", os.path.join("lcpcli", "lcpcli", "__init__.py")
@@ -45,9 +41,9 @@ lcpcli = _load_top_module_file(
 
 VALID_EXTENSIONS = ("vrt", "csv", "tsv")
 COMPRESSED_EXTENTIONS = ("zip", "tar", "tar.gz", "tar.xz", "7z")
-MEDIA_EXTENSIONS = ("mp3", "mp4", "wav", "ogg", "png", "jpg", "jpeg", "bmp")
-UPLOADS_PATH = os.getenv("TEMP_UPLOADS_PATH", "uploads")
 UPLOAD_TTL = os.getenv("QUERY_TTL", 5000)
+UPLOADS_PATH = os.getenv("TEMP_UPLOADS_PATH", "uploads")
+MEDIA_EXTENSIONS = ("mp3", "mp4", "wav", "ogg", "png", "jpg", "jpeg", "bmp")
 
 
 async def _create_status_check(request: web.Request, job_id: str) -> web.Response:
@@ -324,7 +320,7 @@ async def _complete_upload(request: web.Request, payload: dict) -> dict[str, str
                     dict, _row_to_value(insert_job_result)
                 )  # TODO(ARQ_MIGRATION): Implement Arq equivalent
             ret["corpus_name"] = corpus.get("name", "")
-            _move_media_files(cpath, corpus.get("schema_path", ""))
+            move_media_files(cpath, corpus.get("schema_path", ""))
         except Exception as err:
             ret["status"] = "failed"
             ret["error"] = f"Something went wrong with uploading the media files: {err}"
@@ -350,7 +346,14 @@ async def _complete_upload(request: web.Request, payload: dict) -> dict[str, str
     print(f"Uploading data to database: {cpath}")
     username = payload.get("username", "")
     room = payload.get("room", "")
-    insert_job = await insert_data(username, cpath, room, **kwa)
+    insert_job = await enqueue(
+        "upload.insert_data",
+        username,
+        cpath,
+        room,
+        queue="background",
+        **cast(dict, kwa),
+    )
     insert_job_id = "" if insert_job is None else insert_job.job_id
     job = Job(payload.get("job_id", ""), redis=request.app["aredis"])
     job_meta = await get_job_meta(job)
@@ -551,23 +554,6 @@ def _extract_file(
     print(f"Deleted: {path}")
 
 
-def _move_media_files(cpath: str, corpus_dir: str) -> None:
-    print("Moving media files")
-    media_path = os.environ.get("UPLOAD_MEDIA_PATH", "media")
-    dest_path = os.path.join(media_path, corpus_dir)
-    if not os.path.exists(dest_path):
-        os.makedirs(dest_path)
-    source_path = os.path.join(UPLOADS_PATH, cpath)
-    for f in os.listdir(source_path):
-        print("File in cpath", f)
-        if not str(f).endswith(MEDIA_EXTENSIONS):
-            continue
-        basename = os.path.basename(f)
-        shutil.move(
-            os.path.join(source_path, basename), os.path.join(dest_path, basename)
-        )
-
-
 async def make_schema(request: web.Request) -> web.Response:
     """
     What happens when a user goes to /create and POSTs JSON
@@ -722,14 +708,15 @@ async def make_schema(request: web.Request) -> web.Response:
     with open(os.path.join(directory, "_data.json"), "w") as fo:
         json.dump(pieces, fo)
 
-    job = await create(
-        ctx,
+    job = await enqueue(
+        "upload.create",
         pieces["create"],
         user=user_id,
         room=room,
         project=proj_id,
         project_name=existing_project["title"],
         corpus_name=corpus_name,
+        queue="background",
     )
     job_id = "" if job is None else job.job_id
     return web.json_response(
@@ -743,186 +730,3 @@ async def make_schema(request: web.Request) -> web.Response:
             "user_id": user_id,
         }
     )
-
-
-@arq_task("background")
-async def _overwrite_corpus(
-    ctx, corpus_id: int, to_be_overwritten: int, queue: str = "internal"
-):
-    """
-    Overwrite corpus id to_be_overwritten with corpus id corpus_id in the DB
-    """
-    kwargs = {
-        "store": True,
-        "is_main": True,  # query on main.*
-        "has_return": False,
-    }
-    args = {"corpus_id": corpus_id, "overwrite": to_be_overwritten}
-    query = f"""CALL main.update_corpus(:overwrite, :corpus_id);"""
-    await _db_query(ctx, query, cast(DBQueryParams, args), **kwargs)
-    await get_config(ctx)
-
-
-@arq_task("background")
-async def insert_data(
-    ctx,
-    user: str,
-    project: str,
-    room: str | None = None,
-    gui: bool = False,
-    user_data: JSONObject | None = None,
-    **kwargs,
-):
-    """
-    Insert a new corpus into the database
-    """
-    try:
-        kwargs = {"gui": gui, "user_data": user_data, **kwargs}
-        uploads_path = os.getenv("TEMP_UPLOADS_PATH", "uploads")
-        corpus = os.path.join(uploads_path, project)
-        data_path = os.path.join(corpus, "_data.json")
-
-        with open(data_path, "r") as fo:
-            data: JSONObject = json.load(fo)
-
-        debug = False
-        importer = Importer(ctx["_upool"], data, corpus, debug, **kwargs)
-        extra = {"user": user, "room": room, "project": project}
-        row: MainCorpus | None = None
-        try:
-            msg = f"Starting corpus import for {user}: {project}"
-            logging.info(msg, extra=extra)
-            row = await importer.pipeline()
-            config = _row_to_value(row, project=project)
-            media_path = os.path.join(corpus, "media")
-            has_media = config.get("meta", {}).get("mediaSlots", {})
-            if has_media and os.path.isdir(media_path):
-                msg = f"Moving media files for {user}: {project}"
-                logging.info(msg, extra=extra)
-                _move_media_files(
-                    os.path.join(project, "media"), config.get("schema_path", "")
-                )
-        except Exception as err:
-            tb = traceback.format_exc()
-            msg = f"Error during import/upload: {err}"
-            print(msg, tb)
-            extra["traceback"] = tb
-            logging.error(msg, extra=extra)
-            await importer.cleanup()
-        finally:
-            shutil.rmtree(corpus)  # todo: should we do this?
-        if not row:
-            raise RuntimeError(msg)
-
-        msg_id = str(uuid4())
-        action = "uploaded"
-
-        # if not room or not result:
-        #     return None
-        jso = {
-            "user": user,
-            "room": room,
-            "id": row[0],
-            "user_data": user_data,
-            "entry": _row_to_value(row, project=project),
-            "status": "success" if not row else "error",
-            "project": project,
-            "action": action,
-            "gui": gui,
-            "msg_id": msg_id,
-        }
-
-        await _sharepublish_msg(cast(JSONObject, jso), msg_id)
-    except Exception as e:
-        tb = traceback.format_exc()
-        print(f"Upload failure: {e.__class__} : {e}; {tb}")
-        msg_id = str(uuid4())
-        uploads_path = os.getenv("TEMP_UPLOADS_PATH", "uploads")
-        path = os.path.join(uploads_path, project)
-        if os.path.isdir(path):
-            shutil.rmtree(path)
-            print(f"Deleted: {path}")
-
-        action = "upload_fail"
-
-        if user and room:
-            jso = {
-                "user": user,
-                "room": room,
-                "project": project,
-                "action": action,
-                "status": "failed",
-                "job": ctx["job_id"],
-                "msg_id": msg_id,
-                "traceback": tb,
-                "kind": str(e.__class__),
-                "value": str(e),
-            }
-            await _publish_msg(ctx["redis"], jso, msg_id)
-
-
-@arq_task("background")
-async def create(
-    ctx,
-    create: str,
-    user: str = "",
-    room: str = "",
-    project: str = "",
-    project_name: str = "",
-    corpus_name: str = "",
-):
-    status = "success"
-    error = ""
-    tb = ""
-    async with ctx["_upool"].begin() as conn:
-        raw = await conn.get_raw_connection()
-        con = raw._connection
-        async with con.transaction():
-            try:
-                print("Creating schema...\n", create)
-                await con.execute(create)
-            except Exception as err:
-                print("Error when creating the schema", err)
-                status = "error"
-                error = str(err)
-                tb = traceback.format_exc()
-    if not room:
-        return None
-    msg_id = str(uuid4())
-    action = "uploaded"
-    jso = {
-        "user": user,
-        "status": status,
-        "project": project,
-        "project_name": project_name,
-        "corpus_name": corpus_name,
-        "action": action,
-        "gui": False,
-        "room": room,
-        "msg_id": msg_id,
-    }
-    if status == "error":
-        jso["error"] = error
-        uploads_path = os.getenv("TEMP_UPLOADS_PATH", "uploads")
-        path = os.path.join(uploads_path, project)
-        if os.path.isdir(path):
-            shutil.rmtree(path)
-            print(f"Deleted: {path}")
-
-        action = "upload_fail"
-        if user and room:
-            jso = {
-                "user": user,
-                "room": room,
-                "project": project,
-                "action": action,
-                "status": "failed",
-                "job": ctx["job_id"],
-                "msg_id": msg_id,
-                "traceback": tb,
-                "kind": "unknown",
-                "value": error,
-            }
-            await _publish_msg(ctx["redis"], jso, msg_id)
-
-    await _publish_msg(ctx["redis"], jso, msg_id)

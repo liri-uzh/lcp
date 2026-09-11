@@ -19,17 +19,14 @@ from rq.exceptions import NoSuchJobError
 from typing import cast
 
 from .email import send_email
-from .configure import get_config
-from .jobfuncs import _db_query
 from .typed import JSONObject
-from .upload import _overwrite_corpus
 from .utils import (
     _filter_corpora,
     _remove_sensitive_fields_from_corpora,
     _structure_descriptions,
     get_pending_invites,
 )
-from .worker import arq_task, ctx
+from .tasker import enqueue
 
 MESSAGE_TTL = int(os.getenv("REDIS_WS_MESSSAGE_TTL", 5000))
 
@@ -243,7 +240,9 @@ async def corpora_overwrite(request: web.Request) -> web.Response:
         )
 
     args_overwrite = (corpora_id, overwrite_id)
-    job_overwrite: Job | None = await _overwrite_corpus(ctx, *args_overwrite)
+    job_overwrite: Job | None = await enqueue(
+        "corpora.overwrite_corpus", *args_overwrite, queue="internal"
+    )
 
     info: dict[str, str | list[str]] = {
         "status": "1",
@@ -311,12 +310,13 @@ async def corpora_meta_update(request: web.Request) -> web.Response:
         swissubase=swissubase,
     )
     existing_meta = request.app["config"][str(corpora_id)]["meta"]
-    job_meta: Job | None = await _update_metadata(
-        ctx,
+    job_meta: Job | None = await enqueue(
+        "corpora.update_metadata",
         corpora_id,
         to_store_meta,
         existing_meta=existing_meta,
         lg=request_data.get("lg") or "en",
+        queue="internal",
     )
     to_store_desc = _structure_descriptions(descriptions)
     to_store_globals = {
@@ -333,7 +333,9 @@ async def corpora_meta_update(request: web.Request) -> web.Response:
         to_store_globals,
         request_data.get("lg") or "en",
     )
-    job_desc: Job | None = await _update_descriptions(ctx, *args_desc)
+    job_desc: Job | None = await enqueue(
+        "corpora.update_descriptions", *args_desc, queue="internal"
+    )
 
     jobs_payload = [
         str("" if job_meta is None else job_meta.job_id),
@@ -351,7 +353,9 @@ async def corpora_meta_update(request: web.Request) -> web.Response:
                 raise PermissionError(
                     "This user is not authorized to modify this collection"
                 )
-        job_update_projects: Job | None = await _update_projects(ctx, corpora_id, pids)
+        job_update_projects: Job | None = await enqueue(
+            "corpora.update_projects", corpora_id, pids, queue="internal"
+        )
         jobs_payload.append(
             str("" if job_update_projects is None else job_update_projects.job_id)
         )
@@ -360,107 +364,3 @@ async def corpora_meta_update(request: web.Request) -> web.Response:
         "jobs": jobs_payload,
     }
     return web.json_response(info)
-
-
-@arq_task("internal")
-async def _update_descriptions(
-    ctx,
-    corpus_id: int,
-    layer_descs: JSONObject,
-    global_descs: JSONObject,
-    lg: str = "en",
-):
-    """
-    Update the descriptions of the layers and attributes in a corpus
-    """
-    # TODO: check localizableString in corpus_template schema instead?
-    MONOLINGUAL = {"name", "revision", "license", "language"}
-
-    query = f"""CALL main.update_corpus_descriptions(:corpus_id, :descriptions ::jsonb, :globals ::jsonb);"""
-    params: dict = {
-        "corpus_id": corpus_id,
-        "descriptions": json.dumps(layer_descs),
-        "globals": json.dumps(global_descs),
-    }
-    await _db_query(
-        ctx,
-        query,
-        params,
-        store=True,
-        is_main=True,
-        has_return=False,
-    )
-    await get_config(ctx)
-
-
-@arq_task("internal")
-async def _update_metadata(
-    ctx,
-    corpus_id: int,
-    query_data: JSONObject,
-    existing_meta: dict = {},
-    lg: str = "en",
-):
-    """
-    Update metadata for a corpus
-    """
-    # TODO: check localizableString in corpus_template schema instead?
-    MONOLINGUAL = {"name", "revision", "license", "language", "swissubase"}
-
-    query = f"""CALL main.update_corpus_meta(:corpus_id, :metadata_json ::jsonb);"""
-    for k, v in query_data.items():
-        if k in MONOLINGUAL:
-            continue
-        is_str = isinstance(existing_meta.get(k), str)
-        if is_str:
-            if lg == "en" or existing_meta[k] == v:
-                continue
-            query_data[k] = {"en": existing_meta[k]}
-        if not isinstance(query_data[k], dict):
-            query_data[k] = (
-                {**existing_meta[k]} if isinstance(existing_meta.get(k), dict) else {}
-            )
-        query_data[k][lg] = v  # type: ignore
-        if "en" not in query_data[k]:  # type: ignore
-            query_data[k]["en"] = v  # type: ignore
-    params: dict = {
-        "corpus_id": corpus_id,
-        "metadata_json": json.dumps(query_data),
-    }
-    await _db_query(
-        ctx,
-        query,
-        params,
-        store=True,
-        is_main=True,
-        has_return=False,
-    )
-    await get_config(ctx)
-
-
-@arq_task("internal")
-async def _update_projects(
-    ctx,
-    corpus_id: int,
-    project_ids: list,
-):
-    """
-    Update which project(s) a corpus belongs to
-    """
-    args = {
-        "corpus_id": corpus_id,
-        "pid": str(project_ids[0]),
-        "pids": "[" + ",".join(f'"{str(pid)}"' for pid in project_ids) + "]",
-    }
-    query = (
-        f"""CALL main.update_corpus_projects(:corpus_id, :pid ::uuid, :pids ::text);"""
-    )
-    await _db_query(
-        ctx,
-        query,
-        args,
-        store=True,
-        is_main=True,
-        has_return=False,
-    )
-    await get_config(ctx)

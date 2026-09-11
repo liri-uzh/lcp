@@ -38,14 +38,15 @@ from redis.asyncio.client import PubSub
 from redis.exceptions import ConnectionError
 
 
-from .configure import _get_batches, CorpusConfig
+from .utils import _get_batches
 from .email import send_email
-from .export import _export_notifs
 from .query_service import QueryService
 from .query_classes import QueryInfo, Request
+from .tasks.export import export_notifs
 from .utils import push_msg
 from .validate import validate
-from .typed import JSON, JSONObject, RedisMessage, Websockets
+from .tasker import enqueue
+from .typed import CorpusConfig, JSONObject, RedisMessage, Websockets
 from .utils import (
     PUBSUB_CHANNEL,
     _filter_corpora,
@@ -248,7 +249,9 @@ async def _handle_message(
         app["redis"].expire(uu, MESSAGE_TTL)
 
     if action == "export_complete":
-        await _export_notifs({}, hash=payload.get("hash", ""))
+        await enqueue(
+            "export.export_notifs", hash=payload.get("hash", ""), queue="internal"
+        )
         if email := payload.get("email"):
             fn = payload.get("filename", "")
             message = f"""Hello,<br><br>

@@ -54,8 +54,8 @@ export const useCorpusStore = defineStore("corpusData", {
       });
     },
     async fetchQueries(data) {
-      const userStore = useUserStore()
-      await userStore.checkLoaded()
+      const userStore = useUserStore();
+      await userStore.checkLoaded();
       return httpApi.post(`/fetch`, data).then((response) => {
         this.fetchedQueries = response.data;
         return response.data;
@@ -92,8 +92,8 @@ export const useCorpusStore = defineStore("corpusData", {
       });
     },
     async getCorpus(corpusId) {
-      const userStore = useUserStore()
-      await userStore.checkLoaded()
+      const userStore = useUserStore();
+      await userStore.checkLoaded();
       return httpApi.get(`/corpora/${corpusId}`);
     },
     requestInvite(corpusId) {

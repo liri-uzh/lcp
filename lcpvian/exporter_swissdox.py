@@ -1,83 +1,23 @@
 import datetime
 import duckdb
-import importlib
 import os
 import pandas
-import shutil
 
 from aiohttp import web
 from redis.asyncio import Redis as RedisConnection
 
-from arq.jobs import Job
 from typing import Any, cast
 
 from .exporter import Exporter as ExporterXML
 from .jobfuncs import _db_query
 from .query_classes import Request, QueryInfo
 from .utils import sanitize_filename
-from .worker import arq_task, ctx, get_sync_redis
+from .tasker import enqueue
 
 EXPORT_TTL = 5000
 RESULTS_DIR = os.getenv("RESULTS", "results")
 RESULTS_USERS = os.environ.get("RESULTS_USERS", os.path.join("results", "users"))
 RESULTS_SWISSDOX = os.environ.get("RESULTS_SWISSDOX", "results/swissdox")
-
-
-@arq_task("background")
-async def export(ctx, class_name: str, request_id: str, qhash: str, payload: dict):
-    """
-    The core of the export pipeline, run in a worker
-    """
-    mod, clas = class_name.split(".", 1)
-    cls = importlib.import_module(mod).__dict__[clas]
-    connection = get_sync_redis()
-    request: Request = Request(
-        connection, {"id": request_id}
-    )  # TODO(ARQ_MIGRATION): Implement Arq equivalent
-    qi: QueryInfo = QueryInfo(
-        qhash, connection
-    )  # TODO(ARQ_MIGRATION): Implement Arq equivalent
-    offset = request.offset
-    requested = request.requested
-    full = request.full
-    try:
-        exporter = cls(request, qi)
-        wpath = exporter.get_working_path()
-        await exporter.process_lines(payload)
-        if not request.is_done(qi):
-            return
-        # each payload needs corresponding *_query/*_segments subfolders
-        qb_hashes = [bh for bh, _ in qi.query_batches.values()]
-        for h, nlines in request.sent_hashes.items():
-            if h not in qb_hashes or cast(int, nlines) <= 0:
-                continue
-            if not os.path.exists(os.path.join(wpath, f"{h}_segments")):
-                return
-        delivered = request.lines_sent_so_far
-        await exporter.finalize()
-        shutil.rmtree(exporter.get_working_path())
-        for h in request.sent_hashes:
-            hpath = os.path.join(wpath, f"{h}_segments")
-            if os.path.exists(hpath):
-                shutil.rmtree(hpath)
-        print(
-            f"SWISSDOX Exporting complete for request {request.id} (hash: {request.hash}) ; DELETED REQUEST"
-        )
-        qi.delete_request(request)
-        # TODO(ARQ_MIGRATION): job.connection may need to be accessed differently in Arq
-        cls.finish_export_db(
-            connection,  # TODO(ARQ_MIGRATION): Implement Arq equivalent
-            qhash,
-            offset,
-            requested,
-            cast(int, delivered),
-            full,
-            "swissdox",
-        )
-    except Exception as e:
-        shutil.rmtree(cls.get_dl_path_from_hash(qhash, offset, requested, full))
-        print("ERROR", e)
-        raise e
 
 
 class Exporter(ExporterXML):
@@ -150,12 +90,13 @@ class Exporter(ExporterXML):
         """
         Entrypoint to export a payload; run finalize if all the payloads have been processed
         """
-        await export(
-            ctx,
+        await enqueue(
+            "exporter_swissdox.export",
             f"{self.__class__.__module__}.{self.__class__.__name__}",
             self._request.id,
             self._qi.hash,
             payload,
+            queue="background",
         )
 
     async def report_articles(self, payload: dict, batch_hash: str) -> None:
@@ -175,7 +116,7 @@ class Exporter(ExporterXML):
             f"[SWISSDOX Export {self._request.id}] Done processing segments for {batch_hash} (QI {self._request.hash})"
         )
 
-    async def finalize(self) -> None:
+    async def finalize(self, ctx: dict) -> None:
         """
         Gather all the article IDs, send the query to the DB, and write to files
         """
