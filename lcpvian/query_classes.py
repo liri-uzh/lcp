@@ -818,6 +818,7 @@ class QueryInfo:
         if self.requests:
             return
         jids = [jid for jid in self.enqueued_jobs]
+        print(f"Stopping all jobs for request {request.id} (JIDs: {jids})")
         for jid in jids:
             try:
                 redis = await get_redis()

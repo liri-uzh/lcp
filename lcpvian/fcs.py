@@ -88,11 +88,12 @@ async def _check_request_complete(
     request_ids: dict[str, dict],
     requested: int,
 ):
-    while 1:
-        await asyncio.sleep(0.5)
+    complete = False
+    while not complete:
+        await asyncio.sleep(0.1)
         if not qi.has_request(request):
             request_ids[request.id]["done"] = True
-            break
+            complete = True
         n_results = sum(
             len(app["query_buffers"].get(rid, {}).get("1", []))
             for rid, rprops in request_ids.items()
@@ -100,7 +101,7 @@ async def _check_request_complete(
         )
         if n_results >= requested:
             await qi.stop_request(request)
-            break
+            complete = True
     return
 
 
