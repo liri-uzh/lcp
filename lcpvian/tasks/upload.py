@@ -142,7 +142,7 @@ async def insert_data(
                 "kind": str(e.__class__),
                 "value": str(e),
             }
-            await _publish_msg(ctx["redis"], jso, msg_id)
+            await _publish_msg(ctx["redis"], cast(JSONObject, jso), msg_id)
 
 
 async def create(
@@ -173,7 +173,7 @@ async def create(
         return None
     msg_id = str(uuid4())
     action = "uploaded"
-    jso = {
+    jso: JSONObject = {
         "user": user,
         "status": status,
         "project": project,

@@ -42,7 +42,7 @@ def get_redis_sleep_time() -> int:
 def get_shared_redis():
     global redis_url
     sleep_time = get_redis_sleep_time()
-    retry_policy: Retry = Retry(ConstantBackoff(sleep_time), 3)
+    retry_policy = Retry(ConstantBackoff(sleep_time), 3)
     url = redis_url if REDIS_SHARED_DB_INDEX < 0 else shared_redis_url
     return Redis.from_url(
         url,
@@ -55,7 +55,7 @@ def get_shared_redis():
 def get_sync_redis():
     global redis_url
     sleep_time = get_redis_sleep_time()
-    retry_policy: Retry = Retry(ConstantBackoff(sleep_time), 3)
+    retry_policy = Retry(ConstantBackoff(sleep_time), 3)
     return Redis.from_url(
         redis_url,
         health_check_interval=10,
@@ -67,7 +67,7 @@ def get_sync_redis():
 def get_async_redis():
     global redis_url
     sleep_time = get_redis_sleep_time()
-    async_retry_policy: AsyncRetry = AsyncRetry(ConstantBackoff(sleep_time), 3)
+    async_retry_policy = AsyncRetry(ConstantBackoff(sleep_time), 3)
     return aioredis.Redis.from_url(
         redis_url,
         health_check_interval=10,

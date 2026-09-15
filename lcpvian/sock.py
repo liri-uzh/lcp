@@ -371,7 +371,7 @@ async def _handle_sock(
     Handle an incoming message based on its `action`
 
     * validate queries
-    * query has enough results, so stop it (in simultaneous mode only)
+    * query has enough results, so stop it
     * user joins/leaves room
     """
     qs: QueryService = app["query_service"]
@@ -418,7 +418,7 @@ async def _handle_sock(
             return None
         currently = len(sockets[session_id])
         if not currently:
-            qs.cancel_running_jobs(user_id, session_id)
+            await qs.cancel_running_jobs(user_id, session_id)
             if session_id:
                 sockets.pop(session_id)
         elif session_id:
@@ -457,11 +457,10 @@ async def _handle_sock(
         resp = validate(**payload)
         await push_msg(sockets, session_id, resp, just=ident)
 
-    # used in simultaneous mode only: once FE sees enough results, cancel
     # any other ongoing jobs
     elif action == "enough_results":
         job = payload["job"]
-        jobs = qs.cancel_running_jobs(user_id, session_id, base=job)
+        jobs = await qs.cancel_running_jobs(user_id, session_id, base=job)
         jobs = list(set(jobs))
         response = {
             "status": "stopped",

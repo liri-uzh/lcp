@@ -6,7 +6,7 @@ import json
 
 from .configure import get_config
 from ..jobfuncs import _db_query
-from ..typed import JSONObject
+from ..typed import DBQueryParams, JSONObject
 
 
 async def update_descriptions(
@@ -91,8 +91,8 @@ async def update_projects(
     """
     Update which project(s) a corpus belongs to
     """
-    args = {
-        "corpus_id": corpus_id,
+    args: DBQueryParams = {
+        "corpus_id": str(corpus_id),
         "pid": str(project_ids[0]),
         "pids": "[" + ",".join(f'"{str(pid)}"' for pid in project_ids) + "]",
     }

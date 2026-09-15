@@ -23,7 +23,6 @@ this job ID; if it's available, we can trigger the callback manually, and thus
 save ourselves from running duplicate DB queries.
 """
 
-import json
 import os
 
 from typing import final, cast
@@ -31,6 +30,10 @@ from typing import final, cast
 from aiohttp import web
 
 from arq.jobs import Job
+
+from rq.command import send_stop_job_command
+
+from .redis import get_job_kwargs
 
 
 @final
@@ -51,22 +54,23 @@ class QueryService:
         self.upload_timeout = int(os.getenv("UPLOAD_TIMEOUT", 43200))
         self.query_ttl = int(os.getenv("QUERY_TTL", 5000))
 
-    def cancel(self, job: Job | str) -> str:
+    async def cancel(self, job: Job | str) -> str:
         """
         Cancel a running job
         """
         if isinstance(job, str):
             job_id = job
-            job = Job.fetch(job, connection=self.app["redis"])
+            job = Job(job, redis=self.app["aredis"])
         else:
-            job_id = job.id
-        job.cancel()
+            job_id = job.job_id
+        await job.abort()
         send_stop_job_command(self.app["redis"], job_id)
         if job not in self.app["canceled"]:
             self.app["canceled"].append(job)
-        return job.get_status()
+        s = await job.status()
+        return s
 
-    def cancel_running_jobs(
+    async def cancel_running_jobs(
         self,
         user: str,
         room: str,
@@ -88,10 +92,8 @@ class QueryService:
         ids = []
 
         for job in jobs:
-            maybe = Job.fetch(job, connection=self.app["redis"])
-            mk = cast(dict, maybe.kwargs)
-            if base and mk.get("simultaneous", "") != base:
-                continue
+            maybe = Job(job, redis=self.app["aredis"])
+            mk = await get_job_kwargs(maybe)
             if base and mk.get("is_sentences", False):
                 continue
             if job in self.app["canceled"]:
@@ -101,10 +103,8 @@ class QueryService:
             if user and mk.get("user") != user:
                 continue
             try:
-                self.cancel(maybe)
+                await self.cancel(maybe)
                 ids.append(job)
-            except InvalidJobOperation:
-                print(f"Already canceled: {job}")
             except Exception as err:
                 print("Unknown error, please debug", err, job)
         return ids

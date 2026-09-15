@@ -356,7 +356,8 @@ async def _get_redis_obj(
     if isinstance(connection, Redis):
         obj_str = connection.get(key) or "{}"
     else:
-        obj_str = await connection.get(key) or "{}"
+        payload = await connection.get(key)
+        obj_str = cast(str, payload) or "{}"
     obj = json.loads(obj_str)
     return obj
 
@@ -370,7 +371,8 @@ async def _update_redis_obj(
     if isinstance(connection, Redis):
         obj_str = connection.get(key) or "{}"
     else:
-        obj_str = await connection.get(key) or "{}"
+        payload = await connection.get(key)
+        obj_str = cast(str, payload) or "{}"
     obj = json.loads(obj_str)
     for k, v in info.items():
         obj[k] = v

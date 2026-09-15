@@ -46,8 +46,9 @@ async def export_notifs(ctx, user_id: str = "", ehash: str = "") -> None:
     elif ehash:
         for res in result:
             res = cast(list, res)
-            _, _, _, _, user_id, format, offset, requested, _, fn, _, _ = res
-            full = requested <= 0
+            _, _, _, _, user_id_from_res, format, offset, requested, _, fn, _, _ = res
+            user_id = str(user_id_from_res)
+            full = cast(int, requested) <= 0
             exp_class = (
                 ctx["_exporterSwissdox"]
                 if format == "swissdox"
@@ -62,7 +63,7 @@ async def export_notifs(ctx, user_id: str = "", ehash: str = "") -> None:
                     "exports",
                     f"{ehash}.db",
                 )
-            normfn = os.path.normpath(fn)
+            normfn = os.path.normpath(str(fn))
             destfn = os.path.join(user_folder, normfn)
             if not os.path.exists(os.path.dirname(destfn)):
                 os.makedirs(os.path.dirname(destfn))
@@ -71,7 +72,6 @@ async def export_notifs(ctx, user_id: str = "", ehash: str = "") -> None:
                     os.symlink(os.path.abspath(srcfn), destfn)
                 except Exception as e:
                     print(f"Problem with creating symlink {srcfn}->{destfn}", e)
-            user_id = res[4]
             msg_id = str(uuid4())
             jso = {
                 "user": user_id,

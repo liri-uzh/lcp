@@ -300,11 +300,11 @@ async def _complete_upload(request: web.Request, payload: dict) -> dict[str, str
         job = Job(payload.get("job_id") or "", redis=request.app["aredis"])
         project_id = payload.get("project")
         project_name = payload.get("project_name")
-        ret = {
+        ret: dict[str, str | int] = {
             "status": "finished",
             "job": job.job_id,
             "project": str(project_id),
-            "project_name": project_name,
+            "project_name": str(project_name),
         }
         try:
             corpus = {}
@@ -314,10 +314,12 @@ async def _complete_upload(request: web.Request, payload: dict) -> dict[str, str
                 corpus = request.app["config"][str(corpus_super)]
             else:
                 job_meta = await get_job_meta(job)
-                insert_job = Job(job_meta["insert_job"], redis=request.app["aredis"])
-                insert_job_result = await insert_job.result()
+                existing_insert_job = Job(
+                    job_meta["insert_job"], redis=request.app["aredis"]
+                )
+                existing_insert_job_result = await existing_insert_job.result()
                 corpus = cast(
-                    dict, _row_to_value(insert_job_result)
+                    dict, _row_to_value(existing_insert_job_result)
                 )  # TODO(ARQ_MIGRATION): Implement Arq equivalent
             ret["corpus_name"] = corpus.get("name", "")
             move_media_files(cpath, corpus.get("schema_path", ""))

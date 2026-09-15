@@ -14,7 +14,7 @@ from uuid import uuid4
 from xml.sax.saxutils import escape, quoteattr
 
 from ..jobfuncs import _db_query
-from ..typed import CorpusConfig
+from ..typed import CorpusConfig, JSONObject
 from ..utils import (
     SQLCorpus,
     _get_all_attributes,
@@ -101,7 +101,7 @@ async def document(
     }
     if warning:
         jso["warning"] = warning
-    await _publish_msg(ctx["redis"], jso, msg_id)
+    await _publish_msg(ctx["redis"], cast(JSONObject, jso), msg_id)
 
 
 async def document_ids(
@@ -176,7 +176,7 @@ async def document_ids(
         "corpus_id": corpus_id,
         "kind": kind,
     }
-    await _publish_msg(ctx["redis"], jso, msg_id)
+    await _publish_msg(ctx["redis"], cast(JSONObject, jso), msg_id)
 
 
 async def annotations(
@@ -313,7 +313,7 @@ async def annotations(
     }
     if warning:
         jso["warning"] = warning
-    await _publish_msg(ctx["redis"], jso, msg_id)
+    await _publish_msg(ctx["redis"], cast(JSONObject, jso), msg_id)
 
 
 async def image_annotations(
@@ -395,7 +395,7 @@ async def image_annotations(
         "room": room,
         "msg_id": msg_id,
     }
-    await _publish_msg(ctx["redis"], jso, msg_id)
+    await _publish_msg(ctx["redis"], cast(JSONObject, jso), msg_id)
 
 
 async def clip_media(
@@ -644,7 +644,7 @@ async def clip_media(
     zf = zipfile.ZipFile(zip_fn, "w")
     zf.write(xml_path, "clip.xml")
 
-    media_slots = config.get("meta", {}).get("mediaSlots", {})
+    media_slots = cast(dict, config.get("meta", {}).get("mediaSlots", {}))
     media_col, media_props = next((x for x in media_slots.items()), ("", ""))
     if media_fn := doc_data.get("media", {}).get(media_col):
         ext = media_fn[-3:]
@@ -681,4 +681,4 @@ async def clip_media(
         "msg_id": msg_id,
     }
 
-    await _publish_msg(ctx["redis"], jso, msg_id)
+    await _publish_msg(ctx["redis"], cast(JSONObject, jso), msg_id)

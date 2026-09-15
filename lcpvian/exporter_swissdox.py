@@ -116,7 +116,7 @@ class Exporter(ExporterXML):
             f"[SWISSDOX Export {self._request.id}] Done processing segments for {batch_hash} (QI {self._request.hash})"
         )
 
-    async def finalize(self, ctx: dict) -> None:
+    async def finalize(self, ctx: dict = {}) -> None:
         """
         Gather all the article IDs, send the query to the DB, and write to files
         """
