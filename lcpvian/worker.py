@@ -20,7 +20,7 @@ resources on the deployment server.
 
 from __future__ import annotations
 
-from .utils import load_env
+from .utils import load_env, configure_logging
 
 load_env()
 
@@ -44,8 +44,6 @@ SENTRY_DSN = os.getenv("SENTRY_DSN", None)
 if SENTRY_DSN:
     import sentry_sdk
 
-    # TODO(ARQ_MIGRATION): Replace sentry_sdk.integrations.rq.RqIntegration with Arq equivalent
-    # from sentry_sdk.integrations.rq import RqIntegration
     from sentry_sdk.integrations.logging import LoggingIntegration
 
     sentry_logging = LoggingIntegration(
@@ -55,10 +53,7 @@ if SENTRY_DSN:
 
     sentry_sdk.init(
         dsn=SENTRY_DSN,
-        # TODO(ARQ_MIGRATION): Replace RqIntegration with Arq equivalent
-        integrations=[
-            sentry_logging
-        ],  # TODO(ARQ_MIGRATION): Add Arq integration if available
+        integrations=[sentry_logging],
         traces_sample_rate=float(os.getenv("SENTRY_TRACES_SAMPLE_RATE", 1.0)),
         environment=os.getenv("SENTRY_ENVIRONMENT", "lcp"),
     )
@@ -167,7 +162,7 @@ async def on_shutdown(ctx: dict) -> None:
 
 
 async def work(queue: str = "internal"):
-
+    configure_logging()
     valid_queues = ("internal", "query", "background")
     assert queue in valid_queues, TypeError(
         f"Tried to run a worker with an invalid queue name ({queue}). The queue should be one of: {', '.join(q for q in valid_queues)}"

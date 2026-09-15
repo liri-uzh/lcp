@@ -14,7 +14,6 @@ from uuid import UUID
 
 from aiohttp import web
 
-# TODO(ARQ_MIGRATION): Replace rq.job.Job with Arq equivalent
 from arq.jobs import Job
 from pydantic import JsonValue
 
@@ -125,7 +124,6 @@ DBQueryParams: TypeAlias = dict[
 ]
 
 # model a query iteration result
-# TODO(ARQ_MIGRATION): Job type may need to be updated for Arq
 Iteration: TypeAlias = tuple[
     Job | None, str | None, dict[str, str | bool | None], list[str]
 ]

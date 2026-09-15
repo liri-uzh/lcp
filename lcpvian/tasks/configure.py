@@ -2,6 +2,8 @@
 Async tasks called from configure.py
 """
 
+import logging
+
 from arq.jobs import Job, ResultNotFound
 from typing import cast
 from uuid import uuid4

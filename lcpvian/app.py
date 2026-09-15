@@ -23,10 +23,6 @@ from aiohttp.http_exceptions import LineTooLong
 from aiohttp_catcher import Catcher, catch
 from redis import Redis
 from redis import asyncio as aioredis
-from redis.asyncio.retry import Retry as AsyncRetry
-from redis.backoff import ConstantBackoff
-from redis.exceptions import ConnectionError
-from redis.retry import Retry
 from rq.exceptions import AbandonedJobError, NoSuchJobError
 from rq.queue import Queue
 from rq.registry import FailedJobRegistry
@@ -39,6 +35,7 @@ from .utils import (
     handle_bad_request,
     handle_timeout,
     load_env,
+    configure_logging,
 )
 
 load_env()
@@ -384,6 +381,7 @@ async def create_app(test: bool = False) -> web.Application:
 
 async def start_app() -> None:
     try:
+        configure_logging()
         app = await create_app()
         runner = web.AppRunner(app)
         await runner.setup()

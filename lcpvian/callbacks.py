@@ -21,7 +21,6 @@ from uuid import uuid4
 
 from redis.asyncio import Redis as RedisConnection
 
-# TODO(ARQ_MIGRATION): Replace rq.job.Job with Arq equivalent
 from arq.jobs import Job
 
 from .utils import (

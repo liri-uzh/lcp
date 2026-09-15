@@ -2,6 +2,7 @@
 Definitions for redis clients
 """
 
+import json
 import os
 
 from arq import create_pool
@@ -82,16 +83,22 @@ async def get_redis():
 
 
 async def get_job_kwargs(job: Job) -> dict:
-    return {}
+    payload = await job._redis.get(f"kwargs::{job.job_id}")
+    kwargs = json.loads(payload or "null")
+    return kwargs or {}
 
 
 async def set_job_kwargs(job: Job, kwargs: dict):
-    return {}
+    await job._redis.set(f"kwargs::{job.job_id}", json.dumps(kwargs))
+    return kwargs
 
 
 async def get_job_meta(job: Job) -> dict:
-    return {}
+    payload = await job._redis.get(f"meta::{job.job_id}")
+    meta = json.loads(payload or "null")
+    return meta or {}
 
 
 async def set_job_meta(job: Job, meta: dict):
-    return {}
+    await job._redis.set(f"meta::{job.job_id}", json.dumps(meta))
+    return meta

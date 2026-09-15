@@ -31,13 +31,7 @@ the kwic line from matching token ids plus the relevant prepared_segment.
 import operator
 
 from collections import defaultdict
-from collections.abc import Sequence
 from typing import Any, cast
-
-from redis.asyncio import Redis as RedisConnection
-
-# TODO(ARQ_MIGRATION): Replace rq.job.Job with Arq equivalent
-from arq.jobs import Job
 
 from .typed import (
     Batch,
@@ -48,7 +42,6 @@ from .typed import (
     Results,
     Sentence,
 )
-from .utils import _get_associated_query_job
 
 OPS = {
     "<": operator.lt,

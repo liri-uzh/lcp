@@ -42,7 +42,7 @@ ParserClass = DefaultParser
 
 from rq.command import PUBSUB_CHANNEL_TEMPLATE
 
-from arq.jobs import Job
+from arq.jobs import Job, JobDef
 
 from .authenticate import Authentication
 
@@ -388,7 +388,6 @@ async def _update_redis_obj(
 async def _get_query_info(
     connection: Redis | AsyncRedis | ArqRedis,
     hash: str = "",
-    job: Job | None = None,  # TODO(ARQ_MIGRATION): Job type may need to be updated
 ) -> dict[str, Any]:
     qi_key = f"query_info::{hash}"
     qi = await _get_redis_obj(connection, qi_key)
@@ -508,6 +507,17 @@ async def _set_config(payload: JSONObject, app: web.Application) -> None:
     app["redis"].expire("app_config", MESSAGE_TTL)
 
     return None
+
+
+def configure_logging():
+    """
+    Set level and format of log messages. Call when starting the main app or a worker
+    """
+    logging.basicConfig(
+        format="%(asctime)s %(message)s",
+        datefmt="%m/%d/%Y %I:%M:%S %p",
+        level=logging.DEBUG,
+    )
 
 
 def _structure_descriptions(descs: dict) -> dict:
@@ -646,8 +656,11 @@ async def _get_sent_ids(
         raise Interrupted()
     if job_result is None or job_result.result is None:
         return out
+    job_info = await job.info()
+    # query jobs are set by do_batch, which always takes the query hash as first argument
+    qhash = cast(JobDef, job_info).args[0]
     prev_results = job_result.result
-    query_info = await _get_query_info(conn, job=job)
+    query_info = await _get_query_info(conn, hash=qhash)
     rs = query_info.get("meta_json", {}).get("result_sets", [])
     kwics = set([i for i, r in enumerate(rs, start=1) if r.get("type") == "plain"])
     counts: Counter[int] = Counter()

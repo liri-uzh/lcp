@@ -222,12 +222,10 @@ async def _validate_upload_request(
         except Exception as e:
             return False, {"error": f"Unauthorized: {str(e)}"}
 
-    job: Job  # TODO(ARQ_MIGRATION): job type may need to be updated
+    job: Job
     try:
         payload["job_id"] = job_id
-        # TODO(ARQ_MIGRATION): Replace Job.fetch with Arq equivalent
         job = Job(job_id, redis=request.app["aredis"])
-        # TODO(ARQ_MIGRATION): job.kwargs may need to be accessed differently in Arq
         kwargs = await get_job_kwargs(job)
         payload["cpath"] = kwargs["path"]
         username = kwargs["user"]
@@ -242,7 +240,6 @@ async def _validate_upload_request(
         return False, {"error": "File too large"}
 
     payload["filename"] = filename
-    # TODO(ARQ_MIGRATION): job.meta may need to be accessed differently in Arq
     job_meta = await get_job_meta(job)
     complete_files = job_meta.get("complete_files") or {}
     complete_files.setdefault(filename, False)
@@ -318,9 +315,7 @@ async def _complete_upload(request: web.Request, payload: dict) -> dict[str, str
                     job_meta["insert_job"], redis=request.app["aredis"]
                 )
                 existing_insert_job_result = await existing_insert_job.result()
-                corpus = cast(
-                    dict, _row_to_value(existing_insert_job_result)
-                )  # TODO(ARQ_MIGRATION): Implement Arq equivalent
+                corpus = cast(dict, _row_to_value(existing_insert_job_result))
             ret["corpus_name"] = corpus.get("name", "")
             move_media_files(cpath, corpus.get("schema_path", ""))
         except Exception as err:

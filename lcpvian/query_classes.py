@@ -1,20 +1,27 @@
+"""
+query_classes.py: defines the Request and QueryInfo classes
+
+This is where most of the logic or running a query from start to finish happens,
+while the files query.py and tasks/query.py orchestrate the app-worker communication.
+"""
+
 import asyncio
 import json
-import traceback
+import logging
 import os
+import traceback
 
 from aiohttp import web
 from redis import Redis as RedisConnection
 from rq.command import send_stop_job_command
 from arq.jobs import Job
 from types import TracebackType
-from typing import cast, Any, Callable
+from typing import cast, Any
 from uuid import uuid4
 
 from .abstract_query.create import json_to_sql
 from .abstract_query.typed import QueryJSON
 
-# from .callbacks import _general_failure
 from .convert import _aggregate_results
 from .jobfuncs import _db_query
 from .redis_proxies import RedisDict, RedisList
@@ -228,7 +235,7 @@ class Request:
     def delete_if_done(self, qi: "QueryInfo"):
         if not self.is_done(qi):
             return
-        print(f"[{self.id}] DELETE REQUEST NOW")
+        logging.debug(f"[{self.id}] DELETE REQUEST NOW")
         qi.delete_request(self)
 
     def lines_for_batch(self, qi: "QueryInfo", batch_name: str) -> tuple[int, int]:
@@ -312,7 +319,7 @@ class Request:
         """
         if self.raw_hits:
             return
-        print(f"[{self.id}] send segments {batch_name}")
+        logging.debug(f"[{self.id}] send segments {batch_name}")
         seg_hashes: list[str] = [x for x in qi.segments_for_batch[batch_name]]
         if all(x in self.sent_hashes for x in seg_hashes):
             return
@@ -338,7 +345,6 @@ class Request:
                 },
             )
             self.sent_hashes[seg_hash] = len(prep_seg_lines)
-        # print("after updaing sent_hashes", self.sent_hashes)
         results["0"] = {"result_sets": qi.result_sets, "meta_labels": qi.meta_labels}
         for k in results["0"]:
             if isinstance(results["0"][k], RedisList):
@@ -356,7 +362,7 @@ class Request:
             else f"to user '{self.user}' room '{self.room}'"
         )
         batch_hash, _ = qi.query_batches[batch_name]
-        print(
+        logging.debug(
             f"[{self.id}] Sending {nsegs} segments for batch {batch_name} (hash {qi.hash}; batch hash {batch_hash}) {to_msg}"
         )
         if self.to_export:
@@ -375,14 +381,14 @@ class Request:
                 skip=None,
                 just=(self.room, self.user),
             )
-        print(f"[{self.id}] sent {nsegs} segments {batch_name}")
+        logging.debug(f"[{self.id}] sent {nsegs} segments {batch_name}")
 
     async def send_query(self, app: web.Application, qi: "QueryInfo", batch_name: str):
         """
         Fetch the query results for the batch, filter the lines needed for this request
         and send them to the client
         """
-        print(f"[{self.id}] send query {batch_name}")
+        logging.debug(f"[{self.id}] send query {batch_name}")
         batch_hash, _ = qi.query_batches[batch_name]
         if batch_hash in self.sent_hashes:
             if len(qi.query_batches) > len(self.sent_hashes) and all(
@@ -456,7 +462,7 @@ class Request:
             else f"to user '{self.user}' room '{self.room}'"
         )
         actual_nlines = lines_so_far + 1 - offset_this_batch
-        print(
+        logging.debug(
             f"[{self.id}] Sending {actual_nlines} results lines for batch {batch_name} ({batch_hash}; QI {qi.hash}) {to_msg}"
         )
         if self.to_export:
@@ -475,12 +481,14 @@ class Request:
                 skip=None,
                 just=(self.room, self.user),
             )
-        print(f"[{self.id}] sent {actual_nlines} results lines for batch {batch_name}")
+        logging.debug(
+            f"[{self.id}] sent {actual_nlines} results lines for batch {batch_name}"
+        )
 
     async def error(
         self, app: web.Application, qi: "QueryInfo", error: str = "unknown"
     ):
-        print(f"[{self.id}] Error while running the query:", error)
+        logging.debug(f"[{self.id}] Error while running the query:", error)
         if self.to_export:
             xp_format = self.to_export.get("format", "xml") or "xml"
             req = next(r for r in qi.requests if r.to_export)
@@ -818,7 +826,7 @@ class QueryInfo:
         if self.requests:
             return
         jids = [jid for jid in self.enqueued_jobs]
-        print(f"Stopping all jobs for request {request.id} (JIDs: {jids})")
+        logging.debug(f"Stopping all jobs for request {request.id} (JIDs: {jids})")
         for jid in jids:
             try:
                 redis = await get_redis()
