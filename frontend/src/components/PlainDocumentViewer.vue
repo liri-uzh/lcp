@@ -93,12 +93,13 @@ export default {
       if (n!==null) name += " " + String(n + 1);
       return name;
     },
-    loadDocuments() {
+    async loadDocuments() {
       if (this.corpus.partitions && !(this.corpus.partitions.values || []).includes(this.language)) {
         this.unknownLanguage = true;
         return;
       }
       this.unknownLanguage = false;
+      await useUserStore().checkLoaded();
       useCorpusStore().fetchDocuments({
         room: this.roomId,
         user: this.userData.user.id,
@@ -176,7 +177,6 @@ export default {
   },
   mounted() {
     console.log("language", this.language, "corpus", this.corpus);
-
     this.loadDocuments();
   },
   beforeUnmount() {
