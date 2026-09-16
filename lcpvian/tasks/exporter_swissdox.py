@@ -2,7 +2,7 @@
 Async tasks called from exporter_swissdox.py
 """
 
-import importlib
+import logging
 import os
 import shutil
 
@@ -16,12 +16,11 @@ RESULTS_USERS = os.environ.get("RESULTS_USERS", os.path.join("results", "users")
 RESULTS_SWISSDOX = os.environ.get("RESULTS_SWISSDOX", "results/swissdox")
 
 
-async def export(ctx, class_name: str, request_id: str, qhash: str, payload: dict):
+async def export(ctx, xp_format: str, request_id: str, qhash: str, payload: dict):
     """
     The core of the export pipeline, run in a worker
     """
-    mod, clas = class_name.split(".", 1)
-    cls = importlib.import_module(mod).__dict__[clas]
+    cls = ctx["_exporters"][xp_format]
     connection = get_sync_redis()
     request = ctx["_request"](connection, {"id": request_id})
     qi = ctx["_queryInfo"](qhash, connection)
@@ -48,11 +47,11 @@ async def export(ctx, class_name: str, request_id: str, qhash: str, payload: dic
             hpath = os.path.join(wpath, f"{h}_segments")
             if os.path.exists(hpath):
                 shutil.rmtree(hpath)
-        print(
+        logging.debug(
             f"SWISSDOX Exporting complete for request {request.id} (hash: {request.hash}) ; DELETED REQUEST"
         )
         qi.delete_request(request)
-        cls.finish_export_db(
+        await cls.finish_export_db(
             connection,
             qhash,
             offset,

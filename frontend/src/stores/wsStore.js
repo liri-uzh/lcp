@@ -23,8 +23,11 @@ export const useWsStore = defineStore("wsData", {
     add(message) {
       this.messages.push(message)
     },
+    remove(message) {
+      this.messages = this.messages.filter(m=>m != message);
+    },
     clear() {
-      this.messages = []
+      this.messages = [];
     },
     addMessageForPlayer(message) {
       this.messagesPlayer.push(message)

@@ -895,6 +895,7 @@ export default {
           return;
         }
       }
+      return false;
     },
     stop() {
       this.percentageDone = 0;
@@ -1047,7 +1048,10 @@ export default {
         let _messages = this.messagesPlayer;
         if (_messages.length > 0) {
           // console.log("WSM", _messages)
-          _messages.forEach(message => this.onSocketMessage(message))
+          _messages.forEach(message => {
+            const shouldClear = this.onSocketMessage(message);
+            if (shouldClear !== false) useWsStore().remove(message);
+          });
           useWsStore().clearPlayer();
         }
       },

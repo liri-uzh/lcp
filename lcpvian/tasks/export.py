@@ -2,6 +2,7 @@
 Async tasks called from export.py
 """
 
+import asyncio
 import os
 
 from typing import Any, cast
@@ -14,10 +15,15 @@ RESULTS_USERS = os.environ.get("RESULTS_USERS", os.path.join("results", "users")
 RESULTS_SWISSDOX = os.environ.get("RESULTS_SWISSDOX", "results/swissdox")
 
 
-async def export_notifs(ctx, user_id: str = "", ehash: str = "") -> None:
+async def export_notifs(
+    ctx, user_id: str = "", ehash: str = "", delay: float = 0.0
+) -> None:
     """
     Callback when getting the export rows from the DB
     """
+    if delay > 0.0:
+        await asyncio.sleep(delay)
+
     query: str
     if user_id:
         assert ";" not in user_id and "'" not in user_id
@@ -46,18 +52,16 @@ async def export_notifs(ctx, user_id: str = "", ehash: str = "") -> None:
     elif ehash:
         for res in result:
             res = cast(list, res)
-            _, _, _, _, user_id_from_res, format, offset, requested, _, fn, _, _ = res
+            _, _, _, _, user_id_from_res, xp_format, offset, requested, _, fn, _, _ = (
+                res
+            )
             user_id = str(user_id_from_res)
             full = cast(int, requested) <= 0
-            exp_class = (
-                ctx["_exporterSwissdox"]
-                if format == "swissdox"
-                else ctx["_exporterXml"]
-            )
+            exp_class = ctx["_exporters"][xp_format]
             user_folder = os.path.join(RESULTS_USERS, user_id)
             srcfn = exp_class.get_dl_path_from_hash(ehash, offset, requested, full)  # type: ignore
             # TODO: maybe create an ExporterSwissdox class?
-            if format == "swissdox":
+            if xp_format == "swissdox":
                 srcfn = os.path.join(
                     RESULTS_SWISSDOX,
                     "exports",

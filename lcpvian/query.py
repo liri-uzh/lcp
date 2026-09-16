@@ -176,6 +176,7 @@ async def post_query(request: web.Request) -> web.Response:
                 "format": xpformat,
                 "request": req.id,
                 "filename": req.to_export.get("filename", ""),
+                "hash": qi.hash,
             },
             skip=None,
             just=(req.room, req.user),

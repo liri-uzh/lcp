@@ -42,7 +42,6 @@ from .utils import _get_batches
 from .email import send_email
 from .query_service import QueryService
 from .query_classes import QueryInfo, Request
-from .tasks.export import export_notifs
 from .utils import push_msg
 from .validate import validate
 from .tasker import enqueue
@@ -250,7 +249,7 @@ async def _handle_message(
 
     if action == "export_complete":
         await enqueue(
-            "export.export_notifs", hash=payload.get("hash", ""), queue="internal"
+            "export.export_notifs", ehash=payload.get("hash", ""), queue="internal"
         )
         if email := payload.get("email"):
             fn = payload.get("filename", "")
@@ -293,12 +292,16 @@ LCP"""
 
     if action == "export_notifs":
         room = ""
-        for rid, users in app["websockets"].items():
-            for _, uid in users:
-                if uid != user:
-                    continue
-                room = rid
-                break
+        # It can take a moment for the user to join the WS connection, so allow for up to 2s
+        async with asyncio.timeout(2):
+            while not room:
+                await asyncio.sleep(0.1)
+                for rid, users in app["websockets"].items():
+                    for _, uid in users:
+                        if uid != user:
+                            continue
+                        room = rid
+                        break
         if room:
             await push_msg(
                 app["websockets"],

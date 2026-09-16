@@ -29,5 +29,6 @@ def send_email(to: str | list[str], subject: str, message: str):
         s.sendmail(MAIL_FROM_EMAIL, to, msg.as_string())
         s.quit()
     except Exception as e:
-        print(f"Could not send an email to {', '.join(str(x) for x in to)}.", e)
+        to_str = to if isinstance(to, str) else ", ".join(str(x) for x in to)
+        print(f"Could not send an email to {to_str}.", e)
         print(f"HTML email: {message_html}")

@@ -1,5 +1,6 @@
 import datetime
 import duckdb
+import logging
 import os
 import pandas
 
@@ -21,7 +22,7 @@ RESULTS_SWISSDOX = os.environ.get("RESULTS_SWISSDOX", "results/swissdox")
 
 
 class Exporter(ExporterXML):
-    xp_format = "xml"
+    xp_format = "swissdox"
 
     def __init__(self, request: Request, qi: QueryInfo) -> None:
         super().__init__(request, qi)
@@ -92,7 +93,7 @@ class Exporter(ExporterXML):
         """
         await enqueue(
             "exporter_swissdox.export",
-            f"{self.__class__.__module__}.{self.__class__.__name__}",
+            self.xp_format,
             self._request.id,
             self._qi.hash,
             payload,
@@ -103,7 +104,7 @@ class Exporter(ExporterXML):
         """
         Write the article ids in batch-specific subfolders to avoid parallel io conflicts
         """
-        print(
+        logging.debug(
             f"[SWISSDOX Export {self._request.id}] Process segments for {batch_hash} (QI {self._request.hash})"
         )
         res = payload.get("result", [])
@@ -112,7 +113,7 @@ class Exporter(ExporterXML):
             output.write(
                 "\n".join(lid for _, lname, lid, _ in res["-2"] if lname == "Article")
             )
-        print(
+        logging.debug(
             f"[SWISSDOX Export {self._request.id}] Done processing segments for {batch_hash} (QI {self._request.hash})"
         )
 
@@ -120,7 +121,7 @@ class Exporter(ExporterXML):
         """
         Gather all the article IDs, send the query to the DB, and write to files
         """
-        print(
+        logging.debug(
             f"[SWISSDOX Export {self._request.id}] Finalizing... (QI {self._request.hash})"
         )
         article_ids = set()
@@ -136,13 +137,13 @@ class Exporter(ExporterXML):
         query = (
             f"""SELECT * FROM main.export_to_swissdoxviz('{schema}', :article_ids);"""
         )
-        print(
+        logging.debug(
             f"[SWISSDOX Export {self._request.id}] Running query with {len(article_ids)} article IDs"
         )
         res = await _db_query(
             ctx, query, {"article_ids": [aid for aid in article_ids]}, is_main=True
         )
-        print("articles retrieved! now creating the duckdb file")
+        logging.debug("articles retrieved! now creating the duckdb file")
         dest_folder = os.path.join(RESULTS_SWISSDOX, "exports")
         if not os.path.exists(dest_folder):
             os.makedirs(dest_folder)
@@ -198,13 +199,13 @@ class Exporter(ExporterXML):
             "callback_query": None,
         }
         await self._qi.publish("placholder", "export", jso)
-        print(
+        logging.debug(
             f"[SWISSDOX Export {self._request.id}] Complete (QI {self._request.hash})"
         )
 
     async def process_lines(self, payload: dict) -> None:
         """
-        Take a payload and call process_query or process_segments
+        Do report_articles once we have the segments
         """
         action = payload.get("action", "")
         batch_name = payload.get("batch_name", "")

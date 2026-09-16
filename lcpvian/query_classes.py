@@ -96,7 +96,9 @@ class Request:
 
         if "hash" in redis_request:
             self.hash: str = cast(str, redis_request["hash"])
-        self._full = cast(bool, request.get("full", False))
+        self._full = cast(
+            bool, request.get("full", False) or redis_request.get("full", False)
+        )
         self._id = cast(str, id)
 
         if "id" in redis_request:
@@ -367,7 +369,7 @@ class Request:
         )
         if self.to_export:
             xp_format = self.to_export.get("format", "xml") or "xml"
-            req = next(r for r in qi.requests)
+            req = next(r for r in qi.requests if r.to_export)
             exporter = app["exporters"][xp_format](req, qi)
             await exporter.launch_export(payload)
         elif self.to_buffer:

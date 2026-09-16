@@ -886,8 +886,10 @@ export default {
       handler() {
         let _messages = this.messages;
         if (_messages.length > 0) {
-          _messages.forEach((message) => this.onSocketMessage(message));
-          useWsStore().clear();
+          _messages.forEach((message) => {
+            const shouldClear = this.onSocketMessage(message);
+            if (shouldClear !== false) useWsStore().remove(message);
+          });
         }
       },
       immediate: true,
@@ -1129,13 +1131,13 @@ export default {
       }
     },
 
-    handleModalSave(exportTab) {
+    handleModalSave() {
       this.getReusableModalInstance().hide();
       switch(this.currentModal) {
         case 'saveQuery':
           return this.saveQuery();
         case 'export':
-          return this.exportResults(exportTab, true, true);
+          return this.exportResults(this.exportTab, true, true);
       }
     },
 
@@ -1390,6 +1392,7 @@ export default {
           for (let id of ids)
             this.imageAnnotations[id] = 1;
 
+          return;
         }
 
         if (is_doc) {
@@ -1456,6 +1459,7 @@ export default {
             requested: data.total_results_requested || 200
           };
           useCorpusStore().fetchExport(info);
+          return;
         } else if (data["action"] === "document_ids") {
           useWsStore().addMessageForPlayer(data);
           this.documentIds = data["document_ids"]
@@ -1477,6 +1481,7 @@ export default {
           this.loading = false;
           if (this.requestId == data.request)
             this.requestId = null;
+          return;
         } else if (data["action"] === "query_result") {
           useWsStore().addMessageForPlayer(data)
           this.updateLoading(data.status);
@@ -1540,12 +1545,14 @@ export default {
             type: "error",
             text: data.value,
           });
+          return;
         } else if (data["action"] === "query_error") {
           this.loading = false;
           useNotificationStore().add({
             type: "error",
             text: data.info,
           });
+          return;
         }
       } else if (Object.prototype.hasOwnProperty.call(data, "status")) {
         if (data["status"] == "failed") {
@@ -1554,6 +1561,7 @@ export default {
             type: "error",
             text: data.value,
           });
+          return;
         }
         if (data["status"] == "error") {
           this.loading = false;
@@ -1561,6 +1569,7 @@ export default {
             type: "error",
             text: data.info,
           });
+          return;
         }
       }
 
@@ -1581,6 +1590,8 @@ export default {
         data["percentage_done"] += this.percentageDone;
         this.WSDataResults = WSDataResults.fromWebSocketMessage(data);
       }
+
+      return false;
     },
     resizeGraph(container) {
       let svg = container.querySelector("svg");

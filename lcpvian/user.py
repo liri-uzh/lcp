@@ -13,7 +13,10 @@ async def user_data(request: web.Request) -> web.Response:
     res["debug"] = request.app["_debug"]
     user_id = res.get("user", {}).get("id")
     if user_id:
-        await enqueue("export.export_notifs", user_id=user_id, queue="internal")
+        # Add a 1s delay because websockets communication can take some time to set up
+        await enqueue(
+            "export.export_notifs", user_id=user_id, delay=1.0, queue="internal"
+        )
     subscriptions = res.get("subscription", {}).get("subscriptions", {})
     pending_invites = get_pending_invites(request, subscriptions)
     if pending_invites:

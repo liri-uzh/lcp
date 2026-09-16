@@ -106,6 +106,7 @@ AS $$
          SET status = 'ready'::main.export_status
            , delivered = $5
            , modified_at = now()
+           , "message" = ''
        WHERE e.query_hash = $1
          AND e.format = $2
          AND e.n_offset = $3

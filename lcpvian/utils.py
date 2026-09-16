@@ -13,6 +13,7 @@ import shutil
 import traceback
 import uuid
 
+from arq.worker import logger as arq_logger
 from dotenv import load_dotenv
 from asyncpg import Connection, Range, Box
 from collections import Counter
@@ -509,6 +510,14 @@ async def _set_config(payload: JSONObject, app: web.Application) -> None:
     return None
 
 
+def filter_already_running(record):
+    """
+    Arq logs (normal-activity) "job already running elsewhere" at DEBUG level
+    There can be a whole lot of those, so filter them out
+    """
+    return not record.getMessage().endswith("already running elsewhere")
+
+
 def configure_logging():
     """
     Set level and format of log messages. Call when starting the main app or a worker
@@ -518,6 +527,7 @@ def configure_logging():
         datefmt="%m/%d/%Y %I:%M:%S %p",
         level=logging.DEBUG,
     )
+    arq_logger.addFilter(filter_already_running)
 
 
 def _structure_descriptions(descs: dict) -> dict:

@@ -145,8 +145,7 @@ async def on_startup(ctx: dict) -> None:
     from .query_classes import Request, QueryInfo
 
     # Pass some objects in ctx so as not to import them in the tasks' scripts
-    ctx["_exporterXml"] = ExporterXml
-    ctx["_exporterSwissdox"] = ExporterSwissdox
+    ctx["_exporters"] = {"xml": ExporterXml, "swissdox": ExporterSwissdox}
     ctx["_request"] = Request
     ctx["_queryInfo"] = QueryInfo
 

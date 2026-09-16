@@ -3,13 +3,15 @@ Async tasks called from exporter.py
 """
 
 import asyncio
-import importlib
+import logging
 import os
 import shutil
 
 from typing import cast
+from uuid import uuid4
 
 from ..redis import get_sync_redis
+from ..utils import _publish_msg
 
 EXPORT_TTL = 5000
 RESULTS_DIR = os.getenv("RESULTS", "results")
@@ -40,10 +42,10 @@ async def export_db(
         should_run: bool = cast(dict, kwargs).get("should_run", False)
         if operation == "create":
             export_params["user_id"] = kwargs.get("user_id", "")
-            export_params["userpath"] = kwargs.get("userpath", "export")
+            export_params["relpath"] = kwargs.get("relpath", "export")
             export_params["corpus_id"] = kwargs.get("corpus_id", 0)
             export_params["need_querying"] = "TRUE" if should_run else "FALSE"
-            export_query = "CALL main.init_export('{query_hash}', '{format}', {offset}, {requested}, '{user_id}', {need_querying}, '{userpath}', {corpus_id});"
+            export_query = "CALL main.init_export('{query_hash}', '{format}', {offset}, {requested}, '{user_id}', {need_querying}, '{relpath}', {corpus_id});"
         elif operation == "update":
             export_query = "CALL main.update_export('{query_hash}', '{format}', {offset}, {requested}, '{status}', '{message}');"
             export_params.pop("user_id", "")
@@ -69,20 +71,16 @@ async def export_db(
                 print("Handling export...\n", query)
                 await con.execute(query)
 
-        if should_run:
-            return
-
-        exporter = importlib.import_module("lcpvian/exporter.py").__dict__["Exporter"]
-        full: bool = cast(dict, kwargs).get("full", False)
-        await exporter.finish_export_db(
-            ctx["redis"],
-            query_hash,
-            offset,
-            requested,
-            requested,
-            full,
-            xp_format,
-        )
+        if operation == "finish":
+            payload: dict = {
+                "action": "export_complete",
+                "hash": query_hash,
+            }
+            await _publish_msg(
+                ctx["redis"],
+                payload,
+                msg_id=str(uuid4()),
+            )
 
     except asyncio.TimeoutError as e:
         # job-specific timeout handling
@@ -113,27 +111,26 @@ async def export_db(
     return None
 
 
-async def export(ctx, class_name: str, request_id: str, qhash: str, payload: dict):
+async def export(ctx, xp_format: str, request_id: str, qhash: str, payload: dict):
     """
     The core of the export pipeline, run in a worker
     """
-    mod, clas = class_name.split(".", 1)
-    cls = importlib.import_module(mod).__dict__[clas]
     connection = get_sync_redis()
+    xp_class = ctx["_exporters"][xp_format]
     request = ctx["_request"](connection, {"id": request_id})
     qi = ctx["_queryInfo"](qhash, connection)
     offset = request.offset
     requested = request.requested
     full = request.full
     try:
-        upd_exp_args = (qhash, cls.xp_format, "update", offset, requested)
+        upd_exp_args = (qhash, xp_format, "update", offset, requested)
         await export_db(
             ctx,
             *upd_exp_args,
             export=True,
             message=f"{payload.get('percentage_done', 'NA')}%",
         )
-        exporter = cls(request, qi)
+        exporter = xp_class(request, qi)
         wpath = exporter.get_working_path()
         await exporter.process_lines(payload)
         if not request.is_done(qi):
@@ -163,19 +160,19 @@ async def export(ctx, class_name: str, request_id: str, qhash: str, payload: dic
                 shutil.rmtree(f"{hpath}_query")
             if os.path.exists(f"{hpath}_segments"):
                 shutil.rmtree(f"{hpath}_segments")
-        print(
+        logging.debug(
             f"Exporting complete for request {request.id} (hash: {request.hash}) ; DELETED REQUEST"
         )
         qi.delete_request(request)
-        await cls.finish_export_db(
+        await xp_class.finish_export_db(
             qi._connection, qi.hash, offset, requested, delivered, full
         )
     except Exception as e:
-        shutil.rmtree(cls.get_dl_path_from_hash(qhash, offset, requested, full))
+        shutil.rmtree(xp_class.get_dl_path_from_hash(qhash, offset, requested, full))
         await export_db(
             ctx,
             qhash,
-            cls.xp_format,
+            xp_format,
             "update",
             offset,
             requested,

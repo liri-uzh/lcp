@@ -99,12 +99,12 @@ export default {
         this.notifs = [{when: nowStr, name: data.filename, msg: `Started exporting to ${data.format}`, dl_info: info, warn: true}, ...this.notifs];
         this.warn = true;
       }
-      if (data["action"] == "export_complete") {
+      else if (data["action"] == "export_complete") {
         const info = {created_at: nowStr, status: data.status || "downloading", hash: data.hash};
         this.notifs = [{when: nowStr, name: data.filename, msg: `Downloading ${data.format} export file`, dl_info: info, warn: true}, ...this.notifs];
         this.warn = true;
       }
-      if (data["action"] == "export_notifs") {
+      else if (data["action"] == "export_notifs") {
         const n_notifs = this.notifs.length;
         const _notifs = [...this.notifs];
         for (let [
@@ -118,7 +118,7 @@ export default {
           requested,
           delivered,
           filename,
-          created_at, // eslint-disable-line no-unused-vars
+          created_at,
           modified_at
         ] of data.exports) {
           const d = new Date(modified_at).toLocaleString();
@@ -129,7 +129,8 @@ export default {
             requested: requested,
             delivered: delivered,
             status: status,
-            created_at: created_at
+            created_at: created_at,
+            modified_at: modified_at
           };
           const obj = {name: filename, when: d, msg: `Exported ${filename}`, dl_info: info};
           if (status == "failed")
@@ -149,9 +150,27 @@ export default {
         if (n_notifs > 0 && this.notifs.length != n_notifs)
           this.warn = true;
       }
+      else
+        return false // do not clear non-export messages
       this.notifs = this.notifs
-        .sort((a,b)=>new Date(b.dl_info.created_at) > new Date(a.dl_info.created_at))
-        .filter((n,i,a) => !a.slice(0,i).find(x=>x.dl_info.hash == n.dl_info.hash));
+        .sort((a,b)=>{
+          let bd = new Date(b.dl_info.created_at).getTime();
+          let ad = new Date(a.dl_info.created_at).getTime();
+          if (bd == ad) {
+            bd = new Date(bd.when).getTime();
+            ad = new Date(ad.when).getTime();
+          }
+          return ad > bd ? -1 : 1;
+        })
+        .filter((n,i,a) => {
+          // Discard "start" notifications in favor of other notifications re. the same hash
+          if (n.msg.startsWith("Started exporting to ") && a.find((x)=>x.dl_info.hash == n.dl_info.hash && !x.msg.startsWith("Started exporting to ")))
+            return false;
+          // Discard older notifications re. the same hash
+          if (a.slice(0,i).find(x=>x.dl_info.hash == n.dl_info.hash))
+            return false;
+          return true;
+        });
     }
   },
   computed: {
@@ -162,7 +181,10 @@ export default {
       handler() {
         let _messages = this.messages;
         if (_messages.length > 0) {
-          _messages.forEach(message => this.onSocketMessage(message))
+          _messages.forEach(message => {
+            const shouldClear = this.onSocketMessage(message);
+            if (shouldClear !== false) useWsStore().remove(message);
+          });
         }
       },
       immediate: true,

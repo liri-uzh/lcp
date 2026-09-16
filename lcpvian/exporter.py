@@ -219,7 +219,7 @@ class Exporter:
         xp_format: str = "xml",
     ):
         """
-        Mark an export in the DB as finished
+        Mark an export in the DB as finished and publish a msg
         """
         path = cls.get_dl_path_from_hash(qhash, offset, requested, full, filename=True)
         await enqueue(
@@ -232,15 +232,6 @@ class Exporter:
             delivered=delivered,
             path=path,
             queue="internal",
-        )
-        payload: dict[str, Any] = {
-            "action": "export_complete",
-            "hash": qhash,
-        }
-        await _publish_msg(
-            connection,
-            payload,
-            msg_id=str(uuid4()),
         )
 
     @classmethod
@@ -267,13 +258,14 @@ class Exporter:
             filename = f"{cshortname} {datetime.datetime.now().strftime('%Y-%m-%d %I:%M%p')}{ext}"
         filename = sanitize_filename(filename)
         corpus_folder = sanitize_filename(cshortname or config.get("project_id", ""))
-        userpath: str = os.path.join(corpus_folder, filename)
+        relpath: str = os.path.join(corpus_folder, filename)
         suffix: int = 0
-        while os.path.exists(os.path.join(RESULTS_USERS, request.user, userpath)):
+        while os.path.exists(os.path.join(RESULTS_USERS, request.user, relpath)):
             suffix += 1
-            userpath = os.path.join(
+            relpath = os.path.join(
                 corpus_folder, f"{os.path.splitext(filename)[0]} ({suffix}){ext}"
             )
+        userpath = os.path.join(RESULTS_USERS, request.user, relpath)
         filepath = app["exporters"][xp_format].get_dl_path_from_hash(
             shash, request.offset, request.requested, request.full, filename=True
         )
@@ -285,21 +277,30 @@ class Exporter:
             "create",
             request.offset,
             request.requested,
-            kwargs={
-                "user_id": request.user,
-                "userpath": userpath,
-                "corpus_id": request.corpus,
-                "should_run": should_run,
-                "full": request.full,
-            },
+            user_id=request.user,
+            relpath=relpath,
+            corpus_id=request.corpus,
+            should_run=should_run,
+            full=request.full,
             queue="internal",
         )
         if should_run:
             shutil.rmtree(epath)
         else:
+            # File already exists on disk: export has completed before, we're good
             if not os.path.exists(userpath) and not os.path.islink(userpath):
                 try:
                     os.symlink(os.path.abspath(filepath), userpath)
+                    # Notify that the export is ready
+                    await cls.finish_export_db(
+                        app["redis"],
+                        shash,
+                        request.offset,
+                        request.requested,
+                        request.requested,
+                        request.full,
+                        xp_format,
+                    )
                 except Exception as e:
                     print(f"Problem with creating symlink {filepath}->{userpath}", e)
         return should_run
@@ -320,7 +321,7 @@ class Exporter:
     async def launch_export(self, payload: dict) -> None:
         await enqueue(
             "exporter.export",
-            f"{self.__class__.__module__}.{self.__class__.__name__}",
+            self.xp_format,
             self._request.id,
             self._qi.hash,
             payload,
@@ -479,7 +480,7 @@ class Exporter:
                         continue
                     props = {
                         "from": str(ann_pos),
-                        "to": str(ann_pos + n_anns),
+                        "to": str(ann_pos + n_anns - 1),
                         **{k: str(v) for k, v in ann_props.items()},
                     }
                     ann_node = getattr(E, ann_layer)(**props)

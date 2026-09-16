@@ -217,8 +217,10 @@ export default {
       handler() {
         let _messages = this.messages;
         if (_messages.length > 0) {
-          _messages.forEach((message) => this.onSocketMessage(message));
-          useWsStore().clear();
+          _messages.forEach((message) => {
+            const shouldClear = this.onSocketMessage(message);
+            if (shouldClear !== false) useWsStore().remove(message);
+          });
         }
       },
       immediate: true,
@@ -266,6 +268,7 @@ export default {
           return;
         }
       }
+      return false; // do not clear non-user messages
     },
     fetch() {
       let data = {
