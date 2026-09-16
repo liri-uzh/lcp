@@ -1,6 +1,4 @@
-import asyncio
 import datetime
-import importlib
 import json
 import lxml.etree
 import os
@@ -15,7 +13,6 @@ from intervaltree import IntervalTree
 from lxml.builder import E
 from redis.asyncio import Redis as RedisConnection
 from typing import Any, cast
-from uuid import uuid4
 
 from xml.sax.saxutils import escape, quoteattr
 
@@ -25,7 +22,6 @@ from .utils import (
     _get_iso639_3,
     _get_mapping,
     _is_anchored,
-    _publish_msg,
     is_prepared_annotation,
     range_from_str,
     sanitize_filename,
@@ -302,23 +298,28 @@ class Exporter:
                         xp_format,
                     )
                 except Exception as e:
-                    print(f"Problem with creating symlink {filepath}->{userpath}", e)
+                    raise RuntimeError(
+                        f"Problem with creating symlink {filepath}->{userpath}", e
+                    )
         return should_run
 
-    async def error(self, error: str) -> None:
+    @classmethod
+    async def error(
+        cls, error: str, qhash: str, offset: int = 0, requested: int = 200
+    ) -> None:
         await enqueue(
             "exporter.export_db",
-            self._qi.hash,
-            self.__class__.xp_format,
+            qhash,
+            cls.xp_format,
             "update",
-            self._request.offset,
-            self._request.requested,
+            offset,
+            requested,
             failure=True,
             message=error,
             queue="internal",
         )
 
-    async def launch_export(self, payload: dict) -> None:
+    async def export_payload(self, payload: dict) -> None:
         await enqueue(
             "exporter.export",
             self.xp_format,

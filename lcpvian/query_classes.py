@@ -371,7 +371,7 @@ class Request:
             xp_format = self.to_export.get("format", "xml") or "xml"
             req = next(r for r in qi.requests if r.to_export)
             exporter = app["exporters"][xp_format](req, qi)
-            await exporter.launch_export(payload)
+            await exporter.export_payload(payload)
         elif self.to_buffer:
             req_buffer = app["query_buffers"][self.id]
             _merge_results(req_buffer, results)
@@ -471,7 +471,7 @@ class Request:
             xp_format = self.to_export.get("format", "xml") or "xml"
             req = next(r for r in qi.requests if r.to_export)
             exporter = app["exporters"][xp_format](req, qi)
-            await exporter.launch_export(payload)
+            await exporter.export_payload(payload)
         elif self.to_buffer:
             req_buffer = app["query_buffers"][self.id]
             _merge_results(req_buffer, results)
@@ -494,8 +494,9 @@ class Request:
         if self.to_export:
             xp_format = self.to_export.get("format", "xml") or "xml"
             req = next(r for r in qi.requests if r.to_export)
-            exporter = app["exporters"][xp_format](req, qi)
-            await exporter.error(error)
+            await app["exporters"][xp_format].error(
+                error, qi.hash, offset=req.offset, requested=req.requested
+            )
         if self.to_buffer:
             try:
                 req_buffer = app["query_buffers"][self.id]

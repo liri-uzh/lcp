@@ -70,6 +70,8 @@ async def search(request: web.Request) -> web.Response:
     if not authenticator.check_corpus_searchable(cid, user_data, "lcp", get_all=False):
         return web.HTTPForbidden(text="Not allowed to access this corpus")
     request_data: dict[str, str] = await request.json()
+    if "to_export" in request_data and not user_data.get("user", {}).get("id"):
+        return web.HTTPForbidden(text="Unauthenticaed users cannot export results")
     query = request_data.get("query", "")
     kind = request_data.get("kind", "json")
     corpus_conf = request.app["config"].get(cid, {})
@@ -110,8 +112,12 @@ async def search(request: web.Request) -> web.Response:
     if job is None and qi.has_request(req):
         qi.delete_request(req)
 
-    if not synchronous:
-        return web.json_response({"query_hash": qi.hash, "request_id": req.id})
+    if not synchronous and job is not None:
+        # job is None when the query was cached, so we'll return it right away
+        # if job is not None, we respond with status 202 to signal that the process is ongoing
+        return web.json_response(
+            {"query_hash": qi.hash, "request_id": req.id}, status=202
+        )
 
     while 1:
         if not qi.has_request(req):
@@ -119,5 +125,7 @@ async def search(request: web.Request) -> web.Response:
         await asyncio.sleep(0.5)
 
     payload = app["query_buffers"].pop(req.id, {})
+    payload["query_hash"] = qi.hash  # necessary polling info
+    payload["request_id"] = req.id  # necessary polling info
 
     return web.json_response(payload)

@@ -11,6 +11,8 @@ from uuid import uuid4
 from ..jobfuncs import _db_query
 from ..utils import _publish_msg
 
+from ..abstract_query.utils import literal_sql, sql_str
+
 RESULTS_USERS = os.environ.get("RESULTS_USERS", os.path.join("results", "users"))
 RESULTS_SWISSDOX = os.environ.get("RESULTS_SWISSDOX", "results/swissdox")
 
@@ -57,9 +59,9 @@ async def export_notifs(
             )
             user_id = str(user_id_from_res)
             full = cast(int, requested) <= 0
-            exp_class = ctx["_exporters"][xp_format]
+            xp_class = ctx["_exporters"][xp_format]
             user_folder = os.path.join(RESULTS_USERS, user_id)
-            srcfn = exp_class.get_dl_path_from_hash(ehash, offset, requested, full)  # type: ignore
+            srcfn = xp_class.get_dl_path_from_hash(ehash, offset, requested, full)  # type: ignore
             # TODO: maybe create an ExporterSwissdox class?
             if xp_format == "swissdox":
                 srcfn = os.path.join(
@@ -75,7 +77,15 @@ async def export_notifs(
                 try:
                     os.symlink(os.path.abspath(srcfn), destfn)
                 except Exception as e:
-                    print(f"Problem with creating symlink {srcfn}->{destfn}", e)
+                    await xp_class.error(
+                        f"Problem with creating symlink",
+                        ehash,
+                        offset=cast(int, offset),
+                        requested=cast(int, requested),
+                    )
+                    raise RuntimeError(
+                        f"Problem with creating symlink {srcfn}->{destfn}", e
+                    )
             msg_id = str(uuid4())
             jso = {
                 "user": user_id,
@@ -84,3 +94,25 @@ async def export_notifs(
                 "exports": [res],
             }
             await _publish_msg(ctx["redis"], jso, msg_id)
+
+
+async def get_exports(ctx, user_id: str = "", ehash: str = "", **kwargs):
+    """
+    Fetch all applicable entries from main.exports
+    """
+    query: str = ""
+    if user_id:
+        assert ";" not in user_id and "'" not in user_id
+        query = f"SELECT * FROM main.exports WHERE user_id = '{user_id}'"
+    elif ehash:
+        assert ";" not in ehash and "'" not in ehash
+        query = f"SELECT * FROM main.exports WHERE query_hash = '{ehash}'"
+
+    for k, v in kwargs.items():
+        query = query + sql_str(" AND {} = {}", k, literal_sql(v))
+
+    query = query + ";"
+    print("query", query)
+    result = await _db_query(ctx, query, {}, user=user_id, hash=ehash, is_main=True)
+
+    return result

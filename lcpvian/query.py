@@ -22,6 +22,25 @@ from .utils import (
 )
 
 from .tasks.query import schedule_next_batch
+from .tasker import enqueue
+
+
+async def forbidden(app, user, room, msg):
+    """
+    Raise a HTTPForbidden error and send a WS message
+    """
+    fail = {
+        "status": "403",
+        "error": "Forbidden",
+        "action": "query_error",
+        "user": user,
+        "room": room,
+        "info": msg,
+    }
+    logging.error(msg, extra=fail)
+    just = (room, user or "")
+    await push_msg(app["websockets"], room, cast(dict, fail), just=just)
+    raise web.HTTPForbidden(text=msg)
 
 
 async def process_query(
@@ -80,11 +99,14 @@ async def process_query(
     )
     job: Job | None = None
     should_run: bool = True
-    if request.to_export and request.user:
+    if request.to_export:
         xp_format: str = request.to_export.get("format", "xml") or "xml"
-        should_run = await app["exporters"][xp_format].initiate_db(
-            app, shash, config, request
-        )
+        try:
+            should_run = await app["exporters"][xp_format].initiate_db(
+                app, shash, config, request
+            )
+        except:
+            await enqueue("export")
     if should_run:
         qi.add_request(request)
         # pass QueryInfo to schedule_next_batch, defined in ./tasks/ (no import of query_classes)
@@ -139,21 +161,7 @@ async def post_query(request: web.Request) -> web.Response:
         str(corpus), user_data, app_type, get_all=False
     )
     if not allowed:
-        fail: dict[str, str] = {
-            "status": "403",
-            "error": "Forbidden",
-            "action": "query_error",
-            "user": user,
-            "room": room,
-            "info": "Attempted access to an unauthorized corpus",
-        }
-        msg = "Attempted access to an unauthorized corpus"
-        # # alert everyone possible about this problem:
-        print(msg)
-        logging.error(msg, extra=fail)
-        just: tuple[str, str] = (room, user or "")
-        await push_msg(app["websockets"], room, cast(dict, fail), just=just)
-        raise web.HTTPForbidden(text=msg)
+        await forbidden(app, user, room, "Attempted access to an unauthorized corpus")
 
     try:
         req, qi, job = await process_query(app, request_data)
@@ -162,7 +170,9 @@ async def post_query(request: web.Request) -> web.Response:
         traceback.print_exc()
         raise web.HTTPBadRequest(reason=str(e))
 
-    if req.to_export and req.user:
+    if req.to_export:
+        if not req.user:
+            await forbidden(app, user, room, "Unauthorized users cannot export results")
         xpformat = req.to_export.get("format", "xml") or "xml"
         if xpformat == "swissdox":
             user_account = cast(dict, user_data.get("user", user_data.get("account")))

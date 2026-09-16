@@ -87,7 +87,7 @@ class Exporter(ExporterXML):
             connection, qhash, offset, requested, delivered, full, "swissdox"
         )
 
-    async def launch_export(self, payload: dict) -> None:
+    async def export_payload(self, payload: dict) -> None:
         """
         Entrypoint to export a payload; run finalize if all the payloads have been processed
         """
