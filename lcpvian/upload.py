@@ -61,7 +61,7 @@ async def _create_status_check(request: web.Request, job_id: str) -> web.Respons
     kwargs = await get_job_kwargs(job)
     ret = {
         "job": job_id,
-        "status": status,
+        "status": "finished" if status == "complete" else "failed",
         "info": msg,
         "project": kwargs["project"],
         "project_name": kwargs["project_name"],
@@ -97,7 +97,7 @@ async def _status_check(request: web.Request, job_id: str) -> web.Response:
         """
     ret = {
         "job": job_id,
-        "status": status,
+        "status": "finished" if status == "complete" else status,
         "info": " ".join(msg.split()),
         "project": project,
     }
@@ -396,6 +396,14 @@ async def _complete_file(request: web.Request, payload: dict) -> dict[str, str |
 async def create_upload(request: web.Request) -> web.Response:
     is_valid, payload = await _validate_upload_request(request)
     if not is_valid:
+        try:
+            # try to report the upload as failed in the DB, if the error doesn't prevent this
+            metadata = _parse_tus_metadata(request.headers.get("Upload-Metadata", ""))
+            job = Job(metadata["job_id"], redis=request.app["aredis"])
+            kwargs = await get_job_kwargs(job)
+            await enqueue("upload.error", kwargs["schema_path"])
+        except:
+            pass
         return web.json_response({"error": payload.get("error", "")}, status=403)
 
     upload_id = str(uuid4())
@@ -713,6 +721,8 @@ async def make_schema(request: web.Request) -> web.Response:
         project=proj_id,
         project_name=existing_project["title"],
         corpus_name=corpus_name,
+        schema_path=schema_name,  # save in kwargs for reference
+        path=corpus_path,  # save in kwargs for reference
         queue="background",
     )
     job_id = "" if job is None else job.job_id

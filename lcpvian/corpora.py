@@ -191,7 +191,9 @@ async def corpora_overwrite(request: web.Request) -> web.Response:
         if job_id:
             job = Job(job_id, redis=request.app["aredis"])
             job_status = await job.status()
-            status_response: dict[str, str] = {"status": job_status}
+            status_response: dict[str, str] = {
+                "status": "finished" if job_status == "complete" else job_status
+            }
             if job_status == "failed":  # TODO: arq doesn't return "failed"
                 try:
                     status_response["error"] = str(job.latest_result().exc_string)  # type: ignore
@@ -241,7 +243,7 @@ async def corpora_overwrite(request: web.Request) -> web.Response:
 
     args_overwrite = (corpora_id, overwrite_id)
     job_overwrite: Job | None = await enqueue(
-        "corpora.overwrite_corpus", *args_overwrite, queue="internal"
+        "upload.overwrite_corpus", *args_overwrite, queue="internal"
     )
 
     info: dict[str, str | list[str]] = {

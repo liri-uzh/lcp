@@ -31,6 +31,18 @@ MEDIA_EXTENSIONS = ("mp3", "mp4", "wav", "ogg", "png", "jpg", "jpeg", "bmp")
 UPLOADS_PATH = os.getenv("TEMP_UPLOADS_PATH", "uploads")
 
 
+async def error(ctx, schema_path):
+    """
+    Report the upload as failed in the inprogress_corpus table
+    """
+    async with ctx["_upool"].begin() as conn:
+        raw = await conn.get_raw_connection()
+        con = raw._connection
+        async with con.transaction():
+            logging.error(f"Error when upload corpus in temporary schema {schema_path}")
+            await con.execute(f"CALL main.cleanup('{schema_path}'::uuid);")
+
+
 async def overwrite_corpus(
     ctx, corpus_id: int, to_be_overwritten: int, queue: str = "internal"
 ):
@@ -117,6 +129,8 @@ async def insert_data(
         }
 
         await _sharepublish_msg(cast(JSONObject, jso), msg_id)
+
+        return row
     except Exception as e:
         tb = traceback.format_exc()
         print(f"Upload failure: {e.__class__} : {e}; {tb}")
@@ -153,6 +167,7 @@ async def create(
     project: str = "",
     project_name: str = "",
     corpus_name: str = "",
+    **kwargs,  # so they can be attached to the job
 ):
     status = "success"
     error = ""

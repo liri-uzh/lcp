@@ -7,7 +7,7 @@ import sentry_sdk
 
 from arq.jobs import Job
 
-from .redis import get_redis, set_job_kwargs
+from .redis import get_redis, set_job_kwargs, get_job_kwargs
 from .tasks import _registered_tasks
 
 TRIM_ARGS = 80  # number of characters to trim down the string representation of (keyword) arguments
