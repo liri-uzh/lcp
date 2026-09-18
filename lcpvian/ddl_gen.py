@@ -356,7 +356,8 @@ class Table(DDL):
 
     def create_idxs(self, schema: str, no_index: set[str] = set()) -> list[str]:
         ret = [
-            f'CREATE INDEX ON "{schema}".{self.name} ' + idx
+            f'CREATE INDEX "{self.name}-{col.name.lower()}_idx" ON "{schema}".{self.name} '
+            + idx
             for col in self.cols
             if (idx := col.ret_idx()) and col.name.lower() not in no_index
         ]
