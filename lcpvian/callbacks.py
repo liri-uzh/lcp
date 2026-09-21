@@ -19,7 +19,7 @@ from typing import cast
 from uuid import uuid4
 
 
-from redis.asyncio import Redis as RedisConnection
+from arq import ArqRedis
 
 from arq.jobs import Job
 
@@ -37,7 +37,7 @@ RESULTS_USERS = os.environ.get("RESULTS_USERS", os.path.join("results", "users")
 
 async def _general_failure(
     job: Job,
-    connection: RedisConnection,
+    connection: ArqRedis,
     typ: type,
     value: BaseException,
     trace: TracebackType | None,
@@ -76,3 +76,17 @@ async def _general_failure(
         jso["action"] = "timeout"
 
     await _publish_msg(connection, jso, msg_id)
+
+
+def handle_general_failure(task_method):
+    async def task_wrapper(ctx, *args, **kwargs):
+        try:
+            await task_method(ctx, *args, **kwargs)
+        except Exception as e:
+            job = cast(Job, Job(ctx["job_id"], ctx["redis"]))
+            await _general_failure(job, ctx["redis"], e.__class__, e, e.__traceback__)
+
+    # Overwrite attributes checked in tasks/__init__.py to register the tasks
+    task_wrapper.__module__ = task_method.__module__
+    task_wrapper.__qualname__ = task_method.__qualname__
+    return task_wrapper

@@ -47,7 +47,6 @@ from arq.jobs import Job, JobDef
 
 from .authenticate import Authentication
 
-# from .callbacks import _general_failure
 from .redis import get_shared_redis
 from .typed import (
     Config,

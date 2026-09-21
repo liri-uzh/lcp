@@ -13,6 +13,7 @@ from typing import Any, cast
 from uuid import uuid4
 from xml.sax.saxutils import escape, quoteattr
 
+from ..callbacks import handle_general_failure
 from ..jobfuncs import _db_query
 from ..typed import CorpusConfig, JSONObject
 from ..utils import (
@@ -30,6 +31,7 @@ RESULTS_USERS = os.environ.get("RESULTS_USERS", os.path.join("results", "users")
 UPLOAD_MEDIA_PATH = os.environ.get("UPLOAD_MEDIA_PATH", "media")
 
 
+@handle_general_failure
 async def document(
     ctx,
     schema: str,
@@ -104,6 +106,7 @@ async def document(
     await _publish_msg(ctx["redis"], cast(JSONObject, jso), msg_id)
 
 
+@handle_general_failure
 async def document_ids(
     ctx,
     schema: str,
@@ -179,6 +182,7 @@ async def document_ids(
     await _publish_msg(ctx["redis"], cast(JSONObject, jso), msg_id)
 
 
+@handle_general_failure
 async def annotations(
     ctx,
     config: CorpusConfig,
@@ -316,6 +320,7 @@ async def annotations(
     await _publish_msg(ctx["redis"], cast(JSONObject, jso), msg_id)
 
 
+@handle_general_failure
 async def image_annotations(
     ctx,
     config: CorpusConfig,
@@ -398,6 +403,7 @@ async def image_annotations(
     await _publish_msg(ctx["redis"], cast(JSONObject, jso), msg_id)
 
 
+@handle_general_failure
 async def clip_media(
     ctx,
     config: CorpusConfig,

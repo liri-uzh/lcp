@@ -12,6 +12,8 @@ from typing import cast
 from uuid import uuid4
 
 from .configure import get_config
+
+from ..callbacks import handle_general_failure
 from ..impo import Importer
 from ..jobfuncs import _db_query
 from ..typed import DBQueryParams, JSONObject, MainCorpus
@@ -43,6 +45,7 @@ async def error(ctx, schema_path):
             await con.execute(f"CALL main.cleanup('{schema_path}'::uuid);")
 
 
+@handle_general_failure
 async def overwrite_corpus(
     ctx, corpus_id: int, to_be_overwritten: int, queue: str = "internal"
 ):
@@ -159,6 +162,7 @@ async def insert_data(
             await _publish_msg(ctx["redis"], cast(JSONObject, jso), msg_id)
 
 
+@handle_general_failure
 async def create(
     ctx,
     create: str,

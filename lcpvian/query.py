@@ -82,10 +82,11 @@ async def process_query(
         config=config,
         lang=lang,
     )
-    print("SQL query:", sql_query)
+    logging.debug(f"SQL query:\n{sql_query}")
     shash = hasher(sql_query)
     local_kind = request_data.get("kind")
     local_query = request_data.get("localQuery")
+    logging.debug(f"{local_kind} query:\n{local_query}")
     local_queries: dict = {k: v for k, v in [(local_kind, local_query)] if k and v}
     qi = QueryInfo(
         shash,

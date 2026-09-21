@@ -10,6 +10,7 @@ import shutil
 from typing import cast
 from uuid import uuid4
 
+from ..callbacks import handle_general_failure
 from ..redis import get_sync_redis
 from ..utils import _publish_msg
 
@@ -18,6 +19,7 @@ RESULTS_DIR = os.getenv("RESULTS", "results")
 RESULTS_USERS = os.environ.get("RESULTS_USERS", os.path.join("results", "users"))
 
 
+@handle_general_failure  # or maybe not?
 async def export_db(
     ctx,
     query_hash: str,
@@ -99,11 +101,7 @@ async def export_db(
             async with con.transaction():
                 await con.execute(query)
 
-        # await _general_failure(
-        #     ctx["job"], ctx["redis"], asyncio.TimeoutError, e, e.__traceback__
-        # )
-        # Optionally re-raise so Arq retries or fails according to max_tries
-        raise
+        raise e
     except Exception as e:
         # on_failure for other errors
         print("Error when handling export", e)
@@ -111,6 +109,7 @@ async def export_db(
     return None
 
 
+@handle_general_failure  # or maybe not?
 async def export(ctx, xp_format: str, request_id: str, qhash: str, payload: dict):
     """
     The core of the export pipeline, run in a worker

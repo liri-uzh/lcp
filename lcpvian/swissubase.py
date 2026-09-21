@@ -8,8 +8,6 @@ except ImportError:
     from aiohttp import web
     from aiohttp.client import ClientSession
 
-# from .callbacks import _general_failure
-
 SWISSUBASE_BASE_URL = os.environ.get(
     "SWISSUBASE_API_URL", "https://demo.swissubase.ch/api"
 )

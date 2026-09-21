@@ -84,9 +84,6 @@ class QueryService:
         """
         if specific_job:
             rel_jobs = [str(specific_job)]
-        else:
-            rel_jobs = self.app["query"].started_job_registry.get_job_ids()
-            rel_jobs += self.app["query"].scheduled_job_registry.get_job_ids()
 
         jobs = set(rel_jobs)
         ids = []

@@ -3,6 +3,7 @@ Async tasks called from query.py
 """
 
 import re
+import traceback
 
 from arq.jobs import Job
 from intervaltree import IntervalTree
@@ -10,6 +11,7 @@ from redis import Redis as RedisConnection
 from typing import cast
 from uuid import uuid4
 
+from ..callbacks import handle_general_failure
 from ..redis_proxies import RedisDict
 from ..utils import (
     get_segment_meta_script,
@@ -51,6 +53,7 @@ async def schedule_next_batch(
     return cast(Job | None, job)
 
 
+@handle_general_failure
 async def do_segment_and_meta(
     ctx,
     qhash: str,
@@ -67,107 +70,127 @@ async def do_segment_and_meta(
         return
     if all(r.raw_hits for r in qi.requests):
         return
-    batch_hash, _ = qi.query_batches[batch_name]
-    batch_results: list = qi.get_from_cache(batch_hash)
 
-    segment: str = qi.config["firstClass"]["segment"]
-    export_to_xml = any(
-        r.to_export and r.to_export.get("format") == "xml" for r in qi.requests
-    )
+    # Embed what comes next in a main try-except statement to handle errors at the QI level
+    try:
 
-    kwics = [x for x in qi.result_sets if x.get("type") == "plain"]
-    kwics_ids = [
-        next(y for y in x.get("attributes", []) if y.get("name") == "identifier")
-        for x in kwics
-    ]
-    context: None | str = kwics_ids[0].get("layer", segment)
-    assert all(x.get("layer") == context for x in kwics_ids), ReferenceError(
-        f"All contexts in the plain results must refer to the same annotation layer"
-    )
-    if not export_to_xml:
-        context = None
+        batch_hash, _ = qi.query_batches[batch_name]
+        batch_results: list = qi.get_from_cache(batch_hash)
 
-    script, meta_labels = get_segment_meta_script(
-        qi.config, qi.languages, batch_name, context=context
-    )
+        segment: str = qi.config["firstClass"]["segment"]
+        export_to_xml = any(
+            r.to_export and r.to_export.get("format") == "xml" for r in qi.requests
+        )
 
-    all_segment_ids: dict[str, int | list[int]] = qi.segment_ids_in_results(
-        batch_results,
-        offset_this_batch,
-        offset_this_batch + lines_this_batch,
-    )
-    segments_this_batch = qi.segments_for_batch.get(batch_name, {})
-    if isinstance(segments_this_batch, RedisDict):
-        segments_this_batch = segments_this_batch.to_dict()
-    existing_sids: dict[str, int] = {
-        sid: 1 for _, sids in segments_this_batch.items() for sid in sids
-    }
-    needed_sids: dict[str, int] = {
-        sid: 1 for sid in all_segment_ids if sid not in existing_sids
-    }
-    if existing_sids:
-        print(
-            f"Found {len(existing_sids)}/{len(all_segment_ids)} segments in cache for {batch_name}"
+        kwics = [x for x in qi.result_sets if x.get("type") == "plain"]
+        kwics_ids = [
+            next(y for y in x.get("attributes", []) if y.get("name") == "identifier")
+            for x in kwics
+        ]
+        context: None | str = kwics_ids[0].get("layer", segment)
+        assert all(x.get("layer") == context for x in kwics_ids), ReferenceError(
+            f"All contexts in the plain results must refer to the same annotation layer"
         )
-    if export_to_xml and context != segment:
-        # Force re-querying the segments and their meta for wide contexts when exporting to XML
-        needed_sids = {sid: 1 for sid in all_segment_ids}
-        print(
-            f"Running the segment query (again?) for export purposes -- it might take a while"
+        if not export_to_xml:
+            context = None
+
+        script, meta_labels = get_segment_meta_script(
+            qi.config, qi.languages, batch_name, context=context
         )
-    if not needed_sids:
-        print(f"No new segment query needed for {batch_name}")
-    else:
-        qi.qi["meta_labels"] = meta_labels
-        squery_id = str(uuid4())
-        print(
-            f"Running new segment query for {batch_name} -- {squery_id} ({len(needed_sids)} sids)"
+
+        all_segment_ids: dict[str, int | list[int]] = qi.segment_ids_in_results(
+            batch_results,
+            offset_this_batch,
+            offset_this_batch + lines_this_batch,
         )
-        await qi.query(
-            squery_id, script, params={"sids": [sid for sid in needed_sids]}, ctx=ctx
-        )
-        if batch_name not in qi.segments_for_batch:
-            qi.segments_for_batch[batch_name] = {}
-        qi.segments_for_batch[batch_name][squery_id] = needed_sids
-    # Calculate which lines from res should be sent to each request
-    reqs_offsets = {r.id: r.lines_for_batch(qi, batch_name) for r in qi.requests}
-    reqs_sids: dict[str, dict[str, int | list[int]]] = {
-        req_id: qi.segment_ids_in_results(batch_results, o, o + l)
-        for req_id, (o, l) in reqs_offsets.items()
-    }
-    reqs_itvls: dict[str, IntervalTree] = {}
-    for req_id, sids_to_crs in reqs_sids.items():
-        reqs_itvls[req_id] = IntervalTree()
-        for char_range in sids_to_crs.values():
-            reqs_itvls[req_id][range(*cast(list[int], char_range))] = 1
-    segments_this_batch = cast(RedisDict, qi.segments_for_batch[batch_name]).to_dict()
-    for sqid in segments_this_batch:
-        reqs_nlines: dict[str, dict[str, int]] = {req_id: {} for req_id in reqs_sids}
-        lines: list
-        try:
-            lines = qi.get_from_cache(sqid)
-        except:
-            sids = [si for si in segments_this_batch[sqid]]
-            lines = await qi.query(sqid, script, params={"sids": sids}, ctx=ctx)
-        # Be smart about which lines to include
-        for nline, (rtype, content) in enumerate(lines):
-            for req_id, sids_in_req in reqs_sids.items():
-                # No longer using sids_in_req here since we're using char_range
-                cr: str | dict = content[-1]
-                if isinstance(cr, dict):
-                    cr = cr.get("char_range", "")
-                if not isinstance(cr, str) or not re.match(r"\[\d+,\d+\)", cr):
+        segments_this_batch = qi.segments_for_batch.get(batch_name, {})
+        if isinstance(segments_this_batch, RedisDict):
+            segments_this_batch = segments_this_batch.to_dict()
+        existing_sids: dict[str, int] = {
+            sid: 1 for _, sids in segments_this_batch.items() for sid in sids
+        }
+        needed_sids: dict[str, int] = {
+            sid: 1 for sid in all_segment_ids if sid not in existing_sids
+        }
+        if existing_sids:
+            print(
+                f"Found {len(existing_sids)}/{len(all_segment_ids)} segments in cache for {batch_name}"
+            )
+        if export_to_xml and context != segment:
+            # Force re-querying the segments and their meta for wide contexts when exporting to XML
+            needed_sids = {sid: 1 for sid in all_segment_ids}
+            print(
+                f"Running the segment query (again?) for export purposes -- it might take a while"
+            )
+        if not needed_sids:
+            print(f"No new segment query needed for {batch_name}")
+        else:
+            qi.qi["meta_labels"] = meta_labels
+            squery_id = str(uuid4())
+            print(
+                f"Running new segment query for {batch_name} -- {squery_id} ({len(needed_sids)} sids)"
+            )
+            await qi.query(
+                squery_id,
+                script,
+                params={"sids": [sid for sid in needed_sids]},
+                ctx=ctx,
+            )
+            if batch_name not in qi.segments_for_batch:
+                qi.segments_for_batch[batch_name] = {}
+            qi.segments_for_batch[batch_name][squery_id] = needed_sids
+        # Calculate which lines from res should be sent to each request
+        reqs_offsets = {r.id: r.lines_for_batch(qi, batch_name) for r in qi.requests}
+        reqs_sids: dict[str, dict[str, int | list[int]]] = {
+            req_id: qi.segment_ids_in_results(batch_results, o, o + l)
+            for req_id, (o, l) in reqs_offsets.items()
+        }
+        reqs_itvls: dict[str, IntervalTree] = {}
+        for req_id, sids_to_crs in reqs_sids.items():
+            reqs_itvls[req_id] = IntervalTree()
+            for char_range in sids_to_crs.values():
+                reqs_itvls[req_id][range(*cast(list[int], char_range))] = 1
+        segments_this_batch = cast(
+            RedisDict, qi.segments_for_batch[batch_name]
+        ).to_dict()
+        for sqid in segments_this_batch:
+            reqs_nlines: dict[str, dict[str, int]] = {
+                req_id: {} for req_id in reqs_sids
+            }
+            lines: list
+            try:
+                lines = qi.get_from_cache(sqid)
+            except:
+                sids = [si for si in segments_this_batch[sqid]]
+                lines = await qi.query(sqid, script, params={"sids": sids}, ctx=ctx)
+            # Be smart about which lines to include
+            for nline, (rtype, content) in enumerate(lines):
+                for req_id, sids_in_req in reqs_sids.items():
+                    # No longer using sids_in_req here since we're using char_range
+                    cr: str | dict = content[-1]
+                    if isinstance(cr, dict):
+                        cr = cr.get("char_range", "")
+                    if not isinstance(cr, str) or not re.match(r"\[\d+,\d+\)", cr):
+                        continue
+                    if not reqs_itvls[req_id][range_from_str(cast(str, cr))]:
+                        continue
+                    reqs_nlines[req_id][str(nline)] = 1
+            for r in qi.requests:
+                if sqid in r.segment_lines_for_hash:
                     continue
-                if not reqs_itvls[req_id][range_from_str(cast(str, cr))]:
-                    continue
-                reqs_nlines[req_id][str(nline)] = 1
-        for r in qi.requests:
-            if sqid in r.segment_lines_for_hash:
-                continue
-            r.segment_lines_for_hash[sqid] = reqs_nlines[r.id]
-    await qi.publish(batch_name, "segments")
+                r.segment_lines_for_hash[sqid] = reqs_nlines[r.id]
+        await qi.publish(batch_name, "segments")
+
+    # Error: notify at the QI level
+    except Exception as e:
+        if batch_name in qi.running_batches:
+            del qi.running_batches[batch_name]
+        tb = traceback.format_exc()
+        await qi.publish("\n".join([str(e), tb]), "failure")
+        raise e
 
 
+@handle_general_failure
 async def do_batch(ctx, qhash: str, batch: list):
     """
     Fetch from cache or run a main query on a batch from within a worker
@@ -181,8 +204,10 @@ async def do_batch(ctx, qhash: str, batch: list):
     if batch_name in qi.running_batches:
         # This batch is already running: stop here
         return
+
+    # Embed what comes next in a main try-except statement to handle errors at the QI level
     try:
-        # First try to retrieve from cache, otherwise actually run the query
+        # Fetch from cache or run against DB
         try:
             assert batch_name in qi.query_batches
             batch_hash, _ = qi.query_batches[batch_name]
@@ -240,6 +265,11 @@ async def do_batch(ctx, qhash: str, batch: list):
             offset_this_batch,
             lines_this_batch,
         )
-    except:
+
+    # Error: notify at the QI level
+    except Exception as e:
         if batch_name in qi.running_batches:
             del qi.running_batches[batch_name]
+        tb = traceback.format_exc()
+        await qi.publish("\n".join([str(e), tb]), "failure")
+        raise e

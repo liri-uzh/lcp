@@ -2,12 +2,11 @@
 Async tasks called from configure.py
 """
 
-import logging
-
 from arq.jobs import Job, ResultNotFound
 from typing import cast
 from uuid import uuid4
 
+from ..callbacks import handle_general_failure
 from ..jobfuncs import _db_query
 from ..typed import JSONObject
 from ..utils import (
@@ -19,6 +18,7 @@ from ..utils import (
 )
 
 
+@handle_general_failure
 async def get_config(ctx, force_refresh: bool = False, publish: bool = True):
     """
     Get initial app configuration JSON
@@ -41,7 +41,6 @@ async def get_config(ctx, force_refresh: bool = False, publish: bool = True):
     action = "set_config"
     fixed: Config = {}
     msg_id = str(uuid4())
-    # TODO(ARQ_MIGRATION): job.result may need to be accessed differently in Arq
     for tup in cast(list, result):
         made = _row_to_value(tup)
         # if not made.get("enabled"):

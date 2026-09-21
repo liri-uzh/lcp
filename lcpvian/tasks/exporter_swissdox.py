@@ -8,6 +8,7 @@ import shutil
 
 from typing import cast
 
+from ..callbacks import handle_general_failure
 from ..redis import get_sync_redis
 
 EXPORT_TTL = 5000
@@ -16,6 +17,7 @@ RESULTS_USERS = os.environ.get("RESULTS_USERS", os.path.join("results", "users")
 RESULTS_SWISSDOX = os.environ.get("RESULTS_SWISSDOX", "results/swissdox")
 
 
+@handle_general_failure  # or maybe not?
 async def export(ctx, xp_format: str, request_id: str, qhash: str, payload: dict):
     """
     The core of the export pipeline, run in a worker

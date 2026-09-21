@@ -8,6 +8,7 @@ import os
 from typing import Any, cast
 from uuid import uuid4
 
+from ..callbacks import handle_general_failure
 from ..jobfuncs import _db_query
 from ..utils import _publish_msg
 
@@ -17,6 +18,7 @@ RESULTS_USERS = os.environ.get("RESULTS_USERS", os.path.join("results", "users")
 RESULTS_SWISSDOX = os.environ.get("RESULTS_SWISSDOX", "results/swissdox")
 
 
+@handle_general_failure  # or maybe not?
 async def export_notifs(
     ctx, user_id: str = "", ehash: str = "", delay: float = 0.0
 ) -> None:
@@ -96,6 +98,7 @@ async def export_notifs(
             await _publish_msg(ctx["redis"], jso, msg_id)
 
 
+@handle_general_failure
 async def get_exports(ctx, user_id: str = "", ehash: str = "", **kwargs):
     """
     Fetch all applicable entries from main.exports

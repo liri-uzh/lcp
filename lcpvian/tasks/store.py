@@ -8,11 +8,13 @@ import uuid
 from typing import Any
 from uuid import uuid4
 
+from ..callbacks import handle_general_failure
 from ..jobfuncs import _db_query
 from ..typed import JSONObject
 from ..utils import _publish_msg
 
 
+@handle_general_failure
 async def fetch_queries(
     ctx,
     user: str,
@@ -68,6 +70,7 @@ async def fetch_queries(
     await _publish_msg(ctx["redis"], jso, msg_id)
 
 
+@handle_general_failure
 async def store_query(
     ctx,
     query_data: JSONObject,

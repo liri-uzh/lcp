@@ -5,10 +5,12 @@ Async tasks called from corpora.py
 import json
 
 from .configure import get_config
+from ..callbacks import handle_general_failure
 from ..jobfuncs import _db_query
 from ..typed import DBQueryParams, JSONObject
 
 
+@handle_general_failure
 async def update_descriptions(
     ctx,
     corpus_id: int,
@@ -39,6 +41,7 @@ async def update_descriptions(
     await get_config(ctx)
 
 
+@handle_general_failure
 async def update_metadata(
     ctx,
     corpus_id: int,
@@ -83,6 +86,7 @@ async def update_metadata(
     await get_config(ctx)
 
 
+@handle_general_failure
 async def update_projects(
     ctx,
     corpus_id: int,

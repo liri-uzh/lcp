@@ -57,21 +57,6 @@ SERIALIZABLES = (
 )
 
 
-async def _qi_job_failure(
-    job: Job,
-    connection: RedisConnection,
-    typ: type,
-    value: BaseException,
-    trace: TracebackType,
-) -> None:
-    job_meta = await get_job_meta(job)
-    qi_hash: str = job_meta.get("qi_hash", "")
-    qi: QueryInfo = QueryInfo(qi_hash, connection)
-    tb = traceback.format_exc()
-    await qi.publish("\n".join([str(value), tb]), "failure")
-    # await _general_failure(job, connection, typ, value, trace)
-
-
 def _merge_results(exisitng: dict, incoming: dict):
     for k in incoming:
         if isinstance(exisitng.get(k), dict):

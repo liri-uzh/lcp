@@ -334,35 +334,6 @@ async def create_app(test: bool = False) -> web.Application:
             get_shared_redis(),
         )
 
-    redis = cast(web.Application, app)["redis"]
-
-    # different queues for different kinds of jobs
-    app.addkey("internal", Queue, Queue("internal", connection=redis, job_timeout=-1))
-    app.addkey("query", Queue, Queue("query", connection=redis))
-    app.addkey(
-        "background",
-        Queue,
-        Queue("background", connection=redis, job_timeout=-1),
-    )
-
-    # so far unused, we could potentially provide users with detailed feedback by
-    # exploiting the 'failed job registry' provided by RQ.
-    app.addkey(
-        "failed_registry_internal",
-        FailedJobRegistry,
-        FailedJobRegistry(queue=cast(Queue, app["internal"])),
-    )
-    app.addkey(
-        "failed_registry_query",
-        FailedJobRegistry,
-        FailedJobRegistry(queue=cast(Queue, app["query"])),
-    )
-    app.addkey(
-        "failed_registry_background",
-        FailedJobRegistry,
-        FailedJobRegistry(queue=cast(Queue, app["background"])),
-    )
-
     qs: QueryService = QueryService(app)
     app.addkey("query_service", QueryService, qs)
     if not test:
