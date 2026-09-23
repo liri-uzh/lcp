@@ -36,6 +36,8 @@ from .utils import (
     configure_logging,
 )
 
+from .utils import load_env
+
 load_env()
 
 from .api import list_corprora, get_corpus, search, get_search
@@ -90,7 +92,6 @@ from .video import video
 _LOADER = importlib.import_module(handle_timeout.__module__).__loader__
 C_COMPILED = "SourceFileLoader" not in str(_LOADER)
 SENTRY_DSN: str = os.getenv("SENTRY_DSN", "")
-REDIS_SHARED_DB_INDEX = int(os.getenv("REDIS_SHARED_DB_INDEX", -1))
 APP_PORT = int(os.getenv("AIO_PORT", 9090))
 DEBUG = bool(os.getenv("DEBUG", "false").lower() in TRUES)
 
@@ -323,9 +324,11 @@ async def create_app(test: bool = False) -> web.Application:
         Redis,
         get_sync_redis(),
     )
+    print("redis", app["redis"])
     app.addkey("exporters", dict, {"xml": ExporterXML, "swissdox": ExporterSwissdox})
 
-    if REDIS_SHARED_DB_INDEX > -1:
+    redis_shared_db_index = int(os.getenv("REDIS_SHARED_DB_INDEX", -1))
+    if redis_shared_db_index > -1:
         app.addkey(
             "shared_redis",
             Redis,

@@ -20,7 +20,7 @@ resources on the deployment server.
 
 from __future__ import annotations
 
-from .utils import load_env, configure_logging
+from .utils import configure_logging, load_env
 
 load_env()
 
@@ -36,7 +36,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.pool import NullPool
 from sshtunnel import SSHTunnelForwarder
 
-from .redis import redis_conn
+from .redis import get_redis_conf
 from .tasks import _registered_tasks
 
 SENTRY_DSN = os.getenv("SENTRY_DSN", None)
@@ -170,6 +170,7 @@ async def work(queue: str = "internal"):
     assert queue in valid_queues, TypeError(
         f"Tried to run a worker with an invalid queue name ({queue}). The queue should be one of: {', '.join(q for q in valid_queues)}"
     )
+    _, _, redis_conn = get_redis_conf()
     w = Worker(
         functions=_registered_tasks,
         queue_name=queue,
