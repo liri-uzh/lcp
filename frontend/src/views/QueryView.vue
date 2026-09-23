@@ -369,6 +369,12 @@
                  </div>
                 <div class="mt-2">
                   <div class="row">
+                    <button type="button" v-if="queryStatus == 'satisfied' && !loading && userData.user.anon != true && currentQuery == querySatisfied"
+                      @click="submitFullSearch" class="btn btn-primary me-2 mb-2">
+                      <FontAwesomeIcon :icon="['fas', 'magnifying-glass-chart']" />
+                      {{ $t('common-search-whole') }}
+                    </button>
+
                     <div class="col-12" v-if="Object.keys(WSDataResults.result).length">
                       <div
                         v-if="queryStatus && userData.user.anon != true && !noResults"
@@ -1224,6 +1230,8 @@ export default {
     },
     updateLoading(status) {
       this.queryStatus = status;
+      if (status == "satisfied")
+        this.querySatisfied = this.currentQuery;
       this.WSDataResults.status = status;
 
       if (this.WSDataResults.isFinished()) {
@@ -1514,15 +1522,23 @@ export default {
           this.percentageWordsDone = this.WSDataResults.percentage_words_done || 0;
           if (!this.WSDataResults.result)
             return this.WSDataResults.result = data.result;
+          const MAX_KWICS = 9999;
           const kwic_keys = ((data.result[0]||{}).result_sets||[]).map((rs,n)=>rs.type=="plain"?n+1:-1).filter(n=>n>0);
           for (let rkey in data.result) {
             if (!kwic_keys.includes(parseInt(rkey))) {
               this.WSDataResults.result[rkey] = data.result[rkey];
               continue;
             }
+            const existingKwics = this.WSDataResults.result[rkey] || [];
+            const nKwicsToAdd = MAX_KWICS - existingKwics.length;
+            if (nKwicsToAdd < data.result[rkey].length)
+              useNotificationStore().add({
+                type: "warning",
+                text: `Max number of KWIC lines reached (${MAX_KWICS})`
+              });
             this.WSDataResults.result[rkey] = [
-              ...(this.WSDataResults.result[rkey]||[]),
-              ...data.result[rkey]
+              ...existingKwics,
+              ...data.result[rkey].slice(0, nKwicsToAdd)
             ];
           }
           return;
@@ -1582,6 +1598,7 @@ export default {
           );
           this.enough(data["simultaneous"]);
           data["status"] = "satisfied";
+          this.querySatisfied = this.currentQuery;
         }
         data["first_result"] = this.allResults[0];
         data["n_results"] = this.allResults.length;
@@ -1622,7 +1639,12 @@ export default {
     submitFullSearch() {
       if (this.currentQuery != this.querySatisfied)
         return;
-      this.submit(null, true, false, true);
+      this.submit(
+        /*event=*/null,
+        /*resumeQuery=*/true,
+        /*cleanResults=*/false,
+        /*fullSearch=*/true
+      );
     },
     async submit(
       event,

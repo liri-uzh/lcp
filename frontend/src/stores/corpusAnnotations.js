@@ -72,8 +72,16 @@ export const useCorpusAnnotationsStore = defineStore('corpusAnnotations', {
      * Process segment data from backend
      */
     processSegments(segmentsData) {
+      const SEG_LIMIT = 10000;
+      let warned = false;
       Object.entries(segmentsData).forEach(([sid, v]) => {
         if (sid in this.segments) return;
+        if (Object.keys(this.segments).length >= SEG_LIMIT) {
+          if (!warned)
+            console.warn(`Too many segments (over ${SEG_LIMIT} lines) - not processing the remaining segments`);
+          warned = true;
+          return;
+        }
 
         const rangeMatches = v.map(x => String(x || "").match(/^\[(\d+),(\d+)\)$/))
         const rangeIdx = rangeMatches.findIndex(x => x)
@@ -96,14 +104,15 @@ export const useCorpusAnnotationsStore = defineStore('corpusAnnotations', {
      * Process annotation data from backend
      */
     processAnnotations(metaData) {
-      const META_LIMIT = 50000
-      const processedCount = Math.min(metaData.length, META_LIMIT)
+      const META_LIMIT = 20000;
+      const nExistingAnnotations = Object.values(this.annotationsByLayer || {}).map(x=>Object.keys(x.byId).length).reduce((p,c)=>p+c,0);
+      const canProcess = META_LIMIT - nExistingAnnotations;
 
-      if (metaData.length > META_LIMIT) {
-        console.warn(`Too much metadata (over ${META_LIMIT} lines) - processing first ${META_LIMIT} items`)
-      }
+      if (metaData.length > canProcess)
+        console.warn(`Too much metadata (over ${META_LIMIT} lines) - processing first ${canProcess} items`);
 
-      for (let i = 0; i < processedCount; i++) {
+      const top = Math.min(canProcess, metaData.length);
+      for (let i = 0; i < top; i++) {
         const [sids, layer, lid, info] = metaData[i]
         if (!lid) continue
 

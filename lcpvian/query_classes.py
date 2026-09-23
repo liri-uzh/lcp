@@ -38,7 +38,7 @@ MESSAGE_TTL = int(os.getenv("REDIS_WS_MESSSAGE_TTL", 5000))
 QUERY_TTL = int(os.getenv("QUERY_TTL", 5000))
 QUERY_TIMEOUT = int(os.getenv("QUERY_TIMEOUT", 1000))
 FULL_QUERY_TIMEOUT = int(os.getenv("QUERY_ENTIRE_CORPUS_CALLBACK_TIMEOUT", 99999))
-MAX_KWIC_LINES = int(os.getenv("DEFAULT_MAX_KWIC_LINES", 9999999))
+MAX_KWIC_LINES = int(os.getenv("DEFAULT_MAX_KWIC_LINES", 9999))
 
 SERIALIZABLES = (
     int,
@@ -295,6 +295,49 @@ class Request:
             ret["status"] = "finished"
         return ret
 
+    def trim_result_for_fe(self, qi: "QueryInfo", payload: dict, batch_hash: str):
+        """
+        Limit the number of KWIC lines and segments when sending to frontend.
+        Do not directly edit payload["result"] as it might be a RedisList object.
+        """
+        MAX_SENT_LINES = int(MAX_KWIC_LINES * 1.5)  # heuristics
+        MAX_ANN_LINES = MAX_SENT_LINES
+        # calculate the total number of sent segments already sent (outside from this batch)
+        total_seg_sent = sum(
+            cast(list, self.lines_batch.get(h, [0, 0, 0]))[2]
+            for h in self.sent_hashes
+            if h != batch_hash
+        )
+        kwic_keys = [str(k) for k in qi.kwic_keys]
+        incoming_results = payload["result"]
+        payload["result"] = {}
+        results_keys = [k for k in incoming_results]
+        for k in results_keys:
+            if k == "-1":
+                if total_seg_sent > MAX_SENT_LINES:
+                    # Do not send any more segments if we're already past the max
+                    payload["result"][k] = {}
+                    continue
+                payload["result"][k] = {
+                    k: v
+                    for n, (k, v) in enumerate(incoming_results[k].items())
+                    if n < MAX_SENT_LINES
+                }
+            if k == "-2":
+                if total_seg_sent > MAX_SENT_LINES:
+                    # Do not send any more annotations if we're already past the max segments
+                    payload["result"][k] = []
+                    continue
+                payload["result"][k] = [
+                    v for n, v in enumerate(incoming_results[k]) if n < MAX_ANN_LINES
+                ]
+            if k not in kwic_keys:
+                payload["result"][k] = incoming_results[k]
+                continue
+            payload["result"][k] = [
+                v for n, v in enumerate(incoming_results[k]) if n < MAX_KWIC_LINES
+            ]
+
     async def send_segments(
         self, app: web.Application, qi: "QueryInfo", batch_name: str
     ):
@@ -359,6 +402,7 @@ class Request:
             req_buffer = app["query_buffers"][self.id]
             _merge_results(req_buffer, results)
         else:
+            self.trim_result_for_fe(qi, payload, batch_hash)
             await push_msg(
                 app["websockets"],
                 self.room,
@@ -459,6 +503,7 @@ class Request:
             req_buffer = app["query_buffers"][self.id]
             _merge_results(req_buffer, results)
         else:
+            self.trim_result_for_fe(qi, payload, batch_hash)
             await push_msg(
                 app["websockets"],
                 self.room,
