@@ -4,7 +4,7 @@ from hashlib import md5
 from redis import Redis
 from typing import Any
 
-no_param = {}
+no_param: dict = {}
 
 
 class RedisDict(dict):
