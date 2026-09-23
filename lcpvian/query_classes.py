@@ -13,9 +13,7 @@ import traceback
 
 from aiohttp import web
 from redis import Redis as RedisConnection
-from rq.command import send_stop_job_command
 from arq.jobs import Job
-from types import TracebackType
 from typing import cast, Any
 from uuid import uuid4
 
@@ -475,7 +473,7 @@ class Request:
     async def error(
         self, app: web.Application, qi: "QueryInfo", error: str = "unknown"
     ):
-        logging.debug(f"[{self.id}] Error while running the query:", error)
+        logging.debug(f"[{self.id}] Error while running the query: {error}")
         if self.to_export:
             xp_format = self.to_export.get("format", "xml") or "xml"
             req = next(r for r in qi.requests if r.to_export)
@@ -596,6 +594,7 @@ class QueryInfo:
         j_meta["qi_hash"] = self.hash  # used in failure callback
         await set_job_meta(cast(Job, j), j_meta)
         self.enqueued_jobs["" if j is None else j.job_id] = 1
+        print("Enqueued jobs: ", [jid for jid in self.enqueued_jobs])
         return j
 
     def set_cache(self, key: str, data: Any):
@@ -820,10 +819,12 @@ class QueryInfo:
                 redis = await get_redis()
                 job = Job(jid, redis=redis)
                 await job.abort()
-                send_stop_job_command(self._connection, jid)
                 self.enqueued_jobs.pop(jid, "")
             except:
                 self.enqueued_jobs.pop(jid, "")
+        logging.debug(
+            f"Stopped all jobs for request {request.id} (remaining JIDs: {[jid for jid in self.enqueued_jobs]})"
+        )
 
     def get_lines_batch(self, batch_name: str) -> tuple[int, int]:
         """

@@ -111,10 +111,12 @@ web_connstr = f"postgresql+asyncpg://{WEB_USER}:{WEB_PASSWORD}@{HOST}:{PORT}/{DB
 query_kwargs = dict(
     pool_size=QUERY_MAX_NUM_CONNS,
     connect_args={
-        "timeout": QUERY_TIMEOUT,
         "statement_cache_size": 0,
         "prepared_statement_cache_size": 0,
-        "server_settings": {"jit": "off"},
+        "server_settings": {
+            "statement_timeout": str(QUERY_TIMEOUT * 1000),
+            "jit": "off",
+        },
     },
     echo_pool=True,
     pool_recycle=3600,
@@ -124,10 +126,12 @@ query_kwargs = dict(
 upload_kwargs = dict(
     pool_size=UPLOAD_MAX_NUM_CONNS,
     connect_args={
-        "timeout": UPLOAD_TIMEOUT,
         "statement_cache_size": 0,
         "prepared_statement_cache_size": 0,
-        "server_settings": {"jit": "off"},
+        "server_settings": {
+            "statement_timeout": str(UPLOAD_TIMEOUT * 1000),
+            "jit": "off",
+        },
     },
     echo_pool=True,
     pool_recycle=3600,
@@ -169,7 +173,7 @@ async def work(queue: str = "internal"):
     w = Worker(
         functions=_registered_tasks,
         queue_name=queue,
-        max_jobs=QUERY_MAX_NUM_CONNS if queue == "query" else UPLOAD_MAX_NUM_CONNS,
+        max_jobs=(QUERY_MAX_NUM_CONNS if queue == "query" else UPLOAD_MAX_NUM_CONNS),
         redis_settings=redis_conn,
         on_startup=on_startup,
         on_shutdown=on_shutdown,

@@ -2,6 +2,7 @@
 Async tasks called from query.py
 """
 
+import logging
 import re
 import traceback
 
@@ -271,5 +272,9 @@ async def do_batch(ctx, qhash: str, batch: list):
         if batch_name in qi.running_batches:
             del qi.running_batches[batch_name]
         tb = traceback.format_exc()
-        await qi.publish("\n".join([str(e), tb]), "failure")
+        error_msg = f"{e}\n{tb}"
+        logging.debug(f"Error in do_batch: {error_msg}")
+        if str(getattr(e, "orig", "")).endswith("timeout"):
+            error_msg = "The query timed out"
+        await qi.publish(error_msg, "failure")
         raise e

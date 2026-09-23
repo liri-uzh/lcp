@@ -24,8 +24,6 @@ from aiohttp_catcher import Catcher, catch
 from redis import Redis
 from redis import asyncio as aioredis
 from rq.exceptions import AbandonedJobError, NoSuchJobError
-from rq.queue import Queue
-from rq.registry import FailedJobRegistry
 
 # We should load env before importing anything else
 from .utils import (
