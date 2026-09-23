@@ -188,10 +188,12 @@ export const useCorpusStore = defineStore("corpusData", {
       let url = `${httpApi.getUri()}/download_export?${ampsInfo}`;
       if (info.format == "swissdox")
         url = config.appLinks.swissdoxviz;
+      const res = await httpApi.get(url, {responseType: 'blob'});
+      const href = window.URL.createObjectURL(res.data);
       const a = document.createElement("A");
       a.target = "_blank";
-      a.href = url;
-      a.download = "results";
+      a.href = href;
+      a.setAttribute('download', `results.${info.format == 'swissdox' ? 'db' : 'xml'}`);
       document.body.append(a);
       a.click();
       a.remove();

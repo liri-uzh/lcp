@@ -1392,13 +1392,12 @@ export default {
           for (let id of ids)
             this.imageAnnotations[id] = 1;
 
+          if (is_doc)
+            useWsStore().addMessageForPlayer(data);
+
           return;
         }
 
-        if (is_doc) {
-          useWsStore().addMessageForPlayer(data);
-          return;
-        }
 
         if (data["action"] === "update_config") {
           // todo: when a new corpus is added, all connected websockets
