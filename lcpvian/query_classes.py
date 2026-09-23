@@ -712,10 +712,7 @@ class QueryInfo:
 
     @enqueued_jobs.setter
     def enqueued_jobs(self, value: dict[str, int]):
-        if "enqueued_jobs" not in self.qi:
-            self.qi["enqueued_jobs"] = {}
-        for k, v in value.items():
-            self.qi["enqueued_jobs"][k] = v
+        self.qi["enqueued_jobs"] = value
 
     @property
     def json_query(self) -> dict:
@@ -822,6 +819,7 @@ class QueryInfo:
                 self.enqueued_jobs.pop(jid, "")
             except:
                 self.enqueued_jobs.pop(jid, "")
+        self.enqueued_jobs = self.enqueued_jobs
         logging.debug(
             f"Stopped all jobs for request {request.id} (remaining JIDs: {[jid for jid in self.enqueued_jobs]})"
         )
@@ -923,7 +921,8 @@ class QueryInfo:
         The class Request already implements utmost recency
         """
         reqs: list[Request] = []
-        for rid in self.qi["requests"]:
+        requests = self.qi["requests"] or []
+        for rid in requests:
             try:
                 reqs.append(Request(self._connection, {"id": rid}))
             except:

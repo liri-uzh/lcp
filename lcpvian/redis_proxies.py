@@ -4,6 +4,8 @@ from hashlib import md5
 from redis import Redis
 from typing import Any
 
+no_param = {}
+
 
 class RedisDict(dict):
     def __init__(self, redis_client: Redis, redis_key: str):
@@ -121,6 +123,18 @@ class RedisDict(dict):
 
     def __delitem__(self, key: str):
         self.__delattr__(key)
+
+    def pop(self, key: str, default: Any = no_param):
+        value = None
+        if key in self.keys():
+            value = self.__getattr__(key)
+            self.__delattr__(key)
+        else:
+            assert default is not no_param, ValueError(
+                f"Tried to pop unfound key '{key}' without providing a default return value"
+            )
+            value = default
+        return value
 
     def to_dict(self) -> dict:
         ret = {}

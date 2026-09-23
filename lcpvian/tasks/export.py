@@ -116,6 +116,6 @@ async def get_exports(ctx, user_id: str = "", ehash: str = "", **kwargs):
 
     query = query + ";"
     print("query", query)
-    result = await _db_query(ctx, query, {}, user=user_id, hash=ehash, is_main=True)
+    result = await _db_query(ctx, query, {}, is_main=True)
 
     return result

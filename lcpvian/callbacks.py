@@ -80,11 +80,13 @@ async def _general_failure(
 
 def handle_general_failure(task_method):
     async def task_wrapper(ctx, *args, **kwargs):
+        r = None
         try:
-            await task_method(ctx, *args, **kwargs)
+            r = await task_method(ctx, *args, **kwargs)
         except Exception as e:
             job = cast(Job, Job(ctx["job_id"], ctx["redis"]))
             await _general_failure(job, ctx["redis"], e.__class__, e, e.__traceback__)
+        return r
 
     # Overwrite attributes checked in tasks/__init__.py to register the tasks
     task_wrapper.__module__ = task_method.__module__
