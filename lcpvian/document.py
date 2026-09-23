@@ -217,7 +217,13 @@ async def clip_media(request: web.Request) -> web.Response:
     corpus_conf = request.app["config"][str(corpus)]
 
     job = await enqueue(
-        "document.clip_media", corpus_conf, span, doc_id, user, room, queue="background"
+        "document.clip_media",
+        corpus_conf,
+        span,
+        doc_id,
+        user=user,
+        room=room,
+        queue="background",
     )
     info: dict[str, str] = {
         "status": "started",

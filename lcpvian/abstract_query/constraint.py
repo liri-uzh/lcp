@@ -617,19 +617,13 @@ class Constraint:
                 left = f"({left})::text" if left_type == "string" else left
                 right = f"({right})::text" if right_type == "string" else right
                 formed_condition = f"{left} {op} {right}"
-                # if right_type == "regex" and _is_prefix(right[1:-1], self.op, "regex"):
-                #     # Increase performance with prefixes if applicable
-                #     right_no_prefix = right.lstrip("'^")
-                #     rgx_suffix = re.search(r"[*.$]", right_no_prefix)
-                #     idx_suffix = (
-                #         rgx_suffix.span()[0] if rgx_suffix else len(right_no_prefix) - 1
-                #     )
-                #     like_pattern = right_no_prefix[:idx_suffix]
-                #     like_operator = "ILIKE" if case_insensitive else "LIKE"
-                #     like_condition = f"{left} {'NOT ' if op.startswith('!') else ''}{like_operator} '{like_pattern}%'"
-                #     formed_condition = f"{like_condition} AND {formed_condition}"
-            elif "label" in (left_type, right_type):
-                pass
+            else:
+                non_reg = (
+                    (left_type, left) if right_type == "regex" else (right_type, right)
+                )
+                raise TypeError(
+                    f"Tried to apply a regular expression test on a {non_reg[0]} attribute ('{non_reg[1]}')"
+                )
 
         elif "string" in (left_type, right_type):
             if "label" in (left_type, right_type):

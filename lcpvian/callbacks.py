@@ -10,6 +10,7 @@ These callbacks are hooked up as on_success and on_failure kwargs in
 calls to Queue.enqueue in query_service.py
 """
 
+import logging
 import os
 import traceback
 
@@ -53,7 +54,7 @@ async def _general_failure(
     except Exception as err:
         print(f"cannot format object: {trace} / {err}")
 
-    print("Failure of some kind:", job, trace, typ, value)
+    logging.error(f"Failure of some kind: {job}; {trace}; {typ}; {value}; {form_error}")
     if isinstance(typ, Interrupted) or typ == Interrupted:
         # no need to send a message to the user for interrupts
         # jso = {"status": "interrupted", "action": "interrupted", "job": job.job_id}

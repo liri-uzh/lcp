@@ -410,7 +410,7 @@ async def clip_media(
     span: list,
     doc_id: str,
     user: str,
-    room: str | None,
+    room: str | None = None,
 ):
     """
     Clip the media and export the correponding annotations
@@ -562,7 +562,7 @@ async def clip_media(
                 built_contains += ">"
                 if c == seg:
                     counter = int(f["char_range"].split(",")[0].replace("[", ""))
-                    for t in prepared[f["_id"]]["tokens"]:
+                    for t in prepared.get(f["_id"], {}).get("tokens", []):
                         tattrs = " ".join(
                             f"{escape(columns[n])}={quoteattr(str(t[n]))}"
                             for n in range(len(t))
@@ -582,7 +582,7 @@ async def clip_media(
         E.note(
             id=f"G{n}",
             type="global",
-            **{str(x): str(y) for x, y in globs[k].items()},
+            **{str("_id" if x == "id" else x): str(y) for x, y in globs[k].items()},
         )
         for n, k in enumerate(globs, start=1)
     ]
