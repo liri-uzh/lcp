@@ -329,14 +329,19 @@ class Track {
     this._groups = groups || {};
   }
   push(v, info, layer_attrs) {
-    let [startFrame, endFrame] = info.frame_range;
+    if (!info.frame_range)
+      return console.warn("Invalid frame range at", v, info, layer_attrs);
+    let startFrame = 0, endFrame = 0;
     if (typeof(info.frame_range) == "string" && info.frame_range.includes(")")) {
       try {
         [startFrame, endFrame] = JSON.parse(info.frame_range.replace(")","]"));
       } catch {
-        console.warn("Invalid frame range at", v, info, layer_attrs);
+        return console.warn("Invalid frame range at", v, info, layer_attrs);
       }
     }
+    else if (!(info.frame_range instanceof Array && info.frame_range.length >= 2))
+      return console.warn("Invalid frame range at", v, info, layer_attrs);
+    [startFrame, endFrame] = info.frame_range;
     const shift = v.currentDocument[3][0];
     let startTime = (parseFloat(startFrame - shift) / v.frameRate);
     let endTime = (parseFloat(endFrame - shift) / v.frameRate);
