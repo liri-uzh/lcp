@@ -414,7 +414,10 @@ def _bound_label(
             return in_scope
         obj = obj.get("constraint", obj)
         if "unit" in obj:
-            if obj["unit"].get("label") == label:
+            unit = obj["unit"]
+            if unit.get("label") == label:
+                quantor = cast(str, unit.get("quantor") or "")
+                in_scope = in_scope or quantor.endswith(("EXIST", "EXISTS"))
                 return in_scope
             for c in obj["unit"].get("constraints", []):
                 if not isinstance(c, dict):
@@ -445,12 +448,18 @@ def _bound_label(
             for a in logic.get("args", []):
                 if _bound_label(label, a, tmp_in_scope):
                     return True
-        quantor = obj.get("quantification", {}).get("quantor", "")
-        # If the quantifier is a NEGATIVE existential (i.e. not EXIST(S))
-        if quantor.endswith(("EXIST", "EXISTS")) and quantor not in ("EXIST", "EXISTS"):
-            arg = {k: v for k, v in obj.items() if k in ("unit", "sequence", "set")}
-            if _bound_label(label, arg, in_scope=True):
-                return True
+        if "quantification" in obj:
+            quantification = obj["quantification"]
+            quantor = quantification.get("quantifier", "")
+            # If the quantifier is an existential (i.e. EXIST(S))
+            if quantor.endswith(("EXIST", "EXISTS")):
+                arg = {
+                    k: v
+                    for k, v in quantification.items()
+                    if k in ("unit", "sequence", "set")
+                }
+                if _bound_label(label, arg, in_scope=True):
+                    return True
 
     # Label not found
     return False

@@ -151,7 +151,9 @@ class Constraints:
         label_layer = cast(LabelLayer, self.label_layer or dict())
         inner_labels: set[str] = self._inner_labels()
         outer_labels: set[str] = {l for l in label_layer if l not in inner_labels}
-        fromjoins = [x for x in joins if x.split(" ")[-1] not in outer_labels]
+        fromjoins = [
+            x for x in joins if x.split(" ")[-1].replace('"', "") not in outer_labels
+        ]
         froms = "\nCROSS JOIN ".join(fromjoins)
         conds = member.conditions()
         all_conds = [conds]

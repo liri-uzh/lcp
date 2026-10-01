@@ -1,8 +1,5 @@
 WITH RECURSIVE fixed_parts AS
-  (SELECT "nod"."frame_range" AS "nod_frame_range",
-          "nod"."kinesics" AS "nod_kinesics",
-          "nod"."kinesics_id" AS "nod",
-          "s"."char_range" AS "s_char_range",
+  (SELECT "s"."char_range" AS "s_char_range",
           "s"."frame_range" AS "s_frame_range",
           "s"."segment_id" AS "s",
           "t"."char_range" AS "t_char_range",
@@ -10,7 +7,6 @@ WITH RECURSIVE fixed_parts AS
           "t"."token_id" AS "t",
           "t"."upos" AS "t_upos"
    FROM "candor__5003f209a11e4737ae21a00cb8857736_3".segmentrest AS s
-   CROSS JOIN "candor__5003f209a11e4737ae21a00cb8857736_3"."kinesics" "nod"
    CROSS JOIN "candor__5003f209a11e4737ae21a00cb8857736_3"."tokenrest" "t"
    WHERE NOT EXISTS
        (SELECT 1
