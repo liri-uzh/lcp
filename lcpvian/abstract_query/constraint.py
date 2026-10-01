@@ -479,7 +479,7 @@ class Constraint:
         meta["labels inner conditions"][comp_str] = n
         mask_label = f"{label}_mask_{n}"
         mask_alias = sql_str("{}", self.sql_corpus.layer(mask_label, layer).alias)
-        formed_join_table = f"{inner_condition} {mask_alias}"
+        formed_join_table = f"LATERAL {inner_condition} {mask_alias}"
         self._add_join_on(formed_join_table, "")
         negated = op.lower().startswith(("not", "!"))
         op = "=" if negated else ">"
@@ -577,8 +577,9 @@ class Constraint:
             ref_info = left_info if labels_left else right_info
             ref_layer = ref_info.get("layer", self.layer)
             ref_ref = cast(SQLRef, ref_info.get("sql"))
-            ref_attr = cast(dict, ref_info.get("meta", {})).get(
-                "str", ref.split(".")[1].strip('"')
+            ref_meta = cast(dict, ref_info.get("meta", {}))
+            ref_attr = ref_meta.get(
+                "attribute", ref_meta.get("str", ref).split(".")[-1].strip('"')
             )
             ref_mapping = (
                 cast(dict, ref_info.get("mapping", {}))
@@ -711,7 +712,12 @@ class Constraint:
                     else attr_info.get("type", "string")
                 )
                 if ref_info["type"] == "labels":
-                    ref_info["meta"] = {"nbit": attr_info.get("nlabels", 1)}
+                    ref_info["meta"] = {
+                        "nbit": attr_info.get("nlabels", 1),
+                        "attribute": attr,
+                    }
+                    mapping_layer = self.config["mapping"]["layer"].get(layer, {})
+                    ref_info["mapping"] = mapping_layer
                 sql_ref = self.sql_corpus.attribute(prefix, layer, ref)
         else:
             sql_ref = self.sql_corpus.layer(ref, layer, pointer=True)
@@ -742,6 +748,7 @@ class Constraint:
             ref = sql_ref.ref
 
         ref_info["entities"] = entities + ref_info.get("entities", [])
+
         return (ref, ref_info)
 
     def parse_math(
