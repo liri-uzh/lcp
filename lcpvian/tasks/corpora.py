@@ -95,8 +95,8 @@ async def update_projects(
     """
     Update which project(s) a corpus belongs to
     """
-    args: DBQueryParams = {
-        "corpus_id": str(corpus_id),
+    args: dict = {
+        "corpus_id": corpus_id,
         "pid": str(project_ids[0]),
         "pids": "[" + ",".join(f'"{str(pid)}"' for pid in project_ids) + "]",
     }
