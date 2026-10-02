@@ -1464,12 +1464,12 @@ def get_pending_invites(request: web.Request, subscriptions: list) -> dict:
 
 
 def move_media_files(cpath: str, corpus_dir: str) -> None:
-    print("Moving media files")
+    source_path = os.path.join(UPLOADS_PATH, cpath)
     media_path = os.environ.get("UPLOAD_MEDIA_PATH", "media")
     dest_path = os.path.join(media_path, corpus_dir)
+    print(f"Moving media files from {source_path} to {dest_path}")
     if not os.path.exists(dest_path):
         os.makedirs(dest_path)
-    source_path = os.path.join(UPLOADS_PATH, cpath)
     for f in os.listdir(source_path):
         print("File in cpath", f)
         if not str(f).endswith(MEDIA_EXTENSIONS):
