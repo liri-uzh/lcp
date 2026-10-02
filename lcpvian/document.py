@@ -15,7 +15,6 @@ from .utils import (
 from .tasker import enqueue
 
 RESULTS_USERS = os.environ.get("RESULTS_USERS", os.path.join("results", "users"))
-UPLOAD_MEDIA_PATH = os.environ.get("UPLOAD_MEDIA_PATH", "media")
 
 
 async def document(request: web.Request) -> web.Response:
