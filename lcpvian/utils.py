@@ -66,21 +66,14 @@ from .abstract_query.utils import SQLCorpus, sql_str, literal_sql
 CSV_DELIMITERS = [",", "\t"]
 CSV_QUOTES = ['"', "\b"]
 
-QUERY_TTL = int(os.getenv("QUERY_TTL", 5000))
-
-RESULTS_DIR = os.getenv("RESULTS", "results")
-
 PUBSUB_CHANNEL = PUBSUB_CHANNEL_TEMPLATE % "lcpvian"
-
-PSQL_NAMEDATALEN = int(os.getenv("PSQL_NAMEDATALEN", 64))
 
 TRUES = {"true", "1", "y", "yes"}
 FALSES = {"", "0", "null", "none"}
 
-MESSAGE_TTL = int(os.getenv("REDIS_WS_MESSSAGE_TTL", 5000))
+MESSAGE_TTL = 5000  # re-defined from .env in load_env
 
 MEDIA_EXTENSIONS = ("mp3", "mp4", "wav", "ogg", "png", "jpg", "jpeg", "bmp")
-UPLOADS_PATH = os.getenv("TEMP_UPLOADS_PATH", "uploads")
 
 # The query in get_config is complex because we inject the possible values of the global attributes in corpus_template
 CONFIG_SELECT = """
@@ -223,6 +216,8 @@ def load_env() -> None:
     """
     Load .env from ~/lcp/.env if present, otherwise from current dir/dotenv defaults
     """
+    # re-define MESSAGE_TTL here
+    global MESSAGE_TTL
     ENVFILE = ".env.docker" if os.getenv("IS_DOCKER") else ".env"
     current = os.path.join(os.getcwd(), ".env")
     installed_path = os.path.expanduser("~/lcp/.env")
@@ -231,11 +226,13 @@ def load_env() -> None:
         try:
             load_dotenv(installed_path, override=True)
             print(f"Loaded .env from {installed_path}")
+            MESSAGE_TTL = int(os.getenv("REDIS_WS_MESSSAGE_TTL", 5000))
             return None
         except:
             print(f"Could not load {installed_path}...")
     if not loaded:
         load_dotenv(ENVFILE, override=True)
+        MESSAGE_TTL = int(os.getenv("REDIS_WS_MESSSAGE_TTL", 5000))
         print(f"Loaded .env from {current}")
     return None
 
@@ -715,6 +712,8 @@ def _sanitize_corpus_name(corpus_name: str) -> str:
 
 
 def _schema_from_corpus_name(corpus_name: str, project_id: str) -> str:
+    PSQL_NAMEDATALEN = int(os.getenv("PSQL_NAMEDATALEN", 64))
+
     tmp_name = _sanitize_corpus_name(corpus_name)
     while (
         len(tmp_name) > 1
@@ -1464,6 +1463,7 @@ def get_pending_invites(request: web.Request, subscriptions: list) -> dict:
 
 
 def move_media_files(cpath: str, corpus_dir: str) -> None:
+    UPLOADS_PATH = os.getenv("TEMP_UPLOADS_PATH", "uploads")
     source_path = os.path.join(UPLOADS_PATH, cpath)
     media_path = os.environ.get("UPLOAD_MEDIA_PATH", "media")
     dest_path = os.path.join(media_path, corpus_dir)
