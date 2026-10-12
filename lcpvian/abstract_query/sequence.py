@@ -302,7 +302,7 @@ class Cte:
                 self.next_fixed_token.internal_label if self.next_fixed_token else ""
             )
             pl_ref = self.sequence.sql.layer(pl, self.tok, pointer=True) if pl else None
-            nl_ref = self.sequence.sql.layer(pl, self.tok, pointer=True) if nl else None
+            nl_ref = self.sequence.sql.layer(nl, self.tok, pointer=True) if nl else None
             pl_alias = sql_str("{}.{}", from_table, pl_ref.alias if pl_ref else "")
             nl_alias = sql_str("{}.{}", from_table, nl_ref.alias if nl_ref else "")
 
