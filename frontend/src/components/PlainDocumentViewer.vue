@@ -42,6 +42,7 @@
       :resultsPerPage="0"
       :details="'perSegment'"
       :hideContext="true"
+      :highlight="highlightSegment"
     />
   </div>
 </template>
@@ -75,7 +76,8 @@ export default {
       annotationVisibility: {},
       randInt: Math.floor(Math.random() * 1000), // for modal
       modalVisible: false,
-      currentPrepSentence: null
+      currentPrepSentence: null,
+      defaultParams: {...this.$route.query}
     }
   },
   props: [
@@ -106,7 +108,8 @@ export default {
         corpora_id: this.corpus.meta.id,
         kind: "plain",
         language: this.language,
-        limit: 500
+        limit: 500,
+        stream: this.defaultParams.stream || -1
       });
     },
     setPreparedRanges() {
@@ -124,6 +127,16 @@ export default {
     documentLayer() {
       return this.corpus.document;
     },
+    highlightSegment() {
+      let highlightSegment = undefined;
+      if ("segment" in this.defaultParams)
+        highlightSegment = this.defaultParams.segment
+      else if (this.corpus.segment in this.defaultParams)
+        highlightSegment = this.defaultParams[this.corpus.segment];
+      delete this.defaultParams.segment;
+      delete this.defaultParams[this.corpus.segment];
+      return highlightSegment;
+    }
   },
   watch: {
     documentId() {
@@ -146,8 +159,14 @@ export default {
           }
           return acc;
         }, []);
-      if (!this.currentDocumentSelected)
-        this.currentDocumentSelected = this.documentOptions[0];
+      if (!this.currentDocumentSelected) {
+        let docFromStream = undefined;
+        if ("stream" in this.defaultParams && !isNaN(this.defaultParams.stream))
+          docFromStream = this.documentOptions.find(
+            d=>d.value.char_range[0] <= this.defaultParams.stream && d.value.char_range[1] >= this.defaultParams.stream
+          );
+        this.currentDocumentSelected = docFromStream || this.documentOptions[0];
+      }
     },
     currentDocumentSelected() {
       this.preparedRanges = null;
@@ -164,6 +183,7 @@ export default {
         anchor: "stream",
         range: this.currentDocumentSelected.value.char_range,
         limit: 1000, // limit lines to 1000 to spare memory load
+        stream: this.defaultParams.stream || -1, // make sure to include required annotations
         language: this.language
       });
     },

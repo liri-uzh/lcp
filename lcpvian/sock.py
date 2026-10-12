@@ -265,10 +265,18 @@ LCP"""
     # for document ids request, we also add this information to config
     # so that on subsequent requests we can just fetch it from there
     if action == "document_ids":
-        app["config"][str(payload["corpus_id"])]["doc_ids"] = [
-            payload["job"],
-            payload["document_ids"],
-        ]
+        corpus_config: dict = app["config"][str(payload["corpus_id"])]
+        doc_ids: list[str | dict] = cast(
+            list[str | dict],
+            corpus_config.get("doc_ids")
+            or [
+                payload["job"],
+                payload["document_ids"],
+            ],
+        )
+        doc_ids_dict = cast(dict, doc_ids[1])
+        doc_ids_dict.update(cast(dict, payload["document_ids"]))
+        corpus_config["doc_ids"] = doc_ids
 
     to_submit: None | Coroutine[None, None, web.Response] = None
 

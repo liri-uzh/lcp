@@ -148,6 +148,7 @@ async def annotations(request: web.Request) -> web.Response:
     rang = request_data["range"]
     lang = request_data["language"]
     limit = request_data.get("limit", -1)
+    stream = int(request_data.get("stream", -1))
 
     room: str | None = request_data.get("room")
     user: str = request_data.get("user", "")
@@ -168,6 +169,7 @@ async def annotations(request: web.Request) -> web.Response:
         str(corpus),
         lang,
         limit,
+        stream,
         user,
         room,
         queue="query",
@@ -282,6 +284,7 @@ async def document_ids(request: web.Request) -> web.Response:
     kind: str = request_data.get("kind", "audio")
     language: str = request_data.get("language", "")
     limit: int = int(request_data.get("limit", -1))
+    stream: int = int(request_data.get("stream", -1))
 
     if not authenticator.check_corpus_allowed(
         corpus_id,
@@ -290,7 +293,7 @@ async def document_ids(request: web.Request) -> web.Response:
     ):
         raise PermissionError("This user is not authorized to access this corpus")
 
-    if "doc_ids" not in config[corpus_id]:
+    if "doc_ids" not in config[corpus_id] or stream > 0:
         job = await enqueue(
             "document.document_ids",
             schema,
@@ -301,6 +304,7 @@ async def document_ids(request: web.Request) -> web.Response:
             kind=kind,
             language=language,
             limit=limit,
+            stream=stream,
             queue="query",
         )
         info: dict[str, str] = {

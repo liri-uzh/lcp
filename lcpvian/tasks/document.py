@@ -31,6 +31,10 @@ RESULTS_USERS = os.environ.get("RESULTS_USERS", os.path.join("results", "users")
 UPLOAD_MEDIA_PATH = os.environ.get("UPLOAD_MEDIA_PATH", "media")
 
 
+def get_range(inp: str) -> list[int]:
+    return cast(list[int], json.loads(inp.replace(")", "]").strip()))
+
+
 @handle_general_failure
 async def document(
     ctx,
@@ -117,6 +121,7 @@ async def document_ids(
     kind: str = "audio",
     language: str = "",
     limit: int = -1,
+    stream: int = -1,
 ):
     """
     Fetch document id + info from DB.
@@ -154,6 +159,10 @@ async def document_ids(
         if not jconds:
             continue
         query += f" JOIN {jtab} ON " + " AND ".join(jconds)
+    if stream > 0:
+        doc_char = sqlc.anchor("d", doc_layer, "stream")
+        irange: str = get_corpus_int_range(config)
+        query = f"{query} WHERE {doc_char} && {irange}({stream},{stream+1}) UNION ALL {query}"
     if limit > 0:
         query += f" LIMIT {limit}"
     hashed = str(hasher((query, corpus_id)))
@@ -191,6 +200,7 @@ async def annotations(
     corpus: str,
     language: str,
     limit: int,
+    stream: int,
     user: str,
     room: str | None,
 ):
@@ -251,52 +261,62 @@ async def annotations(
             chopped = False
             ranges = ("char_range", "frame_range", "xy_box")
             sorted_preps = sorted(
-                [
-                    [json.loads(x[-1].replace(")", "]")), *x]
-                    for x, *_ in result
-                    if x[0] == "_prepared"
-                ],
+                [[get_range(x[-1]), *x] for x, *_ in result if x[0] == "_prepared"],
                 key=lambda x: x[0][0],
             )
             sorted_non_preps = sorted(
                 [
                     [
-                        json.loads(
+                        get_range(
                             next(
-                                (cast(dict, x[2]).get(rg) or "").strip()
+                                cast(dict, x[2])[rg]
                                 for rg in ranges
-                                if (cast(dict, x[2]).get(rg) or "").strip()
-                            ).replace(")", "]")
+                                if cast(dict, x[2]).get(rg)
+                            )
                         ),
                         *x,
                     ]
                     for x, *_ in result
                     if x[0] != "_prepared"
-                    and any((cast(dict, x[2]).get(rg) or "").strip() for rg in ranges)
+                    and any(cast(dict, x[2]).get(rg) for rg in ranges)
                 ],
                 key=lambda x: x[0],
             )
             added_non_preps: dict[tuple[str, int | str], int] = {}
             reordered_result: list = []
+            need_stream = stream > 0
             for prep in sorted_preps:
-                lb, ub = prep.pop(0)
+                lb, ub = cast(tuple[int, int], prep.pop(0))
                 to_add: list = [
                     (prep,),
                     *[
                         (x[1:],)
                         for x in sorted_non_preps
-                        if x[0][0] <= lb
-                        and x[0][1] >= ub
+                        if cast(int, x[0][0]) <= lb
+                        and cast(int, x[0][1]) >= ub
                         and (x[1], x[2]) not in added_non_preps
                     ],
                 ]
-                if len(reordered_result) + len(to_add) > limit:
+                enough_results = len(reordered_result) + len(to_add) > limit
+                if enough_results and not need_stream:
                     chopped = True
                     break
                 added_non_preps.update(
                     {(l, i): 1 for (l, i, *_), *_ in to_add if l[0] != "_prepared"}
                 )
                 reordered_result += to_add
+                # In ranges, upper-bounds (ub) are non-inclusive: test ub-1
+                need_stream = need_stream and (lb > stream or ub - 1 < stream)
+            # LIVE WITH TOO MANY RESULTS FOR NOW: WE WOULD NEED TO BE SMART ABOUT NOT REMOVING RELEVANT SUPER-SEGMENT ANNOTATIONS FOR VIEWER
+            # while 1:
+            #     if not reordered_result:
+            #         break
+            #     first_row = reordered_result[0][0]
+            #     # We're done when we have less than LIMIT rows and the first one is a prepared segment
+            #     if len(reordered_result) <= limit and first_row[0] == "_prepared":
+            #         break
+            #     reordered_result.pop(0)
+            #     chopped = True
             if chopped:
                 warning = f"Payload includes only the first {limit} annotation lines from the document (out of {len(result)})"
             result = cast(list, reordered_result)
@@ -492,9 +512,7 @@ async def clip_media(
         data = contained if layer in contain_seg else uncontained
         data[layer] = data.get(layer, {})
         data[layer][id] = more[0]
-        fr_low, fr_up = [
-            int(x) for x in fr_str.replace("[", "").replace(")", "").split(",")
-        ]
+        fr_low, fr_up = get_range(fr_str)
         for k, v in more[0].items():
             attr = layers[layer].get("attributes", {}).get(k)
             if not attr:

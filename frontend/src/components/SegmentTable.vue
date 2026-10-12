@@ -1,5 +1,5 @@
 <template>
-  <table class="table" v-if="preparedRanges && preparedRanges.length > 0">
+  <table ref="segmentTable" class="table" v-if="preparedRanges && preparedRanges.length > 0">
     <tbody>
       <tr
         v-for="([segments, document, dataLine], segmentsIndex) in preparedSegments"
@@ -54,7 +54,15 @@
             v-for="(segment, sidIndex) in segments"
             :key="`tr-segments-${segmentsIndex}-${sidIndex}`"
             :id="`${store.corpusConfig.firstClass.segment}-${segment.id}`"
+            :class="`segment ${highlight == segment.id ? 'highlight' : ''}`"
           >
+            <span
+              style="margin-right: 0.25em"
+              @click="copySegmentLink(segment)"
+              class="icon-info ms-2"
+            >
+              <FontAwesomeIcon :icon="['fas', 'link']" />
+            </span>
             <span
               style="margin-right: 0.5em"
               @mousemove="!details && showAnnotations(segment.id, $event)"
@@ -218,7 +226,7 @@ export default {
     FontAwesomeIcon,
     AnnotationDisplay
   },
-  emits: ['updatePage', 'playMedia', 'showImage'],
+  emits: ['updatePage', 'playMedia', 'showImage', 'segmentTableMounted'],
   props: [
     'preparedRanges',
     'languages',
@@ -228,7 +236,8 @@ export default {
     "details",
     "hideCopy",
     "hideImage",
-    "hideContext"
+    "hideContext",
+    "highlight"
   ],
   data() {
 
@@ -502,6 +511,14 @@ export default {
         text: 'Copied to clipboard'
       });
     },
+
+    copySegmentLink(segment) {
+      Utils.copy(`${window.location.origin}${this.$route.path}?stream=${segment.char_range[0]}&segment=${segment.id}`);
+      useNotificationStore().add({
+        type: 'success',
+        text: `Copied link to ${this.store.corpusConfig.firstClass.segment} to clipboard`
+      });
+    },
     
     getMedia(document) {
       if (!document) return "";
@@ -625,6 +642,13 @@ export default {
       return tokens;
     }
   },
+  mounted() {
+    if (this.highlight) {
+      const segmentDiv = this.$refs.segmentTable.querySelector(`#Segment-${this.highlight}`);
+      if (segmentDiv) segmentDiv.scrollIntoView();
+    }
+    this.$emit("segmentTableMounted");
+  }
 };
 </script>
 
@@ -755,6 +779,10 @@ span.action-button:hover {
 .highlight {
   background-color: #1e999967 !important;
   color: #000 !important;
+}
+.segment.highlight {
+  outline: solid 2px green;
+  background-color: chartreuse !important;
 }
 
 .popover-liri .popover-table td {
