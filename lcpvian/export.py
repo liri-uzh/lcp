@@ -9,7 +9,7 @@ from .tasker import enqueue
 from .utils import LCPApplication
 
 
-async def download_export(request: web.Request) -> web.FileResponse:
+async def download_export(request: web.Request) -> web.FileResponse | web.HTTPNotFound:
     """
     Endpoint to download a file that was previously generated
     """
@@ -43,7 +43,7 @@ async def download_export(request: web.Request) -> web.FileResponse:
             qhash, cast(int, offset), cast(int, requested), full, filename=True
         )
     if not os.path.exists(filepath):
-        raise FileNotFoundError("Could not find the export file")
+        return web.HTTPNotFound(reason="Could not find the export file")
 
     content_disposition = f'attachment; filename="{os.path.basename(filepath)}"'
     headers = {

@@ -145,11 +145,16 @@ if not UPLOAD_POOL:
 
 async def on_startup(ctx: dict) -> None:
     from .exporter import Exporter as ExporterXml
+    from .exporter_csv import Exporter as ExporterCSV
     from .exporter_swissdox import Exporter as ExporterSwissdox
     from .query_classes import Request, QueryInfo
 
     # Pass some objects in ctx so as not to import them in the tasks' scripts
-    ctx["_exporters"] = {"xml": ExporterXml, "swissdox": ExporterSwissdox}
+    ctx["_exporters"] = {
+        "xml": ExporterXml,
+        "swissdox": ExporterSwissdox,
+        "csv": ExporterCSV,
+    }
     ctx["_request"] = Request
     ctx["_queryInfo"] = QueryInfo
 

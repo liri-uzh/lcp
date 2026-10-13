@@ -180,8 +180,9 @@ class Exporter:
         self._results_info: list[dict[str, Any]] = []
         self._info: dict[str, Any] = {}
 
-    @staticmethod
+    @classmethod
     def get_dl_path_from_hash(
+        cls,
         hash: str,
         offset: int = 0,
         requested: int = 0,
@@ -189,18 +190,20 @@ class Exporter:
         filename: bool = False,
     ) -> str:
         hash_folder = os.path.join(RESULTS_DIR, hash)
-        xml_folder = os.path.join(hash_folder, "xml")
+        format_folder = os.path.join(hash_folder, cls.xp_format)
         if full:
-            full_folder = os.path.join(xml_folder, "full")
+            full_folder = os.path.join(format_folder, "full")
             if not os.path.exists(full_folder):
                 os.makedirs(full_folder)
             return full_folder
-        offset_folder = os.path.join(xml_folder, str(offset))
+        offset_folder = os.path.join(format_folder, str(offset))
         requested_folder = os.path.join(offset_folder, str(requested))
         if not os.path.exists(requested_folder):
             os.makedirs(requested_folder)
         if filename:
-            requested_folder = os.path.join(requested_folder, "results.xml")
+            requested_folder = os.path.join(
+                requested_folder, f"results.{cls.xp_format}"
+            )
         return requested_folder
 
     @classmethod
@@ -326,7 +329,7 @@ class Exporter:
             self._request.id,
             self._qi.hash,
             payload,
-            queue="internal",
+            queue="background",
         )
 
     def get_working_path(self, subdir: str = "") -> str:
@@ -335,7 +338,7 @@ class Exporter:
         If subdir is defined, it will append it at the end of the path
         Will create the directory if necessary
         """
-        epath = Exporter.get_dl_path_from_hash(
+        epath = self.get_dl_path_from_hash(
             self._request.hash,
             self._request.offset,
             self._request.requested,

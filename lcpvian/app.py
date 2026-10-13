@@ -63,6 +63,7 @@ from .export import download_export
 from .fcs import get_fcs
 
 from .exporter import Exporter as ExporterXML
+from .exporter_csv import Exporter as ExporterCSV
 from .exporter_swissdox import Exporter as ExporterSwissdox
 from .user import user_data
 from .message import get_message
@@ -325,7 +326,11 @@ async def create_app(test: bool = False) -> web.Application:
         get_sync_redis(),
     )
     print("redis", app["redis"])
-    app.addkey("exporters", dict, {"xml": ExporterXML, "swissdox": ExporterSwissdox})
+    app.addkey(
+        "exporters",
+        dict,
+        {"xml": ExporterXML, "swissdox": ExporterSwissdox, "csv": ExporterCSV},
+    )
 
     redis_shared_db_index = int(os.getenv("REDIS_SHARED_DB_INDEX", -1))
     if redis_shared_db_index > -1:
