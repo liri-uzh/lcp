@@ -1,3 +1,7 @@
+# TODO: move exporters into a subfolder
+# TODO: rename expoter.py to exporter_xml.py
+# TODO: have a generic exporter.py that exports raw text files
+
 import csv
 import logging
 import os
@@ -81,6 +85,7 @@ class Exporter(ExporterXML):
         zip_fn = os.path.join(opath, "results.zip")
         zf = zipfile.ZipFile(zip_fn, "w")
 
+        # STATS
         for k in self._qi.stats_keys:
             k_in_rs = int(k) - 1
             stats_name = result_sets[k_in_rs]["name"]
@@ -91,6 +96,7 @@ class Exporter(ExporterXML):
                 continue
             zf.write(stats_path, fn)
 
+        # KWICS
         for k in self._qi.kwic_keys:
             k_in_rs = int(k) - 1
             matches_info = next(
@@ -108,7 +114,9 @@ class Exporter(ExporterXML):
             kwic_fn = os.path.join(kwic_path, f"{kwic_name}.csv")
             with open(kwic_fn, "w") as kwic_output:
                 writer = csv.writer(kwic_output)
-                ents_context = [
+                headers = [f"{context_layer}_id", "url", "left_context"]
+                # as many '(right_)context' as there are matching entities
+                headers += [
                     x
                     for n, minfo in enumerate(matches_info)
                     for x in (
@@ -116,14 +124,25 @@ class Exporter(ExporterXML):
                         ("context" if n + 1 < len(matches_info) else "right_context"),
                     )
                 ]
-                writer.writerow(
-                    [
-                        f"{context_layer}_id",
-                        "url",
-                        "left_context",
-                        *ents_context,
-                    ]
+                # add headers for the meta attributes
+                meta_include: dict = (
+                    cast(dict, self._request.to_export or {}).get("include") or {}
                 )
+                for lname in sorted(meta_include):
+                    lattrs = sorted(meta_include[lname])
+                    all_attrs: dict = (
+                        self._qi.config["layer"][lname].get("attributes") or {}
+                    )
+                    lname_low = lname.lower()
+                    if lattrs:
+                        headers += [f"{lname_low}_{k}" for k in lattrs]
+                    if not lattrs:
+                        headers += f"{lname_low}_id"
+                        headers += [
+                            f"{lname_low}_{k}" for k in sorted(all_attrs.keys())
+                        ]
+                writer.writerow(headers)
+                # find all the .hits files in all the subfolders
                 for subdir in os.listdir(kwic_path):
                     subpath = os.path.join(kwic_path, subdir)
                     if not os.path.isdir(subpath):
@@ -138,10 +157,12 @@ class Exporter(ExporterXML):
                         sid = hitsfn.split(".")[0]
                         prefix = sid[0:3]
                         seg_path = self.get_working_path(prefix)
+                        # find the corresponding .tokens file
                         tokenspath = os.path.join(seg_path, f"{sid}.tokens")
                         if not os.path.isfile(tokenspath):
                             continue
                         hits: list[int | list[int]] = []
+                        # Read .hits and store in list
                         with open(hitspath, "r") as hits_input:
                             while line := hits_input.readline():
                                 if not line.strip():
@@ -166,6 +187,7 @@ class Exporter(ExporterXML):
                             hit if isinstance(hit, int) else hit[-1] for hit in hits
                         ]
                         info: dict[str, int] = {}
+                        # Read .tokens and store tokens in list
                         texts: list[list[str]] = [[]]
                         with open(tokenspath, "r") as tokens_input:
                             n_token = 0
@@ -188,8 +210,39 @@ class Exporter(ExporterXML):
                                     text = texts[-1]
                                     text.append(form)
                                     n_token += 1
+                        # Read optional .meta file and report key-value pairs
                         url = f"{LCP_URL}query/{corpus_id}/{corpus_name}?stream={info['range']}&segment={sid}"
-                        writer.writerow([sid, url, *[" ".join(t) for t in texts]])
+                        row = [sid, url, *[" ".join(t) for t in texts]]
+                        # Process meta, if any: store unsorted lname->aname->avalue
+                        meta: dict[str, dict] = {}
+                        metapath = os.path.join(seg_path, f"{sid}.meta")
+                        if os.path.isfile(metapath):
+                            with open(metapath, "r") as meta_input:
+                                lname = ""
+                                while mline := meta_input.readline():
+                                    mline = mline.strip()
+                                    if not mline:
+                                        continue
+                                    # Read 3 lines at a time: layer name, attribute name, attribute value
+                                    try:
+                                        # there can be more than one occurrence for the layer
+                                        # ignore the index after space for now and only keep the last one
+                                        lname = mline.split(" ")[0]
+                                        aname = meta_input.readline().strip()
+                                        avalue = meta_input.readline().strip()
+                                        attrs = meta.setdefault(lname, {})
+                                        attrs[aname] = avalue
+                                    except:
+                                        pass
+                        # Now add the layer_attributes as provided, else all of them
+                        for lname in sorted(meta_include):
+                            lconf = self._qi.config["layer"][lname]
+                            all_attrs = lconf.get("attributes") or {}
+                            for aname in sorted(meta_include[lname] or all_attrs):
+                                row.append(meta.get(lname, {}).get(aname) or "")
+                        while len(row) < len(headers):
+                            row.append("")
+                        writer.writerow(row)
             zf.write(kwic_fn, f"{kwic_name}.csv")
 
         zf.close()
@@ -255,16 +308,56 @@ class Exporter(ExporterXML):
             f"[Export {self._request.id} CSV] Process segments for {batch_hash} (QI {self._request.hash})"
         )
         res = payload.get("result", [])
+        to_export: dict = self._request.to_export or {}
+        include_meta = to_export.get("include") or {}
+        # Reference meta per segment ID: sid->lname->[{info layer 1}, {info layer 2}, ...]
+        meta_per_segment: dict[str, dict] = {}
+        for sids, lname, lid, linfo in res.get("-2", []):
+            # No need to process anything if nothing to include
+            if not include_meta:
+                break
+            # No need to process this layer if not in include
+            if lname not in include_meta:
+                continue
+            attrs_to_include = include_meta[lname]
+            sid_entries: list[dict] = [
+                meta_per_segment.setdefault(sid, {}) for sid in sids
+            ]
+            for sid_entry in sid_entries:
+                layers_for_seg = sid_entry.setdefault(lname, [])
+                linfo_to_report = (
+                    {"_id": lid, **linfo}
+                    if not attrs_to_include
+                    else {k: v for k, v in linfo.items() if k in attrs_to_include}
+                )
+                layers_for_seg.append(linfo_to_report)
         # SEGMENTS
         for sid, (offset, tokens, annotations, char_range) in res["-1"].items():
             prefix = sid[0:3]
             seg_path = self.get_working_path(prefix)
-            fpath = os.path.join(seg_path, f"{sid}.tokens")
-            with open(fpath, "w") as seg_output:
-                seg_output.write(char_range)
-                seg_output.write("\n" + str(offset))
+            # Write tokens
+            tpath = os.path.join(seg_path, f"{sid}.tokens")
+            with open(tpath, "w") as tseg_output:
+                tseg_output.write(char_range)
+                tseg_output.write("\n" + str(offset))
                 for t in tokens:
-                    seg_output.write("\n" + t[self._form_index])
+                    tseg_output.write("\n" + t[self._form_index])
+            # Write meta
+            if sid not in meta_per_segment:
+                continue
+            meta = meta_per_segment[sid]
+            mpath = os.path.join(seg_path, f"{sid}.meta")
+            with open(mpath, "w") as mseg_output:
+                for lname, lentries in meta.items():
+                    for n, linfo in enumerate(lentries):
+                        for aname, avalue in linfo.items():
+                            # Always 3 lines per layer attribute: 1. layer name, 2. attr name, 3. attr value
+                            mseg_output.write(f"{lname} {n}\n")
+                            mseg_output.write(aname + "\n")
+                            # coerce the value to a string and strip all linebreaks
+                            val = str(avalue).replace("\n", "").replace("\r", "") + "\n"
+                            mseg_output.write(val)
+
         print(
             f"[Export {self._request.id} CSV] Done processing segments for {batch_hash} (QI {self._request.hash})"
         )
