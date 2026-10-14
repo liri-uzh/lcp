@@ -644,7 +644,8 @@ export default {
   },
   mounted() {
     if (this.highlight) {
-      const segmentDiv = this.$refs.segmentTable.querySelector(`#Segment-${this.highlight}`);
+      const seg = this.store.corpusConfig.firstClass.segment;
+      const segmentDiv = this.$refs.segmentTable.querySelector(`#${seg}-${this.highlight}`);
       if (segmentDiv) segmentDiv.scrollIntoView();
     }
     this.$emit("segmentTableMounted");
