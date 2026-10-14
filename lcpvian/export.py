@@ -1,4 +1,6 @@
 import os
+import shutil
+import zipfile
 
 from arq.jobs import Job
 from aiohttp import web
@@ -44,6 +46,20 @@ async def download_export(request: web.Request) -> web.FileResponse | web.HTTPNo
         )
     if not os.path.exists(filepath):
         return web.HTTPNotFound(reason="Could not find the export file")
+
+    # Extract zip file if it contains a single file
+    if zipfile.is_zipfile(filepath):
+        zf = zipfile.ZipFile(filepath)
+        infiles = zf.namelist()
+        if len(infiles) == 1:
+            fn = infiles[0]
+            dirname = os.path.dirname(filepath)
+            ext = fn.split(".")[-1]
+            # Serve the extracted file
+            filepath = ".".join(filepath.split(".")[:-1]) + "." + ext
+            if not os.path.exists(filepath):
+                zf.extract(fn, dirname)
+                shutil.move(os.path.join(dirname, fn), filepath)
 
     content_disposition = f'attachment; filename="{os.path.basename(filepath)}"'
     headers = {
