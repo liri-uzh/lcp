@@ -44,7 +44,7 @@ WITH RECURSIVE fixed_parts AS
              count(*) AS frequency
       FROM match_list
       GROUP BY "interruptee_agent_region",
-               "interruptor_agent_region") x) ,
+               "interruptor_agent_region")) ,
                res0 AS
   (SELECT 0::int2 AS rstype,
           jsonb_build_array(count(match_list.*))

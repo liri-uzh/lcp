@@ -39,7 +39,7 @@ WITH RECURSIVE fixed_parts AS
              count(*) AS frequency
       FROM match_list
       GROUP BY "u_agent_annee_naissance",
-               "u_agent_region") x) ,
+               "u_agent_region")) ,
                res0 AS
   (SELECT 0::int2 AS rstype,
           jsonb_build_array(count(match_list.*))

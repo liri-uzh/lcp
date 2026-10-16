@@ -888,10 +888,20 @@ WHERE {ent_stream_ref} && {cont_tok_stream_ref}
                 anchors = {
                     a: self.r.sql.anchor(prefix, prefix_layer, a) for a in anchorings
                 }
+                anchor_all_entity = f"all_{entity_layer}"
                 where_anchors = " OR ".join(
-                    f"{anchors[a]} && {self.r.sql.anchor(entity, entity_layer, a)}"
+                    sql_str(
+                        f"{{}} && {self.r.sql.anchor(anchor_all_entity, entity_layer, a)}",
+                        anchors[a].alias,
+                    )
                     for a in anchorings
                 )
+                # select each anchor ref from match_list
+                for a in anchorings:
+                    self.r.selects.add(
+                        anchors[a].ref + sql_str(" AS {}", anchors[a].alias)
+                    )
+                    self.r.entities.add(anchors[a].alias)
                 jwheres.append(where_anchors)
                 for tab, conds in cast(dict, constraint._joins or {}).items():
                     if tab not in jjoins:
@@ -911,54 +921,72 @@ WHERE {ent_stream_ref} && {cont_tok_stream_ref}
             f"Need at least one *attribute* referenced in the analysis"
         )
         nodes = " , ".join(sql_str("{}", p) for p, _ in parsed_attributes)
-        wheres, filter_meta = self._process_filters(filt)
         out = f"""
             SELECT
                 {i}::int2 AS rstype,
-                jsonb_build_array(FALSE, {nodes}, {funcstr})
+                {{outer_select}}
             FROM
                 (
                     SELECT
-                        {nodes}
-                        {jcounts}
+                        {{inner_select}}
                     FROM
                         match_list
+                    {{wheres}}
                     GROUP BY {nodes}
-                ) x {wheres}
+                )
+            {{cross_order}}
         """
+        wheres, filter_meta = self._process_filters(filt)
+        outer_select = f"jsonb_build_array(FALSE, {nodes}, {funcstr})"
+        inner_select = f"{nodes}{jcounts}"
+        cross_order = ""
         if count_entities:
             # only support one for now
             entity_lab = next(e for e in count_entities)
             entity_lay, _ = self.r.label_layer[entity_lab]
             entity_ref = self.r.sql.layer(entity_lab, entity_lay, pointer=True)
-            inner_selects = ", ".join(
-                [f"count({entity_ref.alias}) AS total_{entity_lay.lower()}", *jselects]
+            all_label = sql_str("{}", f"all_{entity_lay}")
+            total_label = sql_str("{}", f"total_{entity_lay}")
+            distinct_count = sql_str("count(DISTINCT {})", entity_ref.alias)
+            inner_select = f"{nodes}, {distinct_count} AS {funcstr}, count({all_label}) AS {total_label}"
+            split_nodes = " , ".join(
+                sql_str("split.{}", p) for p, _ in parsed_attributes
             )
-            inner_from = " CROSS JOIN ".join(
-                [next(t for t in entity_ref.joins), *jjoins]
+            jaliases = [s.split(" AS ")[-1] for s in jselects]
+            array_selects = [f"split.{a}" for a in jaliases]
+            array_selects.append(f"split.{total_label}")
+            outer_select = f"""CASE WHEN split.is_total = TRUE
+                THEN jsonb_build_array(TRUE, {', '.join(array_selects)})
+                ELSE jsonb_build_array(FALSE, {split_nodes}, split.{funcstr})
+            END"""
+            if jwheres:
+                if wheres:
+                    wheres += " AND "
+                else:
+                    wheres = "WHERE "
+                wheres += " AND ".join(jwheres)
+            all_table = next(str(t) for t in entity_ref.joins)
+            # Replace entity alias with "all" alias
+            all_table = re.sub(r'"[^"]+"$', all_label, all_table)
+            wheres = f"""CROSS JOIN {all_table}
+            {wheres}"""
+            # Keep the "total" values in the same order as the non-total ones
+            # and replace the ones not included in "total" with "NULL"
+            total_values = ", ".join(
+                palias if sql_str("{}", palias) in jaliases else "NULL"
+                for palias, _ in parsed_attributes
             )
-            inner_where = ("WHERE " + " AND ".join(jwheres)) if jwheres else ""
-            inner_group = (
-                ("GROUP BY " + ", ".join(sql_str("{}", x) for x in jgroups))
-                if jgroups
-                else ""
-            )
-            inner_cte = f"""SELECT {inner_selects}
-            FROM {inner_from}
-            {inner_where}
-            {inner_group}
-            """
-            array_selects = [s.split(" AS ")[-1] for s in jselects]
-            array_selects.append(f"total_{entity_lay.lower()}")
-            out = f"""
-            SELECT
-               {i}::int2 AS rstype,
-               jsonb_build_array(TRUE, {', '.join(array_selects)})
-              FROM (
-                  {inner_cte}
-              ) y
-            UNION ALL
-            {out}"""
+            cross_order = f"""CROSS JOIN LATERAL (
+                VALUES (FALSE,       {nodes}, {funcstr},          NULL),
+                       (TRUE, {total_values},      NULL, {total_label})
+            ) AS split(is_total, {nodes}, {funcstr}, {total_label})
+            ORDER BY is_total DESC"""
+        out = out.format(
+            outer_select=outer_select,
+            inner_select=inner_select,
+            wheres=wheres,
+            cross_order=cross_order,
+        )
         out = f"""res{i} AS (
             {out}
         )"""

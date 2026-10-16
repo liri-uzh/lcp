@@ -1,0 +1,23 @@
+# Test plot frequency per year over the total number of tokens for that year
+
+Book b
+
+Article@b a
+
+Segment@a s
+ 
+Token@s t1
+   form = /^(Per|Da)/
+ 
+results => plain
+   context
+       s
+   entities
+       t1
+ 
+yearMostTokens => analysis
+   attributes
+       t1
+       b.year
+   functions
+       frequency

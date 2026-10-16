@@ -64,7 +64,7 @@ WITH RECURSIVE fixed_parts AS
      (SELECT "t1_lemma" ,
              count(*) AS frequency
       FROM match_list
-      GROUP BY "t1_lemma") x) ,
+      GROUP BY "t1_lemma")) ,
                res0 AS
   (SELECT 0::int2 AS rstype,
           jsonb_build_array(count(match_list.*))
