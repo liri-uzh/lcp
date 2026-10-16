@@ -60,16 +60,12 @@ class Exporter(ExporterXML):
             swissdox_folder = os.path.join(swissdox_folder, "results.db")
         return swissdox_folder
 
-    @classmethod
     async def initiate_db(
-        cls,
+        self,
         app: web.Application,
-        shash: str,
-        config: dict,
-        request: Request,
         ext: str = "db",
     ) -> bool:
-        ret = await super().initiate_db(app, shash, config, request, ext=".db")
+        ret = await super().initiate_db(app, ext=".db")
         return ret
 
     @classmethod

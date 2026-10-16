@@ -777,6 +777,7 @@ export default {
       nameExport: "",
       currentTab: "text",
       exportTab: "xml",
+      exportInclude: {}, // supra-segment annotations to include in exported KWICs (applies to CSV only)
       simultaneousMode: false,
       percentageDone: 0,
       percentageTotalDone: 0,
@@ -860,6 +861,7 @@ export default {
               value: corpus[0].meta.id,
               corpus: corpus[0],
             };
+            this.exportInclude = {};
             this.noCorpus = null;
             this.checkAuthUser()
             this.defaultQueryDQD = this.getSampleQuery();
@@ -1046,6 +1048,8 @@ export default {
             nameExport: this.nameExport,
             nExport: this.nExport,
             isSwissdox: this.isSwissdox,
+            query: this.query,
+            corpus: this.selectedCorpora?.corpus,
           };
           this.modalSizeClass = 'modal-xl';
           this.showModalFooter = true;
@@ -1132,6 +1136,9 @@ export default {
             break;
           case 'nExport':
             this.nExport = val;
+            break;
+          case 'include':
+            this.exportInclude = val;
             break;
         }
       }
@@ -1465,7 +1472,7 @@ export default {
             offset: data.offset || 0,
             requested: data.total_results_requested || 200
           };
-          useCorpusStore().fetchExport(info);
+          useCorpusStore().fetchExport(info, data.filename);
           return;
         } else if (data["action"] === "document_ids") {
           useWsStore().addMessageForPlayer(data);
@@ -1622,12 +1629,15 @@ export default {
       to_export.format = {
         'plain': 'dump',
         'swissdox': 'swissdox',
-        'xml': 'xml'
+        'xml': 'xml',
+        'csv': 'csv'
       }[format];
       to_export.preview = preview;
       to_export.download = download;
       this.setExportFilename();
       to_export.filename = this.nameExport + "." + format;
+      if (Object.keys(this.exportInclude).length)
+        to_export.include = this.exportInclude;
       let full = !preview;
       let resume = full; // If not a full query, no need to resume the query: we already have the necessary results
       if (format == 'swissdox') {

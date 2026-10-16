@@ -15,7 +15,7 @@
             <span>{{ notif.msg }}</span>
             <span
               v-if="notif.dl_info && notif.dl_info.status == 'ready'"
-              @click="fetch(notif.dl_info)"
+              @click="fetch(notif.dl_info, notif.name)"
               class="download"
             >
               [ {{ $t('common-ready').toLowerCase() }} ]
@@ -53,7 +53,7 @@
                   <td>{{notif.msg}}</td>
                   <td
                     v-if="notif.dl_info && notif.dl_info.status == 'ready'"
-                    @click="fetch(notif.dl_info)"
+                    @click="fetch(notif.dl_info, notif.name)"
                     class="download"
                   >
                     <a href="#">{{ $t('common-ready').toLowerCase() }}</a>
@@ -89,8 +89,8 @@ export default {
   },
   props: [],
   methods: {
-    fetch(info) {
-      useCorpusStore().fetchExport(info);
+    fetch(info, filename) {
+      useCorpusStore().fetchExport(info, filename);
     },
     onSocketMessage(data) {
       const nowStr = new Date().toLocaleString();

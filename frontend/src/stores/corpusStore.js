@@ -183,7 +183,7 @@ export const useCorpusStore = defineStore("corpusData", {
       document.body.appendChild(link);
       link.click();
     },
-    async fetchExport(info) {
+    async fetchExport(info, filename="") {
       const ampsInfo = Object.entries(info).map(([k,v])=>encodeURIComponent(k)+"="+encodeURIComponent(v)).join("&")
       let url = `${httpApi.getUri()}/download_export?${ampsInfo}`;
       if (info.format == "swissdox")
@@ -193,7 +193,9 @@ export const useCorpusStore = defineStore("corpusData", {
       const a = document.createElement("A");
       a.target = "_blank";
       a.href = href;
-      a.setAttribute('download', `results.${info.format == 'swissdox' ? 'db' : 'xml'}`);
+      if (!filename)
+        filename = `results.${info.format == 'swissdox' ? 'db' : 'xml'}`;
+      a.setAttribute('download', filename);
       document.body.append(a);
       a.click();
       a.remove();

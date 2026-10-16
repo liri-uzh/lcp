@@ -201,6 +201,7 @@ const Utils = {
         );
     },
     contains(parentCandidate, childCandidate, conf) {
+      // checks whether the parentCandidate layer contains childCandidate based on corpus.layer (conf)
       const parentConf = conf[parentCandidate];
       if (!parentConf) return false;
       const contains = parentConf.contains;

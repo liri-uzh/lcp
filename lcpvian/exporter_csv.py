@@ -1,6 +1,7 @@
 # TODO: move exporters into a subfolder
 # TODO: rename expoter.py to exporter_xml.py
 # TODO: have a generic exporter.py that exports raw text files
+# TODO: pass 'include' to download_export and generate a unique folder in get_dl_path...?
 
 import csv
 import logging
@@ -25,16 +26,14 @@ class Exporter(ExporterXML):
     def __init__(self, request: Request, qi: QueryInfo) -> None:
         super().__init__(request, qi)
 
-    @classmethod
     async def initiate_db(
-        cls,
+        self,
         app: web.Application,
-        shash: str,
-        config: dict,
-        request: Request,
         ext: str = "csv",
     ) -> bool:
-        ret = await super().initiate_db(app, shash, config, request, ext=".csv")
+        if len(self._qi.kwic_keys) + len(self._qi.stats_keys) > 1:
+            ext = "zip"
+        ret = await super().initiate_db(app, ext=ext)
         return ret
 
     @classmethod
@@ -89,8 +88,7 @@ class Exporter(ExporterXML):
         for k in self._qi.stats_keys:
             k_in_rs = int(k) - 1
             stats_name = result_sets[k_in_rs]["name"]
-            stats_type = result_sets[k_in_rs]["type"]
-            fn = f"{stats_name}_{stats_type}.csv"
+            fn = f"{stats_name}.csv"
             stats_path: str = os.path.join(self.get_working_path(), fn)
             if not os.path.isfile(stats_path):
                 continue
@@ -137,7 +135,7 @@ class Exporter(ExporterXML):
                     if lattrs:
                         headers += [f"{lname_low}_{k}" for k in lattrs]
                     if not lattrs:
-                        headers += f"{lname_low}_id"
+                        headers += [f"{lname_low}_id"]
                         headers += [
                             f"{lname_low}_{k}" for k in sorted(all_attrs.keys())
                         ]
@@ -171,7 +169,7 @@ class Exporter(ExporterXML):
                                 if "," not in hit:
                                     hits.append(int(hit))
                                 else:
-                                    # a little curde, use json.loads?
+                                    # a little crude, use json.loads?
                                     hits.append(
                                         [
                                             int(x.strip())
@@ -203,13 +201,15 @@ class Exporter(ExporterXML):
                                     info["offset"] = int(line)
                                 else:
                                     form = line
+                                    # Start a new chunk if in min hits (current token to be added to it)
                                     if n_token + info["offset"] in min_hits:
-                                        texts.append([])
-                                    elif n_token + info["offset"] - 1 in max_hits:
                                         texts.append([])
                                     text = texts[-1]
                                     text.append(form)
                                     n_token += 1
+                                    # Start a new chunk if in max hits (next token to be added to it -- if not a hit, else empty string)
+                                    if n_token + info["offset"] - 1 in max_hits:
+                                        texts.append([])
                         # Read optional .meta file and report key-value pairs
                         url = f"{LCP_URL}query/{corpus_id}/{corpus_name}?stream={info['range']}&segment={sid}"
                         row = [sid, url, *[" ".join(t) for t in texts]]
@@ -236,10 +236,11 @@ class Exporter(ExporterXML):
                                         pass
                         # Now add the layer_attributes as provided, else all of them
                         for lname in sorted(meta_include):
+                            lmeta: dict = meta.get(lname, {}) or dict()
                             lconf = self._qi.config["layer"][lname]
-                            all_attrs = lconf.get("attributes") or {}
+                            all_attrs = {"_id": 1, **(lconf.get("attributes") or {})}
                             for aname in sorted(meta_include[lname] or all_attrs):
-                                row.append(meta.get(lname, {}).get(aname) or "")
+                                row.append(lmeta.get(aname) or "")
                         while len(row) < len(headers):
                             row.append("")
                         writer.writerow(row)
@@ -258,26 +259,49 @@ class Exporter(ExporterXML):
         )
         res = payload.get("result", [])
         result_sets = self._qi.result_sets
+        # STATS
         for k in self._qi.stats_keys:
             if k not in res:
                 continue
             k_in_rs = int(k) - 1
             stats_name = result_sets[k_in_rs]["name"]
             stats_type = result_sets[k_in_rs]["type"]
-            stats_path: str = os.path.join(
-                self.get_working_path(), f"{stats_name}_{stats_type}.csv"
-            )
+            stats_path: str = os.path.join(self.get_working_path(), f"{stats_name}.csv")
             stats_attrs = [x["name"] for x in result_sets[k_in_rs]["attributes"]]
             total_stats = [x["name"] for x in result_sets[k_in_rs].get("total", {})]
+            # Indices of columns from non-total rows that contain a grouping value
+            group_idx = [
+                n
+                for a_tot in total_stats
+                for n, a_sta in enumerate(stats_attrs)
+                if a_tot == a_sta
+            ]
             with open(stats_path, "w") as output:
                 writer = csv.writer(output)
-                writer.writerow(
-                    stats_attrs
-                    if stats_type == "collocation" or not total_stats
-                    else total_stats
-                )
+                stats_headers = list(stats_attrs)
+                if stats_type == "analysis" and total_stats:
+                    stats_headers.append(total_stats[-1])
+                    stats_headers.append("relative_frequency")
+                writer.writerow(stats_headers)
+                totals_by_group = {}
                 for l in res[k]:
-                    writer.writerow(l if stats_type == "collocation" else l[1:])
+                    row = list(l)
+                    if total_stats and row[0] == "True":
+                        val = row.pop(-1)
+                        groups = tuple(row[1:])
+                        totals_by_group[groups] = val
+                        continue
+                    # Remove first entry (True/False) if analysis
+                    row = row[1:] if stats_type == "analysis" else row
+                    if total_stats:
+                        groups = tuple([row[i] for i in group_idx])
+                        total = float(totals_by_group.get(groups, 1.0))
+                        freq = int(row[-1])
+                        ratio = float(freq / total)
+                        row.append(total)
+                        row.append(ratio)
+                    writer.writerow(row)
+        # KWICS
         for k in self._qi.kwic_keys:
             if k not in res:
                 continue
@@ -294,8 +318,7 @@ class Exporter(ExporterXML):
                     n += 1
                     fpath = os.path.join(seg_path, f"{sid}.{n}.hits")
                 with open(fpath, "a") as kwic_output:
-                    for mid in matches:
-                        kwic_output.write(str(mid))
+                    kwic_output.write("\n".join(str(mid) for mid in matches))
 
     async def process_segments(self, payload: dict, batch_hash: str) -> None:
         """

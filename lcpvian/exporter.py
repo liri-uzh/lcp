@@ -233,18 +233,17 @@ class Exporter:
             queue="internal",
         )
 
-    @classmethod
     async def initiate_db(
-        cls,
+        self,
         app: web.Application,
-        shash: str,
-        config: dict,
-        request: Request,
         ext: str = ".xml",
     ) -> bool:
         """
         Mark an export in the DB as initiated and return whether a query should be run
         """
+        shash = self._qi.hash
+        config = self._qi.config
+        request = self._request
         should_run: bool = True
         to_export: dict = cast(dict, request.to_export)
         xp_format: str = to_export.get("format", "xml") or "xml"
@@ -255,6 +254,9 @@ class Exporter:
         cshortname = config.get("shortname")
         if not filename:
             filename = f"{cshortname} {datetime.datetime.now().strftime('%Y-%m-%d %I:%M%p')}{ext}"
+        # Ensure that the filename ends with the proper extension, regardless of what the user specified
+        if not filename.endswith(ext):
+            filename = os.path.splitext(filename)[0] + f".{ext}"
         filename = sanitize_filename(filename)
         corpus_folder = sanitize_filename(cshortname or config.get("project_id", ""))
         relpath: str = os.path.join(corpus_folder, filename)
@@ -291,7 +293,7 @@ class Exporter:
                 try:
                     os.symlink(os.path.abspath(filepath), userpath)
                     # Notify that the export is ready
-                    await cls.finish_export_db(
+                    await self.finish_export_db(
                         app["redis"],
                         shash,
                         request.offset,

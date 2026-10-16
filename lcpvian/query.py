@@ -103,9 +103,8 @@ async def process_query(
     if request.to_export:
         xp_format: str = request.to_export.get("format", "xml") or "xml"
         try:
-            should_run = await app["exporters"][xp_format].initiate_db(
-                app, shash, config, request
-            )
+            exporter = app["exporters"][xp_format](request, qi)
+            should_run = await exporter.initiate_db(app)
         except:
             await enqueue("export")
     if should_run:
