@@ -938,7 +938,11 @@ WHERE {ent_stream_ref} && {cont_tok_stream_ref}
                 [next(t for t in entity_ref.joins), *jjoins]
             )
             inner_where = ("WHERE " + " AND ".join(jwheres)) if jwheres else ""
-            inner_group = ("GROUP BY " + ", ".join(jgroups)) if jgroups else ""
+            inner_group = (
+                ("GROUP BY " + ", ".join(sql_str("{}", x) for x in jgroups))
+                if jgroups
+                else ""
+            )
             inner_cte = f"""SELECT {inner_selects}
             FROM {inner_from}
             {inner_where}
