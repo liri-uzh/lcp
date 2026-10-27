@@ -1042,8 +1042,17 @@ class QueryInfo:
         except:
             stats_batches, stats_results = [], {}
         new_stats_batches = [b for b in stats_batches] + [batch_name]
-        meta_json: dict = self.meta_json
-        post_processes: dict = self.post_processes
+        # No need to constantly access meta_json and post_processes as RedisDict's
+        meta_json: dict = (
+            self.meta_json.to_dict()
+            if isinstance(self.meta_json, RedisDict)
+            else self.meta_json
+        )
+        post_processes: dict = (
+            self.post_processes.to_dict()
+            if isinstance(self.post_processes, RedisDict)
+            else self.post_processes
+        )
         batch_hash, _ = self.query_batches[batch_name]
         res: list = self.get_from_cache(batch_hash)
         # lines_so_far, n_res = self.get_lines_batch(batch_name)
@@ -1058,7 +1067,7 @@ class QueryInfo:
                 for b, n in self.done_batches.items()
             ],
         )
-        _, to_send, _, _, _ = _aggregate_results(
+        _, to_send, _, _, _ = await _aggregate_results(
             res,
             stats_results,
             meta_json,

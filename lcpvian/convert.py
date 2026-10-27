@@ -129,7 +129,7 @@ def _body_totals(rest: list, attrs: list[dict]) -> tuple[list, list[int]]:
     return body, totals_this_batch
 
 
-def _aggregate_results(
+async def _aggregate_results(
     result: list,
     existing: Results,
     meta_json: QueryMeta,
