@@ -16,6 +16,7 @@ from .typed import (
     Attribs,
     Details,
     RefInfo,
+    SQLRef,
 )
 from .utils import (
     Config,
@@ -31,6 +32,8 @@ from .utils import (
     _is_anchored,
     _parse_comparison,
     _parse_repetition,
+    _is_simple_stats,
+    _get_mapping,
 )
 from ..utils import _get_all_attributes
 
@@ -203,7 +206,6 @@ class ResultsMaker:
         """
         Build the results section of the postgres query
         """
-        # strings = [COUNTER]
         strings = []
         attribs = []
 
@@ -276,6 +278,18 @@ class ResultsMaker:
                         f"Label {c} cannot be referenced (is not declared or scope-bound)"
                     )
                     self.r.entities.add(cast(str, c).lower())
+
+        if _is_simple_stats(self.query_json, self.config, self.r.label_layer):
+            first_result = results[0]
+            result_label = cast(str, first_result.get("label", "untitled_1"))
+            made, meta, filter_meta = self.simple_stats(
+                1, result_label, cast(dict, first_result["resultsAnalysis"])
+            )
+            if filter_meta:
+                self.r.post_processes[1] = filter_meta
+            self.r.meta_json = {"result_sets": [meta]}
+            self.r.needed_results = made
+            return self.query_json, self.r
 
         kind: str
         r: JSON
@@ -449,6 +463,126 @@ class ResultsMaker:
         attribs = [{"name": ent, "type": "Token", "multiple": False}]
 
         return entities_involved, attribs
+
+    def simple_stats(
+        self, i: int, label: str, result: JSONObject
+    ) -> tuple[str, ResultMetadata, list[dict[str, Any]]]:
+        """
+        When the JSON query only asks for stats on a single token,
+        we can simplify the SQL and not select unnecessary fields
+        """
+        tables: dict[str, int] = {}
+        wheres: dict[str, int] = {}
+        groups: dict[str, int] = {}
+        for q in self.query_json["query"]:
+            if "unit" not in q:
+                continue
+            u = cast(dict, q["unit"])
+            lay = u.get("layer", "")
+            lab = u.get("label", "")
+            po = u.get("partOf", [])
+            consts = u.get("constraints", [])
+            constraints: Constraints | None = _get_constraints(
+                consts,
+                lay,
+                lab,
+                self.conf,
+                self.r.sql,
+                n=self._n,
+                label_layer=self.r.label_layer,
+                entities=self.r.entities,
+                part_of=po,
+                set_objects=self.r.set_objects,
+                allow_any=True,
+            )
+            if not constraints:
+                continue
+            for t, ws in constraints.joins().items():
+                tables[t] = 1
+                if not ws:
+                    continue
+                wheres.update({w: 1 for w in cast(set, ws)})
+            # make sure own table is joined
+            lay_ref = constraints.sql_corpus.layer(lab, lay)
+            tables[next(x for x in lay_ref.joins)] = 1
+            cond = constraints.conditions()
+            if cond:
+                wheres[cond] = 1
+        selects: dict[str, int] = {}
+        attributes = cast(list[str | dict], result["attributes"])
+        functions = cast(list[str], result["functions"])
+        meta_attribs = []
+        for a in attributes:
+            att = cast(dict, a).get("attribute")
+            if not att:
+                continue
+            alab, *anames = att.split(".")
+            if not anames:
+                continue
+            alay = self.r.label_layer.get(alab, ("", ""))[0]
+            if not alay:
+                continue
+            mapping = _get_mapping(alay, self.config, self.batch, self.lang or "")
+            dummy_constraint = Constraint(
+                {},
+                "",
+                {},
+                alab,
+                alay,
+                self.conf,
+                "",
+                self.r.label_layer,
+                self.r.entities,
+            )
+            ref, ref_info = dummy_constraint.parse_reference(
+                cast(dict, a), "", alay, self.r.label_layer, mapping
+            )
+            sql_ref: SQLRef = ref_info.get("sql") or SQLRef(alab, att, alab, {})
+            for t, whs in sql_ref.joins.items():
+                tables[t] = 1
+                if not whs:
+                    continue
+                wheres.update({w: 1 for w in cast(set, whs)})
+            selects[ref] = 1
+            groups[ref] = 1
+            meta_attribs.append({"name": att.replace(".", "_"), "type": att})
+        meta_attribs.append({"name": "frequency", "type": "aggregate"})
+        filt = cast(JSONObject, result.get("filter", {}))
+        where_filter, filter_meta = self._process_filters(filt)
+        selects_str = ", ".join(f"{s} AS a{n}" for n, s in enumerate(selects))
+        tables_str = " CROSS JOIN ".join(tables)
+        wheres_str = (
+            ("WHERE " + " AND ".join(f"({w})" for w in wheres)) if wheres else ""
+        )
+        groups_str = "(" + ",".join(groups) + ")"
+        where_filter_str = f"WHERE {where_filter}" if where_filter else ""
+        out = f"""WITH match_list AS (
+            SELECT {{selects}}, count(*) AS frequency
+            FROM {{tables}}
+            {{wheres}}
+            GROUP BY ({{groups}})
+        ), res{i} AS (
+            SELECT {i}::int2 AS rstype,
+                jsonb_build_array(FALSE, {{selects_json}}, frequency)
+            FROM match_list
+            {{where_filter}}
+        ),
+        res0 AS (
+            SELECT 0::int2 AS rstype, jsonb_build_array(SUM(match_list.frequency)) FROM match_list
+        )""".format(
+            selects_json=",".join(f"a{n}" for n, _ in enumerate(selects)),
+            selects=selects_str,
+            tables=tables_str,
+            wheres=wheres_str,
+            groups=groups_str,
+            where_filter=where_filter_str,
+        )
+        meta: ResultMetadata = {
+            "attributes": meta_attribs,
+            "name": label,
+            "type": "analysis",
+        }
+        return out, meta, filter_meta
 
     def stats(
         self, i: int, varname: str, result: JSONObject

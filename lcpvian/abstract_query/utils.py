@@ -692,3 +692,33 @@ def _is_prefix(query: str, op: str = "=", typ: str = "string") -> bool:
             continue
         return True
     return False
+
+
+def _is_simple_stats(query_json: dict[str, Any], conf: dict, lab_lay: dict) -> bool:
+    """
+    Return whether the JSON query is a simple stats query:
+    only simple units in the query part (no set, no sequence, etc.)
+    and only stats on a unique token in the results
+    """
+    tok = conf["firstClass"]["token"]
+    query = query_json["query"]
+    # Non-unit in query
+    if any("unit" not in q for q in query):
+        return False
+    # Token doesn't appear in query
+    if all(q["unit"].get("layer") != tok for q in query):
+        return False
+    results = query_json["results"]
+    # Non-stats results (or more than 1 stats)
+    if not all("resultsAnalysis" in r for r in results) or len(results) > 1:
+        return False
+    stats = results[0]["resultsAnalysis"]
+    attributes = stats["attributes"]
+    layer_attributes = [
+        lab_lay.get(a["attribute"].split(".")[0], ["", ""])[0]
+        for a in attributes
+        if "attribute" in a
+    ]
+    if tok not in layer_attributes:
+        return False
+    return True

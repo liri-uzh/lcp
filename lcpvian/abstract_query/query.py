@@ -21,6 +21,7 @@ from .utils import (
     _layer_contains,
     _to_leftjoins,
     _bound_label,
+    _is_simple_stats,
     sql_str,
 )
 from ..utils import _get_all_attributes
@@ -465,6 +466,10 @@ class QueryMaker:
         """
         The main entrypoint: produce query sqlc as a single string
         """
+        # Results generate the full query for simple stats
+        if _is_simple_stats(self.query_json, self.config, self.r.label_layer):
+            return ("", "", "")
+
         # Store it for later (we'll modify self.r.selects)
         selects_for_res = {self._get_label_as(x) for x in self.r.selects}
 

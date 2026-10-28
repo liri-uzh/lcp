@@ -492,7 +492,7 @@ class Request:
         )
         actual_nlines = lines_so_far + 1 - offset_this_batch
         logging.debug(
-            f"[{self.id}] Sending {actual_nlines} results lines for batch {batch_name} ({batch_hash}; QI {qi.hash}) {to_msg}"
+            f"[{self.id}] Sending {actual_nlines} KWIC lines for batch {batch_name} ({batch_hash}; QI {qi.hash}) {to_msg}"
         )
         if self.to_export:
             xp_format = self.to_export.get("format", "xml") or "xml"
@@ -512,7 +512,7 @@ class Request:
                 just=(self.room, self.user),
             )
         logging.debug(
-            f"[{self.id}] sent {actual_nlines} results lines for batch {batch_name}"
+            f"[{self.id}] sent {actual_nlines} KWIC lines for batch {batch_name}"
         )
 
     async def error(
