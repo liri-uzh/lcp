@@ -1055,11 +1055,6 @@ class QueryInfo:
         )
         batch_hash, _ = self.query_batches[batch_name]
         res: list = self.get_from_cache(batch_hash)
-        # lines_so_far, n_res = self.get_lines_batch(batch_name)
-        # if n_res == 0 or lines_so_far + n_res < offset:
-        #     # Indicate we have processed this batch
-        #     self.set_cache(stats_key, [new_stats_batches, stats_results])
-        #     return
         done_batches = cast(
             list[Batch],
             [
@@ -1104,8 +1099,7 @@ class QueryInfo:
         batch_hash = hasher(sql_query)
         res = await self.query(batch_hash, sql_query, ctx=ctx)
         res = res if res else []
-        kwic_keys = [str(k) for k in self.kwic_keys]
-        n_res = sum(1 if str(r) in kwic_keys else 0 for r, *_ in res)
+        n_res = next(r[0] for n, r in res if str(n) == "0")
         self.query_batches[batch_name] = (batch_hash, n_res)
         if batch_name not in self.done_batches:
             self.done_batches[batch_name] = batch_n
