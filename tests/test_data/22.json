@@ -1,0 +1,63 @@
+{
+    "query": [
+        {
+            "unit": {
+                "layer": "Book",
+                "label": "b"
+            }
+        },
+        {
+            "unit": {
+                "layer": "Segment",
+                "partOf": [
+                    {
+                        "partOfStream": "b"
+                    }
+                ],
+                "label": "s"
+            }
+        },
+        {
+            "unit": {
+                "layer": "Token",
+                "partOf": [
+                    {
+                        "partOfStream": "s"
+                    }
+                ],
+                "label": "t"
+            }
+        },
+        {
+            "constraint": {
+                "comparison": {
+                    "left": {
+                        "reference": "b.year"
+                    },
+                    "comparator": ">",
+                    "right": {
+                        "math": "1990"
+                    }
+                }
+            }
+        }
+    ],
+    "results": [
+        {
+            "label": "stats",
+            "resultsAnalysis": {
+                "attributes": [
+                    {
+                        "attribute": "b.year"
+                    },
+                    {
+                        "attribute": "t.form"
+                    }
+                ],
+                "functions": [
+                    "frequency"
+                ]
+            }
+        }
+    ]
+}

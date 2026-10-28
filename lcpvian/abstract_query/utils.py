@@ -702,9 +702,16 @@ def _is_simple_stats(query_json: dict[str, Any], conf: dict, lab_lay: dict) -> b
     """
     tok = conf["firstClass"]["token"]
     query = query_json["query"]
-    # Non-unit in query
-    if any("unit" not in q for q in query):
-        return False
+    for q in query:
+        # Non-unit / non-constraint in query
+        if "unit" not in q and "constraint" not in q:
+            return False
+        constraint = q.get("constraint")
+        if not constraint:
+            continue
+        # complex comparison: not simple
+        if "comparison" not in constraint:
+            return False
     # Token doesn't appear in query
     if all(q["unit"].get("layer") != tok for q in query):
         return False

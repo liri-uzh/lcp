@@ -156,3 +156,17 @@ def test_api():
         lxml.etree.fromstring(download_with_headers.text.encode("utf-8"))
     except:
         raise AssertionError("Could not parse download results")
+
+    # 7. Test a simple stats query on public corpus
+    tok = first_corpus_details["token"]
+    simple_stats_dqd = f"{seg} s\n\n{tok}@s t\n\nstats => analysis\n    attributes\n        t.form\n    functions\n        frequency"
+    simple_stats_body = {"query": simple_stats_dqd, "kind": "dqd", "synchronous": True}
+    simple_stats_search = requests.post(
+        f"{URL}/corpora/{first_corpus_id}/search", json=simple_stats_body
+    ).json()
+    # 0: meta
+    # 1: stats
+    simple_stats_keys = ("1", "0")
+    assert all(simple_stats_search.get(k) for k in simple_stats_keys), AssertionError(
+        f"Invalid response to synchronous simple stats search on first corpus"
+    )

@@ -1,0 +1,14 @@
+Book b
+
+Segment@b s
+
+Token@s t
+
+b.year > 1910
+
+stats => analysis
+    attributes
+        b.year
+        t.form
+    functions
+        frequency

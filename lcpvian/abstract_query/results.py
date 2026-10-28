@@ -471,30 +471,45 @@ class ResultsMaker:
         When the JSON query only asks for stats on a single token,
         we can simplify the SQL and not select unnecessary fields
         """
+        cst_args: tuple[Config, SQLCorpus] = (
+            self.conf,
+            self.r.sql,
+        )
+        cst_kwargs: dict[str, Any] = {
+            "label_layer": self.r.label_layer,
+            "entities": self.r.entities,
+            "set_objects": self.r.set_objects,
+            "n": self._n,
+        }
         tables: dict[str, int] = {}
         wheres: dict[str, int] = {}
         groups: dict[str, int] = {}
         for q in self.query_json["query"]:
-            if "unit" not in q:
+            is_main_constraint = "constraint" in q
+            if not is_main_constraint and "unit" not in q:
                 continue
-            u = cast(dict, q["unit"])
+            constraints: Constraints | None = None
+            if is_main_constraint:
+                obj = cast(JSONObject, [q["constraint"]])
+                constraints = _get_constraints(
+                    obj, "", "", *cst_args, top_level=True, **cst_kwargs
+                )
+                self._n = constraints._n + 1 if constraints else self._n
+            u = cast(dict, q.get("unit") or {})
             lay = u.get("layer", "")
             lab = u.get("label", "")
             po = u.get("partOf", [])
             consts = u.get("constraints", [])
-            constraints: Constraints | None = _get_constraints(
-                consts,
-                lay,
-                lab,
-                self.conf,
-                self.r.sql,
-                n=self._n,
-                label_layer=self.r.label_layer,
-                entities=self.r.entities,
-                part_of=po,
-                set_objects=self.r.set_objects,
-                allow_any=True,
-            )
+            if not is_main_constraint:
+                constraints = _get_constraints(
+                    consts,
+                    lay,
+                    lab,
+                    *cst_args,
+                    part_of=po,
+                    allow_any=True,
+                    **cst_kwargs,
+                )
             if not constraints:
                 continue
             for t, ws in constraints.joins().items():
@@ -502,12 +517,14 @@ class ResultsMaker:
                 if not ws:
                     continue
                 wheres.update({w: 1 for w in cast(set, ws)})
-            # make sure own table is joined
-            lay_ref = constraints.sql_corpus.layer(lab, lay)
-            tables[next(x for x in lay_ref.joins)] = 1
             cond = constraints.conditions()
             if cond:
                 wheres[cond] = 1
+            if is_main_constraint:
+                continue
+            # make sure table of unit is joined
+            lay_ref = constraints.sql_corpus.layer(lab, lay)
+            tables[next(x for x in lay_ref.joins)] = 1
         selects: dict[str, int] = {}
         attributes = cast(list[str | dict], result["attributes"])
         functions = cast(list[str], result["functions"])

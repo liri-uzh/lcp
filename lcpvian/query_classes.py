@@ -1099,7 +1099,8 @@ class QueryInfo:
         batch_hash = hasher(sql_query)
         res = await self.query(batch_hash, sql_query, ctx=ctx)
         res = res if res else []
-        n_res = next(r[0] for n, r in res if str(n) == "0")
+        # n_res can be None if there were no matches -> use 0 instead
+        n_res = next(r[0] for n, r in res if str(n) == "0") or 0
         self.query_batches[batch_name] = (batch_hash, n_res)
         if batch_name not in self.done_batches:
             self.done_batches[batch_name] = batch_n
