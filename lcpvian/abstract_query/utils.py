@@ -719,13 +719,14 @@ def _is_simple_stats(query_json: dict[str, Any], conf: dict, lab_lay: dict) -> b
     # Non-stats results (or more than 1 stats)
     if not all("resultsAnalysis" in r for r in results) or len(results) > 1:
         return False
-    stats = results[0]["resultsAnalysis"]
-    attributes = stats["attributes"]
-    layer_attributes = [
-        lab_lay.get(a["attribute"].split(".")[0], ["", ""])[0]
-        for a in attributes
-        if "attribute" in a
-    ]
-    if tok not in layer_attributes:
-        return False
+    # No need to check the attributes: all that matters is that token is referenced in query
+    # stats = results[0]["resultsAnalysis"]
+    # attributes = stats["attributes"]
+    # layer_attributes = [
+    #     lab_lay.get(a["attribute"].split(".")[0], ["", ""])[0]
+    #     for a in attributes
+    #     if "attribute" in a
+    # ]
+    # if tok not in layer_attributes:
+    #     return False
     return True
