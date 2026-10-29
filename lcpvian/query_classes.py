@@ -446,6 +446,7 @@ class Request:
                     offset_this_batch + lines_this_batch,
                 )
             )
+        # The middle number is the number of lines sent
         self.lines_batch[batch_hash] = [offset_this_batch, lines_this_batch, n_seg_ids]
         _, results = await qi.get_stats_results()  # fetch any stats results first
         is_full = True if self.full else False
@@ -912,9 +913,20 @@ class QueryInfo:
         If no batch is predicted to have enough results, pick the smallest
         available (so more results go to the frontend faster).
         """
-        first_batch = self.all_batches[0]
-        if not previous_batch or len(self.done_batches) == 0:
-            return first_batch
+        # Sort the done batches by the order in which they were sent:
+        # get_lines_batch(batch) return (previous_lines,batch_lines)
+        sorted_done_batches = sorted(
+            [b for b in self.done_batches], key=lambda b: self.get_lines_batch(b)[0]
+        )
+
+        # First batch of the request
+        if not previous_batch:
+            # If no batches done at all: just use the first one
+            if not sorted_done_batches:
+                return self.all_batches[0]
+            first_done_batch = sorted_done_batches[0]
+            # If some batches are done, make sure to use the first one
+            return next(b for b in self.all_batches if b[0] == first_done_batch)
 
         # return the batch after 'previous' in done_batches if it's in there
         list_done_batches = [[b, n] for b, n in self.done_batches.items()]
