@@ -11,7 +11,8 @@ WITH match_list AS
      AND (("b"."meta"->>'year')::numeric > (1910)::numeric)
      AND ("t_form"."form_id" = "t"."form_id")
    GROUP BY (("b"."meta"->>'year',
-              "t_form"."form"))),
+              "t_form"."form"))
+   ORDER BY frequency DESC),
      res1 AS
   (SELECT 1::int2 AS rstype,
           jsonb_build_array(FALSE, a0, a1, frequency)

@@ -1,0 +1,60 @@
+{
+    "query": [
+        {
+            "unit": {
+                "layer": "Book",
+                "label": "b"
+            }
+        },
+        {
+            "unit": {
+                "layer": "Segment",
+                "partOf": [
+                    {
+                        "partOfStream": "b"
+                    }
+                ],
+                "label": "s"
+            }
+        },
+        {
+            "unit": {
+                "layer": "Token",
+                "partOf": [
+                    {
+                        "partOfStream": "s"
+                    }
+                ],
+                "label": "t"
+            }
+        },
+        {
+            "constraint": {
+                "comparison": {
+                    "left": {
+                        "reference": "b.year"
+                    },
+                    "comparator": ">",
+                    "right": {
+                        "math": "1910"
+                    }
+                }
+            }
+        }
+    ],
+    "results": [
+        {
+            "label": "stats",
+            "resultsAnalysis": {
+                "attributes": [
+                    {
+                        "entity": "t"
+                    }
+                ],
+                "functions": [
+                    "frequency"
+                ]
+            }
+        }
+    ]
+}

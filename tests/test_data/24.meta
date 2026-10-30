@@ -1,0 +1,444 @@
+{
+    "schema": "text_berg_korpus_echo_des_alples_1e01737e3ada4407892cb804a7ce5900_1",
+    "schema_path": "text_berg_korpus_echo_des_alples_1e01737e3ada4407892cb804a7ce5900_1",
+    "idx": 236,
+    "batch": "token8",
+    "meta": {
+        "url": "www.textberg.ch/site",
+        "date": "2015",
+        "name": "Text+Berg-Korpus - Echo des Alples",
+        "author": "Noah Bubenhofer and Martin Volk and Fabienne Leuenberger and Daniel Wüest",
+        "version": 1,
+        "sample_query": "Segment s\n\nNamedEntity@s ne\n\nresults => plain\n    context\n        s\n    entities\n        ne",
+        "corpusDescription": "Digitale Edition des Echo des Alpes 1872-1924"
+    },
+    "document": "Book",
+    "segment": "Segment",
+    "token": "Token",
+    "layer": {
+        "Book": {
+            "abstract": false,
+            "contains": "Article",
+            "layerType": "span",
+            "attributes": {
+                "meta": {
+                    "name": {
+                        "type": "text",
+                        "nullable": false
+                    },
+                    "year": {
+                        "type": "number",
+                        "nullable": false
+                    },
+                    "languages": {
+                        "type": "categorical",
+                        "nullable": true
+                    }
+                }
+            }
+        },
+        "Token": {
+            "abstract": false,
+            "anchoring": {
+                "time": false,
+                "stream": true,
+                "location": false
+            },
+            "layerType": "unit",
+            "attributes": {
+                "form": {
+                    "type": "text",
+                    "isGlobal": false,
+                    "nullable": false
+                },
+                "misc": {
+                    "type": "dict",
+                    "isGlobal": false,
+                    "nullable": true
+                },
+                "xpos": {
+                    "type": "categorical",
+                    "values": [
+                        "D_def",
+                        "$.",
+                        "''",
+                        "RB",
+                        "EX",
+                        "WDT",
+                        "ABR",
+                        "CD",
+                        "VVZ",
+                        "NE",
+                        "NOM",
+                        "PP",
+                        "CON",
+                        ":",
+                        "WP$",
+                        "DT",
+                        "VBZ",
+                        "D_dem",
+                        "PCT_S",
+                        "VHP",
+                        "PRE",
+                        "WRB",
+                        ")",
+                        "POS",
+                        "PON",
+                        "PDT",
+                        "WP",
+                        "NPS",
+                        "ADV",
+                        "C_S",
+                        "PCT_W",
+                        "PP$",
+                        "V",
+                        "VV",
+                        ",",
+                        "VBN",
+                        "VBD",
+                        "VHD",
+                        "VB",
+                        "$",
+                        "ART",
+                        "PRO_rel",
+                        "UH",
+                        "VVD",
+                        "RBS",
+                        "CARD",
+                        "NPR",
+                        "CL_obj",
+                        "VVFIN",
+                        "VHZ",
+                        "IN/that",
+                        "PRO_dem",
+                        "A_ind",
+                        "NUM",
+                        "D_poss",
+                        "SENT",
+                        "TO",
+                        "FW",
+                        "VVG",
+                        "CL_suj",
+                        "JJR",
+                        "VH",
+                        "D_ind",
+                        "ADJA",
+                        "DET:def",
+                        "``",
+                        "NP",
+                        "(",
+                        "D_card",
+                        "VER:geru",
+                        "A_qual",
+                        "VHN",
+                        "NN",
+                        "JJS",
+                        "$,",
+                        "D_part",
+                        "JJ",
+                        "VVP",
+                        "N_C",
+                        "P",
+                        "VBG",
+                        "RBR",
+                        "PRE:det",
+                        "VVN",
+                        "MD",
+                        "CC",
+                        "RP",
+                        "VBP",
+                        "ADJ",
+                        "C_C",
+                        "LS",
+                        "KON",
+                        "APPRART",
+                        "N_P",
+                        "N_card",
+                        "$(",
+                        "IN",
+                        "SYM",
+                        "NNS",
+                        "VHG",
+                        "VER:impe",
+                        "APPR",
+                        "FM",
+                        "TRUNC",
+                        "VER:pres",
+                        "DET:indef",
+                        "ADJD",
+                        "ET",
+                        "PRO",
+                        "PRO_int",
+                        "PDS",
+                        "PRO_ind",
+                        "A_card",
+                        "A_ord",
+                        "XY",
+                        "VER:cpre",
+                        "VVIMP",
+                        "#",
+                        "PRO_card",
+                        "KOKOM",
+                        "PIAT",
+                        "VER:futu",
+                        "VVPP",
+                        "KOUS",
+                        "PRELS",
+                        "VAFIN",
+                        "VER:infi",
+                        "PPER",
+                        "PTKVZ",
+                        "CL_refl",
+                        "PPOSAT",
+                        "ADV_int",
+                        "PTKNEG",
+                        "VMINF",
+                        "VVIZU",
+                        "VVINF",
+                        "KOUI",
+                        "PIS",
+                        "PWAT",
+                        "VMFIN",
+                        "APZR",
+                        "PWAV",
+                        "PTKZU",
+                        "VAINF",
+                        "PAV",
+                        "PTKA",
+                        "VAPP",
+                        "PRF",
+                        "PDAT",
+                        "PWS",
+                        "APPO",
+                        "I",
+                        "A_int",
+                        "D_int",
+                        "ADV_excl",
+                        "D_excl",
+                        "PREF",
+                        "PRO_poss",
+                        "VER:pper",
+                        "PRO:pers",
+                        "PRO:indef",
+                        "VER:remo",
+                        "",
+                        "ITJ",
+                        "ORD",
+                        "VER:ppre",
+                        "V_",
+                        "PTKANT",
+                        "PRO:demo",
+                        "PRO:poss",
+                        "PRO:refl"
+                    ],
+                    "isGlobal": false,
+                    "nullable": false
+                },
+                "lemma": {
+                    "type": "text",
+                    "isGlobal": false,
+                    "nullable": true
+                }
+            }
+        },
+        "Article": {
+            "abstract": false,
+            "contains": "Segment",
+            "layerType": "span",
+            "attributes": {
+                "lang": {
+                    "type": "categorical",
+                    "values": [
+                        "en",
+                        "fr",
+                        "de"
+                    ]
+                },
+                "meta": {
+                    "id": {
+                        "type": "text",
+                        "nullable": true
+                    },
+                    "month": {
+                        "type": "text",
+                        "nullable": true
+                    },
+                    "title": {
+                        "type": "text",
+                        "nullable": true
+                    },
+                    "author": {
+                        "type": "text",
+                        "nullable": true
+                    },
+                    "category": {
+                        "type": "text",
+                        "nullable": true
+                    },
+                    "author_id": {
+                        "type": "text",
+                        "nullable": true
+                    },
+                    "author_city": {
+                        "type": "text",
+                        "nullable": true
+                    },
+                    "translation": {
+                        "type": "text",
+                        "nullable": true
+                    },
+                    "duplicate_of": {
+                        "type": "text",
+                        "nullable": true
+                    },
+                    "author_description": {
+                        "type": "text",
+                        "nullable": true
+                    }
+                },
+                "orig_lang": {
+                    "type": "categorical",
+                    "values": [
+                        ""
+                    ]
+                }
+            }
+        },
+        "Segment": {
+            "abstract": false,
+            "contains": "Token",
+            "layerType": "span",
+            "attributes": {
+                "meta": {
+                    "sent_id": {
+                        "type": "text",
+                        "nullable": false
+                    }
+                }
+            }
+        },
+        "NamedEntity": {
+            "abstract": false,
+            "contains": "Token",
+            "layerType": "span",
+            "attributes": {
+                "stid": {
+                    "type": "text",
+                    "nullable": true
+                },
+                "type": {
+                    "type": "categorical",
+                    "values": [
+                        "city",
+                        "glacier",
+                        "mountain",
+                        "valley",
+                        "lake",
+                        "person",
+                        "mountain cabin"
+                    ],
+                    "nullable": true
+                },
+                "gender": {
+                    "type": "categorical",
+                    "values": [
+                        "",
+                        "M",
+                        "F"
+                    ],
+                    "nullable": true
+                },
+                "lastname": {
+                    "type": "text",
+                    "nullable": true
+                },
+                "firstname": {
+                    "type": "text",
+                    "nullable": true
+                }
+            }
+        }
+    },
+    "project": "1e01737e-3ada-4407-892c-b804a7ce5900",
+    "projects": [
+        "1e01737e-3ada-4407-892c-b804a7ce5900"
+    ],
+    "firstClass": {
+        "token": "Token",
+        "segment": "Segment",
+        "document": "Book"
+    },
+    "schema_name": "6233cec7-caeb-4622-9127-fbf70975a2d7",
+    "mapping": {
+        "layer": {
+            "Book": {
+                "hasMeta": true,
+                "relation": "book"
+            },
+            "Token": {
+                "batches": 10,
+                "relation": "token<batch>",
+                "attributes": {
+                    "form": {
+                        "key": "form",
+                        "name": "token_form",
+                        "type": "relation"
+                    },
+                    "misc": {
+                        "name": "token_misc",
+                        "type": "relation"
+                    },
+                    "lemma": {
+                        "key": "lemma",
+                        "name": "token_lemma",
+                        "type": "relation"
+                    }
+                }
+            },
+            "Article": {
+                "hasMeta": true,
+                "relation": "article"
+            },
+            "Segment": {
+                "hasMeta": true,
+                "prepared": {
+                    "relation": "prepared_Segment",
+                    "columnHeaders": [
+                        "form",
+                        "lemma",
+                        "misc",
+                        "xpos"
+                    ]
+                },
+                "relation": "segment<batch>"
+            },
+            "NamedEntity": {
+                "relation": "namedentity",
+                "attributes": {
+                    "stid": {
+                        "key": "stid",
+                        "name": "namedentity_stid",
+                        "type": "relation"
+                    },
+                    "lastname": {
+                        "key": "lastname",
+                        "name": "namedentity_lastname",
+                        "type": "relation"
+                    },
+                    "firstname": {
+                        "key": "firstname",
+                        "name": "namedentity_firstname",
+                        "type": "relation"
+                    }
+                }
+            }
+        },
+        "hasFTS": true,
+        "FTSvectorCols": {
+            "1": "form",
+            "2": "lemma",
+            "3": "xpos",
+            "4": "misc"
+        }
+    }
+}

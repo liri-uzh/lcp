@@ -706,6 +706,9 @@ def _is_simple_stats(query_json: dict[str, Any], conf: dict, lab_lay: dict) -> b
         # Non-unit / non-constraint in query
         if "unit" not in q and "constraint" not in q:
             return False
+        # Quantified unit: not simple
+        if "quantor" in q.get("unit", {}):
+            return False
         constraint = q.get("constraint")
         if not constraint:
             continue
@@ -713,8 +716,8 @@ def _is_simple_stats(query_json: dict[str, Any], conf: dict, lab_lay: dict) -> b
         if "comparison" not in constraint:
             return False
     # Token doesn't appear in query
-    if all(q["unit"].get("layer") != tok for q in query):
-        return False
+    # if all(q.get("unit", {}).get("layer") != tok for q in query):
+    #     return False
     results = query_json["results"]
     # Non-stats results (or more than 1 stats)
     if not all("resultsAnalysis" in r for r in results) or len(results) > 1:

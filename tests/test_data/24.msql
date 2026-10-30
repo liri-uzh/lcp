@@ -1,0 +1,67 @@
+WITH preps AS
+   (SELECT DISTINCT ps."segment_id",
+                    ps.id_offset,
+                    ps.content,
+                    ps.annotations,
+                    s2.char_range
+    FROM text_berg_korpus_echo_des_alples_1e01737e3ada4407892cb804a7ce5900_1.segment8 s1
+    JOIN text_berg_korpus_echo_des_alples_1e01737e3ada4407892cb804a7ce5900_1."book" c ON c.char_range @> s1.char_range
+    JOIN text_berg_korpus_echo_des_alples_1e01737e3ada4407892cb804a7ce5900_1.segment0 s2 ON c.char_range @> s2.char_range
+    AND s2.char_range && int4range(lower(s1.char_range) - 2, upper(s1.char_range) + 2)
+    JOIN text_berg_korpus_echo_des_alples_1e01737e3ada4407892cb804a7ce5900_1.prepared_Segment ps ON ps."segment_id" = s2."segment_id"
+    WHERE s1."segment_id" = ANY(:sids)
+    ORDER BY s2.char_range),
+      meta AS
+   (WITH "x" AS
+      (SELECT ps.char_range,
+              ps."segment_id"
+       FROM preps ps),
+         "Book" AS
+      (SELECT array_agg("x"."segment_id") AS "_sids",
+              "Book"."book_id" AS "Book_id",
+              "Book"."char_range" AS "char_range",
+              "Book"."meta"::JSONB->'name' AS "name",
+              "Book"."meta"::JSONB->'year' AS "year",
+              "Book"."meta"::JSONB->'languages' AS "languages"
+       FROM "x"
+       LEFT JOIN "text_berg_korpus_echo_des_alples_1e01737e3ada4407892cb804a7ce5900_1"."book" "Book" ON "Book"."char_range" && "x"."char_range"
+       GROUP BY "Book_id"),
+         "Article" AS
+      (SELECT array_agg("x"."segment_id") AS "_sids",
+              "Article"."article_id" AS "Article_id",
+              "Article"."char_range" AS "char_range",
+              "Article"."lang" AS "lang",
+              "Article"."orig_lang" AS "orig_lang",
+              "Article"."meta"::JSONB->'id' AS "id",
+              "Article"."meta"::JSONB->'month' AS "month",
+              "Article"."meta"::JSONB->'title' AS "title",
+              "Article"."meta"::JSONB->'author' AS "author",
+              "Article"."meta"::JSONB->'category' AS "category",
+              "Article"."meta"::JSONB->'author_id' AS "author_id",
+              "Article"."meta"::JSONB->'author_city' AS "author_city",
+              "Article"."meta"::JSONB->'translation' AS "translation",
+              "Article"."meta"::JSONB->'duplicate_of' AS "duplicate_of",
+              "Article"."meta"::JSONB->'author_description' AS "author_description"
+       FROM "x"
+       LEFT JOIN "text_berg_korpus_echo_des_alples_1e01737e3ada4407892cb804a7ce5900_1"."article" "Article" ON "Article"."char_range" && "x"."char_range"
+       GROUP BY "Article_id"),
+         "Segment" AS
+      (SELECT array_agg("x"."segment_id") AS "_sids",
+              "Segment"."segment_id" AS "Segment_id",
+              "Segment"."char_range" AS "char_range",
+              "Segment"."meta"::JSONB->'sent_id' AS "sent_id"
+       FROM "x"
+       LEFT JOIN "text_berg_korpus_echo_des_alples_1e01737e3ada4407892cb804a7ce5900_1"."segment0" "Segment" ON "Segment"."char_range" && "x"."char_range"
+       GROUP BY "Segment_id") SELECT jsonb_build_array("_sids", 'Book', "Book_id", jsonb_build_object('char_range', "Book"."char_range", 'name', "Book"."name", 'year', "Book"."year", 'languages', "Book"."languages")) AS res
+    FROM "Book"
+    UNION ALL SELECT jsonb_build_array("_sids", 'Article', "Article_id", jsonb_build_object('char_range', "Article"."char_range", 'lang', "Article"."lang", 'orig_lang', "Article"."orig_lang", 'id', "Article"."id", 'month', "Article"."month", 'title', "Article"."title", 'author', "Article"."author", 'category', "Article"."category", 'author_id', "Article"."author_id", 'author_city', "Article"."author_city", 'translation', "Article"."translation", 'duplicate_of', "Article"."duplicate_of", 'author_description', "Article"."author_description")) AS res
+    FROM "Article"
+    UNION ALL SELECT jsonb_build_array("_sids", 'Segment', "Segment_id", jsonb_build_object('char_range', "Segment"."char_range", 'sent_id', "Segment"."sent_id")) AS res
+    FROM "Segment")
+ SELECT -1::int2 AS rstype,
+        jsonb_build_array(preps."segment_id", preps.id_offset, preps.content, preps.annotations, preps.char_range)
+ FROM preps
+ UNION ALL
+ SELECT -2::int2 AS rstype,
+        res
+ FROM meta;

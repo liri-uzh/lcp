@@ -1,0 +1,15 @@
+# Count the total number of tokens
+
+Book b
+
+Segment@b s
+
+Token@s t
+
+b.year > 1910
+
+stats => analysis
+    attributes
+        t
+    functions
+        frequency

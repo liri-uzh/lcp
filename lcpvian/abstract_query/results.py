@@ -471,6 +471,13 @@ class ResultsMaker:
         When the JSON query only asks for stats on a single token,
         we can simplify the SQL and not select unnecessary fields
         """
+        attributes = cast(list[str | dict], result["attributes"])
+        layers_entities = [
+            self.r.label_layer.get(a["entity"], ("", {}))[0]
+            for a in attributes
+            if isinstance(a, dict) and "entity" in a
+        ]
+        # functions = cast(list[str], result["functions"]) # not used for now
         cst_args: tuple[Config, SQLCorpus] = (
             self.conf,
             self.r.sql,
@@ -481,6 +488,11 @@ class ResultsMaker:
             "set_objects": self.r.set_objects,
             "n": self._n,
         }
+        total_count: str = ""
+        total_selects: dict[str, int] = {}
+        total_tables: dict[str, int] = {}
+        total_groups: dict[str, int] = {}
+        total_wheres: dict[str, int] = {}
         tables: dict[str, int] = {}
         wheres: dict[str, int] = {}
         groups: dict[str, int] = {}
@@ -501,6 +513,7 @@ class ResultsMaker:
             po = u.get("partOf", [])
             consts = u.get("constraints", [])
             if not is_main_constraint:
+                # UNIT
                 constraints = _get_constraints(
                     consts,
                     lay,
@@ -510,6 +523,24 @@ class ResultsMaker:
                     allow_any=True,
                     **cst_kwargs,
                 )
+                # If total: select appropriate ranges
+                for layent in layers_entities:
+                    elab = layent[0].lower()
+                    if lay == layent:
+                        continue
+                    if not _layer_contains(self.config, lay, layent):
+                        continue
+                    for anc in ("stream", "time", "location"):
+                        if not _is_anchored(self.config, lay, anc) or not _is_anchored(
+                            self.config, layent, anc
+                        ):
+                            continue
+                        uanch = self.r.sql.anchor(lab, lay, anc)
+                        eanch = self.r.sql.anchor(elab, layent, anc)
+                        total_selects[f'{uanch.ref} AS "{uanch.alias}"'] = 1
+                        groups[uanch.ref] = 1
+                        total_wheres[f'"{uanch.alias}" && {eanch.ref}'] = 1
+                        total_tables[next(t for t in eanch.joins)] = 1
             if not constraints:
                 continue
             for t, ws in constraints.joins().items():
@@ -526,10 +557,8 @@ class ResultsMaker:
             lay_ref = constraints.sql_corpus.layer(lab, lay)
             tables[next(x for x in lay_ref.joins)] = 1
         selects: dict[str, int] = {}
-        attributes = cast(list[str | dict], result["attributes"])
-        functions = cast(list[str], result["functions"])
         meta_attribs = []
-        for a in attributes:
+        for n, a in enumerate(attributes):
             att = cast(dict, a).get("attribute")
             if not att:
                 continue
@@ -561,44 +590,109 @@ class ResultsMaker:
                     continue
                 wheres.update({w: 1 for w in cast(set, whs)})
             selects[ref] = 1
+            if alay not in layers_entities:
+                total_groups[f"a{n}"] = 1
             groups[ref] = 1
             meta_attribs.append({"name": att.replace(".", "_"), "type": att})
         meta_attribs.append({"name": "frequency", "type": "aggregate"})
         filt = cast(JSONObject, result.get("filter", {}))
         where_filter, filter_meta = self._process_filters(filt)
-        selects_str = ", ".join(f"{s} AS a{n}" for n, s in enumerate(selects))
+        merged_selects = [f"{s} AS a{n}" for n, s in enumerate(selects)]
+        if total_selects:
+            merged_selects += list(total_selects)
+        selects_str = ", ".join(merged_selects)
         tables_str = " CROSS JOIN ".join(tables)
         wheres_str = (
             ("WHERE " + " AND ".join(f"({w})" for w in wheres)) if wheres else ""
         )
         groups_str = "(" + ",".join(groups) + ")"
         where_filter_str = f"WHERE {where_filter}" if where_filter else ""
+        selects_json = ["FALSE", *[f"a{n}" for n, _ in enumerate(selects)], "frequency"]
+        union_total = ""
+        if layers_entities:
+            layent = layers_entities[0]
+            elab = layent[0].lower()
+            esql = self.r.sql.layer(elab, layent, True)
+            total_count = "count(" + esql.ref + ")"
+            total_from_str = "FROM match_list"
+            if total_tables:
+                total_from_str += " CROSS JOIN " + " CROSS JOIN ".join(total_tables)
+            else:
+                # No total_tables: no constraint from match_list, just get the total number of entities
+                total_from_str = "FROM " + next(t for t in esql.joins)
+            total_selects_str = ",".join([*total_groups, total_count])
+            total_groups_str = (
+                (" GROUP BY (" + ",".join(total_groups) + ")") if total_groups else ""
+            )
+            total_wheres_str = (
+                ("WHERE" + " AND ".join(f"({w})" for w in total_wheres))
+                if total_wheres
+                else ""
+            )
+            union_total = f"""UNION
+            SELECT {i}::int2 AS rstype,
+                jsonb_build_array(TRUE, {{total_selects}})
+            {{total_from}}
+            {{total_wheres}}
+            {{total_groups}}""".format(
+                total_selects=total_selects_str,
+                total_from=total_from_str,
+                total_tables=" CROSS JOIN ".join(total_tables),
+                total_wheres=total_wheres_str,
+                total_groups=total_groups_str,
+            )
         out = f"""WITH match_list AS (
             SELECT {{selects}}, count(*) AS frequency
             FROM {{tables}}
             {{wheres}}
             GROUP BY ({{groups}})
+            ORDER BY frequency DESC
         ), res{i} AS (
             SELECT {i}::int2 AS rstype,
-                jsonb_build_array(FALSE, {{selects_json}}, frequency)
+                jsonb_build_array({{selects_json}})
             FROM match_list
-            {{where_filter}}
+            {{where_filter}}{{union_total}}
         ),
         res0 AS (
             SELECT 0::int2 AS rstype, jsonb_build_array(SUM(match_list.frequency)) FROM match_list
         )""".format(
-            selects_json=",".join(f"a{n}" for n, _ in enumerate(selects)),
+            selects_json=",".join(selects_json),
             selects=selects_str,
             tables=tables_str,
             wheres=wheres_str,
             groups=groups_str,
             where_filter=where_filter_str,
+            union_total=union_total,
         )
         meta: ResultMetadata = {
             "attributes": meta_attribs,
             "name": label,
             "type": "analysis",
         }
+        only_total = selects_json == ["FALSE", "frequency"]
+        if only_total and layers_entities:
+            # Only asking for total number of units
+            meta["attirbutes"] = [{"name": "frequency", "type": "aggregate"}]
+            out = f"""WITH res{i} AS (
+                SELECT {i}::int2 AS rstype,
+                       jsonb_build_array(FALSE, count(*))
+                FROM {{tables}} {{wheres}}
+            ),
+            res0 AS (
+                SELECT 0::int2 AS rstype, jsonb_build_array(count(*)) FROM res{i}
+            )""".format(
+                tables=" CROSS JOIN ".join(tables),
+                wheres=(
+                    " WHERE " + " AND ".join(f"({w})" for w in wheres) if wheres else ""
+                ),
+            )
+        if not only_total and layers_entities:
+            # Add "total" if asking for more than just the total number of units
+            meta["total"] = [
+                *[a for n, a in enumerate(meta_attribs) if f"a{n}" in total_groups],
+                {"name": f"total_{layers_entities[0][0].lower()}", "type": "aggregate"},
+            ]
+
         return out, meta, filter_meta
 
     def stats(

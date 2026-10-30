@@ -1,0 +1,16 @@
+# Test simple analysis with total units
+
+Book b
+
+Segment@b s
+
+Token@s t
+
+b.year > 1910
+
+stats => analysis
+    attributes
+        b.year
+        t
+    functions
+        frequency
