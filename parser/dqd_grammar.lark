@@ -24,7 +24,7 @@ quantifier : NEGATION? EXISTENTIAL
 
 quantification : quantifier _NL _INDENT (unit | sequence | set) _DEDENT
 
-arguments : ((entity | function | attribute | string | regex | math) ","?)+
+arguments : ((entity | function | attribute | string | regex | math | layer(part_of)?) ","?)+
 function_name : FUNCTION_NAME
 function : function_name arguments ")"
 
@@ -77,9 +77,12 @@ results_plain        : "plain" _NL _INDENT results_plain_context results_plain_e
 results_plain_context : "context" _NL _INDENT (entity _NL*)+ _DEDENT // skip: entity
 results_plain_entities : "entities" _NL _INDENT ((entity | WILDCARD) _NL*)+ _DEDENT // skip: entity
 
+analysis_function : function_name arguments ")"
+                  | math
+
 results_analysis     : "analysis" _NL _INDENT results_analysis_attributes results_analysis_functions results_analysis_filter? _DEDENT // rename: results_analysis_attributes>attributes results_analysis_functions>functions results_analysis_filter>filter
 results_analysis_attributes : "attributes" _NL _INDENT ((attribute|function|entity) _NL*)+ _DEDENT
-results_analysis_functions : "functions" _NL _INDENT (ANALYSIS_FUNCTIONS _NL*)+ _DEDENT
+results_analysis_functions : "functions" _NL _INDENT ((analysis_function | ANALYSIS_FUNCTIONS) _NL*)+ _DEDENT                         // skip: analysis_function
 results_analysis_filter : "filter" _NL _INDENT ((comparison | comparison) _NL*)+ _DEDENT // dirty trick to force 'comparison' key after lark_to_cobquec
 
 
@@ -105,6 +108,12 @@ FUNCTION_NAME.3 : "length("
                 | "dayofmonth("
                 | "week("
                 | "month("
+                | "count("
+                | "min("
+                | "max("
+                | "avg("
+                | "std("
+                | "total("
 
 ANALYSIS_FUNCTIONS.3 : "frequency"
                    | "minimum"

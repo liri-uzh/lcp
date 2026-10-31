@@ -126,7 +126,7 @@
                 },
                 {
                     "type": "string",
-                    "pattern": "([0-9]+|-[0-9]+|-?[0-9]+\\.[0-9]+)"
+                    "pattern": "([0-9]+|-?[0-9]+\\.[0-9]+|-[0-9]+)"
                 }
             ],
             "properties": {
@@ -199,7 +199,7 @@
         },
         "quantifier": {
             "type": "string",
-            "pattern": "((EXISTS(~|\u00ac|!|not )?)|(ALL(~|\u00ac|!|not )?))"
+            "pattern": "(((~|\u00ac|!|not )?EXISTS)|((~|\u00ac|!|not )?ALL))"
         },
         "quantification": {
             "type": "object",
@@ -271,6 +271,20 @@
                         "required": [
                             "math"
                         ]
+                    },
+                    {
+                        "type": "object",
+                        "properties": {
+                            "layer": {
+                                "$ref": "#/$defs/layer"
+                            },
+                            "partOf": {
+                                "$ref": "#/$defs/partOf"
+                            }
+                        },
+                        "required": [
+                            "layer"
+                        ]
                     }
                 ],
                 "properties": {
@@ -299,7 +313,7 @@
         },
         "functionName": {
             "type": "string",
-            "pattern": "(length\\(?|size\\(?|range\\(?|position\\(?|start\\(?|end\\(?|year\\(?|decade\\(?|century\\(?|day\\(?|dayofweek\\(?|dayofmonth\\(?|week\\(?|month\\(?)"
+            "pattern": "(length\\(?|size\\(?|range\\(?|position\\(?|start\\(?|end\\(?|year\\(?|decade\\(?|century\\(?|day\\(?|dayofweek\\(?|dayofmonth\\(?|week\\(?|month\\(?|count\\(?|min\\(?|max\\(?|avg\\(?|std\\(?|total\\(?)"
         },
         "function": {
             "type": "object",
@@ -482,7 +496,7 @@
         },
         "comparator": {
             "type": "string",
-            "pattern": "((~|\u00ac|!|not )?(=|[><]=?|contain|overlaps))"
+            "pattern": "((=|[><]=?|contain|overlaps)(~|\u00ac|!|not )?)"
         },
         "comparison": {
             "type": "object",
@@ -838,6 +852,36 @@
             },
             "minItems": 1
         },
+        "analysisFunction": {
+            "anyOf": [
+                {
+                    "type": "object",
+                    "properties": {
+                        "functionName": {
+                            "$ref": "#/$defs/functionName"
+                        },
+                        "arguments": {
+                            "$ref": "#/$defs/arguments"
+                        }
+                    },
+                    "required": [
+                        "functionName",
+                        "arguments"
+                    ]
+                },
+                {
+                    "required": [
+                        "math"
+                    ]
+                }
+            ],
+            "properties": {
+                "math": {
+                    "$ref": "#/$defs/math"
+                }
+            },
+            "type": "object"
+        },
         "resultsAnalysis": {
             "type": "object",
             "properties": {
@@ -894,8 +938,26 @@
         "resultsAnalysisFunctions": {
             "type": "array",
             "items": {
-                "type": "string",
-                "pattern": "(frequency|minimum|maximum|average|stddev)"
+                "anyOf": [
+                    {
+                        "required": [
+                            "analysisFunction"
+                        ]
+                    },
+                    {
+                        "type": "string",
+                        "pattern": "((frequency|minimum|maximum|average|stddev))"
+                    }
+                ],
+                "properties": {
+                    "analysisFunction": {
+                        "$ref": "#/$defs/analysisFunction"
+                    }
+                },
+                "type": [
+                    "string",
+                    "object"
+                ]
             },
             "minItems": 1
         },
@@ -1071,6 +1133,9 @@
         ],
         "resultsPlainEntities": [
             "entity"
+        ],
+        "resultsAnalysisFunctions": [
+            "analysisFunction"
         ]
     },
     "renames": {
