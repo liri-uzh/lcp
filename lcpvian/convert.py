@@ -31,7 +31,7 @@ the kwic line from matching token ids plus the relevant prepared_segment.
 import operator
 
 from collections import defaultdict
-from typing import Any, cast
+from typing import Any, Callable, cast
 
 from .typed import (
     Batch,
@@ -56,10 +56,22 @@ OPS = {
 }
 
 
+def fn_stat_type(stat_type: str) -> Callable:
+    fn: Callable = lambda x, y: x + y
+    if stat_type == "min":
+        fn = lambda x, y: min(x, y)
+    if stat_type == "max":
+        fn = lambda x, y: max(x, y)
+    if stat_type == "average":
+        # This is horribe, should be revised to retrive N from existing (i.e. update SQL too)
+        fn = lambda x, y: x + y / 2
+    return fn
+
+
 def _prepare_existing(
     res: Results, kwics: set[int], colls: set[int], result_set: list
-) -> dict[int, dict[str, tuple[int, float]]]:
-    out: dict[int, Any] = {}
+) -> dict[int, dict[str | tuple, Any]]:
+    out: dict[int, dict[str | tuple, Any]] = {}
     for k, v in res.items():
         k = int(k)
         if k < 1 or k in kwics:
@@ -69,6 +81,7 @@ def _prepare_existing(
         v = cast(list, v)
         if k in colls:
             for text, total, e in v:
+                text = str(text)
                 if text not in out[k]:
                     out[k][text] = (total, e)
                 else:
@@ -82,14 +95,17 @@ def _prepare_existing(
                 attrs_to_pass = attrs
                 if r[0] in (True, "True"):
                     attrs_to_pass = total_info
-                body, totals_this_batch = _body_totals(r, attrs_to_pass)
+                body, stats_this_batch, types_stats = _body_stats(r, attrs_to_pass)
                 # body = r[:-1]
                 tk = tuple(body)
                 if tk not in out[k]:
-                    out[k][tk] = [0 for _ in totals_this_batch]
+                    out[k][tk] = [
+                        0 if types_stats[n] == "aggregate" else x
+                        for n, x in enumerate(stats_this_batch)
+                    ]
                 out[k][tk] = [
-                    out[k][tk][n] + totals_this_batch[n]  # type: ignore
-                    for n, _ in enumerate(totals_this_batch)
+                    fn_stat_type(types_stats[n])(out[k][tk][n], stats_this_batch[n])
+                    for n, _ in enumerate(stats_this_batch)
                 ]
     return out
 
@@ -115,19 +131,24 @@ def _unfold(exist: dict, kwics: set[int], colls: set[int]) -> Results:
     return out
 
 
-def _body_totals(rest: list, attrs: list[dict]) -> tuple[list, list[int]]:
+def _body_stats(rest: list, attrs: list[dict]) -> tuple[list, list[float], list[str]]:
     """
     Called only for stats/frequency
     """
     # Include first rest entry (True/False) in the body
     attrs = [{"type": "totals"}, *attrs]
+    stats_types = ("aggregate", "min", "max", "average", "standard")
     body = cast(
-        list, [str(x) for n, x in enumerate(rest) if attrs[n]["type"] != "aggregate"]
+        list,
+        [str(x) for n, x in enumerate(rest) if attrs[n]["type"] not in stats_types],
     )
-    totals_this_batch = [
-        x for n, x in enumerate(rest) if attrs[n]["type"] == "aggregate"
+    stats_this_batch = [
+        float(x) for n, x in enumerate(rest) if attrs[n]["type"] in stats_types
     ]
-    return body, totals_this_batch
+    types_stats = [
+        attrs[n]["type"] for n, _ in enumerate(rest) if attrs[n]["type"] in stats_types
+    ]
+    return body, stats_this_batch, types_stats
 
 
 async def _aggregate_results(
@@ -154,7 +175,9 @@ async def _aggregate_results(
     minus_one: ResultsValue = existing.get(-1, cast(ResultsValue, {}))
     zero: ResultsValue = existing.get(0, cast(ResultsValue, {}))
 
-    precalcs: dict = _prepare_existing(existing, kwics, colls, rs)
+    precalcs: dict[int, dict[str | tuple, Any]] = _prepare_existing(
+        existing, kwics, colls, rs
+    )
 
     for line in result:
         key = int(line[0])
@@ -181,13 +204,20 @@ async def _aggregate_results(
         attrs: list[dict] = cast(dict, rs[key - 1]).get("attributes", [])
         if rest[0] in (True, "True"):
             attrs = cast(dict, rs[key - 1]).get("total", [])
-        body, totals_this_batch = _body_totals(rest, attrs)
+        body, stats_this_batch, types_stats = _body_stats(rest, attrs)
         # need_update = body in precalcs[key]
         preexist = precalcs[key].get(
-            tuple(body), [0 for n, _ in enumerate(totals_this_batch)]
+            tuple(body),
+            [
+                # for aggregate: default to 0; otherwise (min, max) use current value
+                0 if types_stats[n] == "aggregate" else x
+                for n, x in enumerate(stats_this_batch)
+            ],
         )
+        # TODO: this adds numbers for all types, but it should only do so for aggregates
         combined = [
-            preexist[n] + totals_this_batch[n] for n, _ in enumerate(totals_this_batch)
+            fn_stat_type(types_stats[n])(preexist[n], stats_this_batch[n])
+            for n, _ in enumerate(stats_this_batch)
         ]
         precalcs[key][tuple(body)] = combined
         counts[key] = combined

@@ -14,9 +14,7 @@ from .typed import (
     ConfigJSON,
     ResultMetadata,
     JSON,
-    Attribs,
     Details,
-    RichStr,
     RefInfo,
     SQLRef,
 )
@@ -26,7 +24,6 @@ from .utils import (
     SQLCorpus,
     sql_str,
     _flatten_coord,
-    _get_table,
     _bound_label,
     _layer_contains,
     _label_layer,
@@ -34,7 +31,6 @@ from .utils import (
     _is_anchored,
     _parse_comparison,
     _parse_repetition,
-    _get_mapping,
 )
 from ..utils import _get_all_attributes
 
@@ -49,15 +45,15 @@ COUNTER = f"""
 
 ANCHORINGS = ("stream", "time", "location")
 
-# Analysis functions along with their list of typed attributes
-ANALYSIS_FUNCTIONS = {
-    "frequency": [],
-    "count": ["entity|attribute|layer", "partOf*"],
-    "total": ["entity"],
-    "min": ["math|attribute"],
-    "max": ["math|attribute"],
-    "avg": ["math|attribute"],
-    "std": ["math|attribute"],
+# Analysis functions along with their list of typed attributes and what should happen in _aggregate_results
+ANALYSIS_FUNCTIONS: dict[str, tuple[list[str], str]] = {
+    "frequency": ([], "aggregate"),
+    "count": (["entity|attribute|layer", "partOf*"], "aggregate"),
+    "total": (["entity"], "aggregate"),
+    "min": (["math|attribute"], "min"),
+    "max": (["math|attribute"], "max"),
+    "avg": (["math|attribute"], "average"),
+    "std": (["math|attribute"], "standard"),
 }
 
 LR = "{}"
@@ -71,6 +67,7 @@ class AnalysisFunction:
     def __init__(self, r: "ResultsMaker", f: dict[str, Any], groups: list[SQLRef]):
         self.r = r.r
         self.f = f
+        self.type: str = "aggregate"
         self.force_own_cte: bool = False
         self.name: str = ""
         self.groups: list[SQLRef] = []
@@ -88,14 +85,16 @@ class AnalysisFunction:
             assert fn in ANALYSIS_FUNCTIONS, AssertionError(
                 f"Analysis function must be in {', '.join(ANALYSIS_FUNCTIONS)} (encountered {fn})"
             )
-            min_len = len([x for x in ANALYSIS_FUNCTIONS[fn] if "*" not in x])
-            max_len = len(ANALYSIS_FUNCTIONS[fn])
+            arg_types, fn_type = ANALYSIS_FUNCTIONS[fn]
+            self.type = fn_type
+            min_len = len([x for x in arg_types if "*" not in x])
+            max_len = len(arg_types)
             assert len(args) >= min_len and len(args) <= max_len, AssertionError(
                 f"The function {fn} takes between {min_len} and {max_len} arguments, but {len(args)} were provided."
             )
             str_args: list[str] = []
             for na, a in enumerate(f["arguments"]):
-                allowed_types = ANALYSIS_FUNCTIONS[fn][na].split("|")
+                allowed_types = arg_types[na].split("|")
                 type_error = f"The function {fn} does not accept an argument of type {a.__class__} ('{a}') as its {na+1} argument"
                 if isinstance(a, (str, int, float)):
                     assert "math" in allowed_types, AssertionError(type_error)
@@ -139,7 +138,7 @@ class AnalysisFunction:
                     _, _, eref = r.parse_attribute(a)
                     self.anaphors.append(eref)
                     str_args.append("DISTINCT {" + eref.alias + "}")
-                    name.append(elab)
+                    name.append(a["attribute"].replace(".", "_"))
                     continue
                 elif "layer" in a:
                     # COUNT OF LAYER ENTITIES: NO GROUPS AT ALL
@@ -492,7 +491,6 @@ class ResultsMaker:
                 made, meta = self._kwic(i, varname, context, enti)
             elif kind == "resultsAnalysis":
                 n_analyses += 1
-                # made, meta, filter_meta = self.stats(i, varname, r)
                 funcs, groups, meta, filters_meta = self.analysis(i, varname, r)
                 assert all(
                     any(g.alias == g2.alias for f in funcs for g2 in f.groups)
@@ -994,7 +992,7 @@ class ResultsMaker:
             func = AnalysisFunction(self, f, groups)
             funcs.append(func)
         group_attribs = [{"name": g.alias, "type": g.ref} for g in groups]
-        func_attribs = [{"name": f.name, "type": "aggregate"} for f in funcs]
+        func_attribs = [{"name": f.name, "type": f.type} for f in funcs]
         meta: ResultMetadata = {
             "attributes": group_attribs + func_attribs,
             "name": label,
@@ -1003,25 +1001,6 @@ class ResultsMaker:
         filters = cast(JSONObject, result.get("filter") or [])
         _, filters_meta = self._process_filters(filters)
         return funcs, groups, meta, filters_meta
-
-    def stats(
-        self, i: int, varname: str, result: JSONObject
-    ) -> tuple[str, ResultMetadata, list[dict[str, Any]]]:
-        """
-        Process a stats request
-        """
-        attributes = cast(list[str | dict], result["attributes"])
-
-        functions = cast(list[str], result["functions"])
-        filt = cast(JSONObject, result.get("filter", {}))
-        made, meta, filter_meta = self._stat_analysis(
-            i,
-            varname,
-            [a for a in attributes if isinstance(a, dict)],
-            functions,
-            filt,
-        )
-        return made, meta, filter_meta
 
     def _kwic(
         self,
@@ -1342,228 +1321,6 @@ WHERE {ent_stream_ref} && {cont_tok_stream_ref}
         else:
             strung = ""
         return strung, out
-
-    def _stat_analysis(
-        self,
-        i: int,
-        label: str,
-        attributes: list[dict[str, Any]],
-        functions: list[str],
-        filt: JSONObject,
-    ) -> tuple[str, ResultMetadata, list[dict[str, Any]]]:
-        """
-        Produce a frequency table and its JSON metadata
-        """
-        count_entities: dict[str, int] = {
-            x["entity"]: 1 for x in attributes if "entity" in x
-        }
-        assert len(count_entities) < 2, RuntimeError(
-            f"Cannot reference more than one entity in the attributes of an analysis {', '.join(count_entities)})"
-        )
-        counts: list[str] = []
-        for func in functions:
-            if not func.lower().startswith("freq"):
-                raise NotImplementedError("TODO?")
-            if not count_entities:
-                counts.append(f"count(*) AS {func.lower()}")
-                continue
-            count_entity = next(ce for ce in count_entities)
-            entity_layer, _ = self.r.label_layer[count_entity]
-            entity_alias = self.r.sql.layer(count_entity, entity_layer).alias
-            counts.append(
-                sql_str("count(DISTINCT {}) AS {}", entity_alias, func.lower())
-            )
-        if counts:
-            jcounts = " , " + " , ".join(counts)
-        else:
-            jcounts = " "
-        funcstr = " , ".join(functions)
-        jselects: list[str] = []
-        jjoins: list[str] = []
-        jwheres: list[str] = []
-        jgroups: list[str] = []
-        jattribs: list[str] = []
-        parsed_attributes: list[tuple[str, RefInfo]] = []
-        for att in attributes:
-            if "entity" in att:
-                continue
-            constraint: Constraint = Constraint(
-                att,
-                "=",  # placeholder,
-                att,  # placeholder
-                "",  # placeholder
-                "",  # placeholder
-                self.conf,
-                "",  # placeholder
-                self.r.label_layer,
-            )
-            # fix = att.replace(".", "_")
-            ref, ref_info = constraint.get_sql_expr(att)
-            for formed_table, formed_conditions in constraint._joins.items():
-                self.r.joins[formed_table] = True
-                conds: set = set()
-                if isinstance(formed_conditions, set):
-                    conds = formed_conditions
-                else:
-                    conds.add(formed_conditions)
-                for c in conds:
-                    if not isinstance(c, str):
-                        continue
-                    self.r.conditions.add(c)
-            for condition in constraint._conditions:
-                self.r.conditions.add(condition)
-            alias = (ref_info.get("meta") or {}).get("str", ref)
-            alias = re.sub("[^a-zA-Z0-9_]", "_", alias)
-            alias = alias.lstrip("_").rstrip("_")
-            # The method below does not work for sub-attributes of global attributes
-            self.r.selects.add(ref + sql_str(" AS {}", alias))
-            self.r.entities.add(alias)
-            parsed_attributes.append((alias, ref_info))
-            if not count_entities:
-                continue
-            entity = next(x for x in count_entities)
-            entity_layer, _ = self.r.label_layer[entity]
-            for prefix in ref_info.get("entities", []):
-                prefix_layer, _ = self.r.label_layer.get(prefix, ("", ""))
-                if prefix_layer not in self.conf_layer:
-                    continue
-                if prefix_layer == entity_layer:
-                    continue
-                if not _layer_contains(self.config, prefix_layer, entity_layer):
-                    continue
-                anchorings = [
-                    a
-                    for a in ANCHORINGS
-                    if _is_anchored(self.config, prefix_layer, a)
-                    and _is_anchored(self.config, entity_layer, a)
-                ]
-                if not anchorings:
-                    continue
-                anchors = {
-                    a: self.r.sql.anchor(prefix, prefix_layer, a) for a in anchorings
-                }
-                anchor_all_entity = f"all_{entity_layer}"
-                where_anchors = " OR ".join(
-                    sql_str(
-                        f"{{}} && {self.r.sql.anchor(anchor_all_entity, entity_layer, a)}",
-                        anchors[a].alias,
-                    )
-                    for a in anchorings
-                )
-                # select each anchor ref from match_list
-                for a in anchorings:
-                    self.r.selects.add(
-                        anchors[a].ref + sql_str(" AS {}", anchors[a].alias)
-                    )
-                    self.r.entities.add(anchors[a].alias)
-                jwheres.append(where_anchors)
-                for tab, conds in cast(dict, constraint._joins or {}).items():
-                    if tab not in jjoins:
-                        jjoins.append(tab)
-                    for cond in conds:
-                        if not cond or not isinstance(cond, str):
-                            continue
-                        if cond in jwheres:
-                            continue
-                        jwheres.append(cond)
-                jselect = ref + sql_str(" AS {}", alias)
-                if jselect not in jselects:
-                    jselects.append(jselect)
-                if alias not in jgroups:
-                    jgroups.append(alias)
-        assert parsed_attributes, RuntimeError(
-            f"Need at least one *attribute* referenced in the analysis"
-        )
-        nodes = " , ".join(sql_str("{}", p) for p, _ in parsed_attributes)
-        out = f"""
-            SELECT
-                {i}::int2 AS rstype,
-                {{outer_select}}
-            FROM
-                (
-                    SELECT
-                        {{inner_select}}
-                    FROM
-                        match_list
-                    {{wheres}}
-                    GROUP BY {nodes}
-                )
-            {{cross_order}}
-        """
-        wheres, filter_meta = self._process_filters(filt)
-        outer_select = f"jsonb_build_array(FALSE, {nodes}, {funcstr})"
-        inner_select = f"{nodes}{jcounts}"
-        cross_order = ""
-        if count_entities:
-            # only support one for now
-            entity_lab = next(e for e in count_entities)
-            entity_lay, _ = self.r.label_layer[entity_lab]
-            entity_ref = self.r.sql.layer(entity_lab, entity_lay, pointer=True)
-            all_label = sql_str("{}", f"all_{entity_lay}")
-            total_label = sql_str("{}", f"total_{entity_lay}")
-            distinct_count = sql_str("count(DISTINCT {})", entity_ref.alias)
-            inner_select = f"{nodes}, {distinct_count} AS {funcstr}, count({all_label}) AS {total_label}"
-            split_nodes = " , ".join(
-                sql_str("split.{}", p) for p, _ in parsed_attributes
-            )
-            jaliases = [s.split(" AS ")[-1] for s in jselects]
-            array_selects = [f"split.{a}" for a in jaliases]
-            array_selects.append(f"split.{total_label}")
-            outer_select = f"""CASE WHEN split.is_total = TRUE
-                THEN jsonb_build_array(TRUE, {', '.join(array_selects)})
-                ELSE jsonb_build_array(FALSE, {split_nodes}, split.{funcstr})
-            END"""
-            if jwheres:
-                if wheres:
-                    wheres += " AND "
-                else:
-                    wheres = "WHERE "
-                wheres += " AND ".join(jwheres)
-            all_table = next(str(t) for t in entity_ref.joins)
-            # Replace entity alias with "all" alias
-            all_table = re.sub(r'"[^"]+"$', all_label, all_table)
-            wheres = f"""CROSS JOIN {all_table}
-            {wheres}"""
-            # Keep the "total" values in the same order as the non-total ones
-            # and replace the ones not included in "total" with "NULL"
-            total_values = ", ".join(
-                palias if sql_str("{}", palias) in jaliases else "NULL"
-                for palias, _ in parsed_attributes
-            )
-            cross_order = f"""CROSS JOIN LATERAL (
-                VALUES (FALSE,       {nodes}, {funcstr},          NULL),
-                       (TRUE, {total_values},      NULL, {total_label})
-            ) AS split(is_total, {nodes}, {funcstr}, {total_label})
-            ORDER BY is_total DESC"""
-        out = out.format(
-            outer_select=outer_select,
-            inner_select=inner_select,
-            wheres=wheres,
-            cross_order=cross_order,
-        )
-        out = f"""res{i} AS (
-            {out}
-        )"""
-        attribs: Attribs = []
-        # for att in attributes:
-        for attr, info in parsed_attributes:
-            # lab, feat = att.split(".", 1)
-            # lay = self.r.label_layer[lab][0]
-            lab = attr.split(".")[-1]
-            lay = info.get("layer", self.r.label_layer.get(lab, ("", None))[0])
-            typed = f"{lay}.{lab}"
-            attribs.append({"name": attr, "type": typed})
-        for func in functions:
-            attribs.append({"name": func, "type": "aggregate"})
-        meta: ResultMetadata = {
-            "attributes": attribs,
-            "name": label,
-            "type": "analysis",
-        }
-        if count_entities:
-            count_entity_layer, _ = self.r.label_layer[next(x for x in count_entities)]
-            meta["total"] = [*[{"name": g, "type": "."} for g in jgroups], {"name": f"total_{count_entity_layer.lower()}", "type": "aggregate"}]  # type: ignore
-        return out, meta, filter_meta
 
     def _space_item(self, item: str) -> tuple[set[str], Joins]:
         """

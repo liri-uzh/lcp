@@ -157,9 +157,6 @@ def test_api():
     except:
         raise AssertionError("Could not parse download results")
 
-    # wait 0.5s: the series of preceding requests breaks the redis-pubsub communication between the app and the workers somehow
-    time.sleep(0.5)
-
     # 7. Test a simple stats query on public corpus
     tok = first_corpus_details["token"]
     simple_stats_dqd = f"{seg} s\n\n{tok}@s t\n\nstats => analysis\n    attributes\n        t.form\n    functions\n        frequency"
