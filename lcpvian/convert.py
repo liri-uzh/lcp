@@ -35,6 +35,7 @@ from typing import Any, cast
 
 from .typed import (
     Batch,
+    JSONObject,
     QueryMeta,
     RawSent,
     ResultSents,
@@ -195,7 +196,7 @@ async def _aggregate_results(
     existing[-1] = minus_one
     existing[0] = zero
 
-    results_to_send = _apply_filters(existing, post_processes)
+    results_to_send = _apply_filters(existing, post_processes, rs)
 
     show_total = bool(kwics) or (not kwics and len(freqs) == 1)
 
@@ -343,7 +344,9 @@ def _make_filters(
     return out
 
 
-def _apply_filters(results_so_far: Results, post_processes: dict[int, Any]) -> Results:
+def _apply_filters(
+    results_so_far: Results, post_processes: dict[int, Any], meta: list[JSONObject]
+) -> Results:
     """
     Take the unioned results and apply any post process functions
     """
@@ -351,7 +354,9 @@ def _apply_filters(results_so_far: Results, post_processes: dict[int, Any]) -> R
         return results_so_far
     out: Results = {}
     post = _make_filters(post_processes)
+    attrs_per_k = {str(n + 1): m.get("attributes") or [] for n, m in enumerate(meta)}
     for k, v in results_so_far.items():
+        kattrs = cast(list[JSONObject], attrs_per_k.get(str(k)) or [])
         for key, filters in post.items():
             if not filters:
                 continue
@@ -360,15 +365,32 @@ def _apply_filters(results_so_far: Results, post_processes: dict[int, Any]) -> R
             if int(k) != int(key):
                 continue
             for name, op, num in filters:
-                v = _apply_filter(cast(list, v), name, op, num)
+                v = _apply_filter(cast(list, v), name, op, num, kattrs)
         out[k] = v
     return out
 
 
-def _apply_filter(result: list, name: str, op: str, num: int | str | float) -> list:
+def _apply_filter(
+    result: list,
+    name: str,
+    op: str,
+    num: int | str | float,
+    attributes: list[JSONObject],
+) -> list:
     """
     Apply a single filter to a group of results, returning only those that match
     """
+    # The index of the named function
+    idx = next(
+        (
+            n
+            for n, a in enumerate(attributes)
+            if cast(str, a.get("name") or "").replace(".", "_") == name
+        ),
+        -1,
+    )
+    if idx < 0:
+        return result
     out: list = []
     try:
         num = int(num)
@@ -378,7 +400,7 @@ def _apply_filter(result: list, name: str, op: str, num: int | str | float) -> l
         except:
             raise TypeError(f"The filter value {num} is not a valid numerical value")
     for r in result:
-        total = r[-1]
+        total = r[idx + 1]
         res = OPS[op](total, num)
         if res and r not in out:
             out.append(r)

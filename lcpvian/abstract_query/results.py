@@ -493,8 +493,7 @@ class ResultsMaker:
             elif kind == "resultsAnalysis":
                 n_analyses += 1
                 # made, meta, filter_meta = self.stats(i, varname, r)
-                filter_meta: list[dict[Any, Any]] = []
-                funcs, groups, meta = self.analysis(i, varname, r)
+                funcs, groups, meta, filters_meta = self.analysis(i, varname, r)
                 assert all(
                     any(g.alias == g2.alias for f in funcs for g2 in f.groups)
                     for g in groups
@@ -514,8 +513,8 @@ class ResultsMaker:
                     # 2+: can't do it in a single resN
                     self.r.is_simple_stats = False
                 made = "\n,".join(ctes)
-                if filter_meta:
-                    self.r.post_processes[i] = filter_meta
+                if filters_meta:
+                    self.r.post_processes[i] = filters_meta
             elif kind == "resultsCollocation":
                 self.r.is_simple_stats = False
                 self._add_collocation_selects(r)
@@ -526,7 +525,7 @@ class ResultsMaker:
 
         if self.r.is_simple_stats and n_analyses < 2:
             r = cast(JSONObject, results[0]["resultsAnalysis"])
-            funcs, groups, meta = self.analysis(i, varname, r)
+            funcs, groups, meta, filters_meta = self.analysis(i, varname, r)
             simple = """WITH res1 AS (
                 SELECT 1::int2 AS rstype,
                        jsonb_build_array(FALSE, """
@@ -647,6 +646,7 @@ class ResultsMaker:
         strings.append(COUNTER)
         self.r.meta_json = {"result_sets": attribs}
         self.r.needed_results = "\n , ".join(strings)
+
         return self.query_json, self.r
 
     def _add_collocation_selects(self, result: dict) -> None:
@@ -929,7 +929,7 @@ class ResultsMaker:
 
     def analysis(
         self, i: int, label: str, result: JSONObject
-    ) -> tuple[list[AnalysisFunction], list[SQLRef], ResultMetadata]:
+    ) -> tuple[list[AnalysisFunction], list[SQLRef], ResultMetadata, list[dict]]:
         """
         Return a list of AnalysisFunction for each row under 'functions' in result,
         a list of SQLRef's for the attribute groups and ResultMetadata
@@ -1000,7 +1000,9 @@ class ResultsMaker:
             "name": label,
             "type": "analysis",
         }
-        return funcs, groups, meta
+        filters = cast(JSONObject, result.get("filter") or [])
+        _, filters_meta = self._process_filters(filters)
+        return funcs, groups, meta, filters_meta
 
     def stats(
         self, i: int, varname: str, result: JSONObject
