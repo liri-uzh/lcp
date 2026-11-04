@@ -14,9 +14,9 @@ WITH RECURSIVE fixed_parts AS
           "t"."token_id" AS "t"
    FROM "ofrom".utterancerest AS interruptor
    CROSS JOIN "ofrom"."utterancerest" "interruptee"
-   CROSS JOIN "ofrom"."tokenrest" "t"
    CROSS JOIN "ofrom"."global_attribute_agent" "interruptee_agent"
    CROSS JOIN "ofrom"."global_attribute_agent" "interruptor_agent"
+   CROSS JOIN "ofrom"."tokenrest" "t"
    WHERE "interruptee"."frame_range" && "interruptor"."frame_range"
      AND ("interruptor"."agent_id" != "interruptee"."agent_id"
           AND ((lower("interruptor"."frame_range") / 25.0))::numeric < ((upper("interruptee"."frame_range") / 25.0) - 1)::numeric)
@@ -35,16 +35,17 @@ WITH RECURSIVE fixed_parts AS
   (SELECT DISTINCT 1::int2 AS rstype,
                    jsonb_build_array("interruptor", jsonb_build_array("t") , array[lower(match_list."interruptor_frame_range"), upper(match_list."interruptor_frame_range")], array[lower(match_list."interruptor_char_range"), upper(match_list."interruptor_char_range")])
    FROM match_list) ,
+   res2_g0_g1 AS
+   (SELECT "match_list"."interruptee_agent_region" AS "g0",
+           "match_list"."interruptor_agent_region" AS "g1",
+           count(*) AS v0
+    FROM "match_list"
+    GROUP BY ("match_list"."interruptee_agent_region",
+              "match_list"."interruptor_agent_region")),
                res2 AS
   (SELECT 2::int2 AS rstype,
-          jsonb_build_array(FALSE, "interruptee_agent_region", "interruptor_agent_region", frequency)
-   FROM
-     (SELECT "interruptee_agent_region",
-             "interruptor_agent_region" ,
-             count(*) AS frequency
-      FROM match_list
-      GROUP BY "interruptee_agent_region",
-               "interruptor_agent_region")) ,
+          jsonb_build_array(FALSE, "res2_g0_g1"."g0", "res2_g0_g1"."g1", res2_g0_g1.v0)
+    FROM "res2_g0_g1"),
                res0 AS
   (SELECT 0::int2 AS rstype,
           jsonb_build_array(count(match_list.*))

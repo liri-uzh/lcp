@@ -9,7 +9,5 @@ Token@s t
 b.year > 1910
 
 stats => analysis
-    attributes
-        t
     functions
-        frequency
+        count(t)

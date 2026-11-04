@@ -17,7 +17,7 @@ results => plain
  
 yearMostTokens => analysis
    attributes
-       t1
        b.year
    functions
        frequency
+       count(Token@b)

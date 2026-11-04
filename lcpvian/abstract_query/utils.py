@@ -247,6 +247,8 @@ class QueryData:
     # info about python-side data aggregations to run in callback
     post_processes: dict[int, list[dict]] = field(default_factory=dict)
     manual_track: str = ""
+    # whether the results only request simple statistics (optimize SQL query)
+    is_simple_stats: bool = True
     # the labels of any set in the query
     set_objects: set[str] = field(default_factory=set)
     # the main sequences in the query; note that these aren't hashable, so QueryData cannot be shared across threads
@@ -692,44 +694,3 @@ def _is_prefix(query: str, op: str = "=", typ: str = "string") -> bool:
             continue
         return True
     return False
-
-
-def _is_simple_stats(query_json: dict[str, Any], conf: dict, lab_lay: dict) -> bool:
-    """
-    Return whether the JSON query is a simple stats query:
-    only simple units in the query part (no set, no sequence, etc.)
-    and only stats on a unique token in the results
-    """
-    tok = conf["firstClass"]["token"]
-    query = query_json["query"]
-    for q in query:
-        # Non-unit / non-constraint in query
-        if "unit" not in q and "constraint" not in q:
-            return False
-        # Quantified unit: not simple
-        if "quantor" in q.get("unit", {}):
-            return False
-        constraint = q.get("constraint")
-        if not constraint:
-            continue
-        # complex comparison: not simple
-        if "comparison" not in constraint:
-            return False
-    # Token doesn't appear in query
-    # if all(q.get("unit", {}).get("layer") != tok for q in query):
-    #     return False
-    results = query_json["results"]
-    # Non-stats results (or more than 1 stats)
-    if not all("resultsAnalysis" in r for r in results) or len(results) > 1:
-        return False
-    # No need to check the attributes: all that matters is that token is referenced in query
-    # stats = results[0]["resultsAnalysis"]
-    # attributes = stats["attributes"]
-    # layer_attributes = [
-    #     lab_lay.get(a["attribute"].split(".")[0], ["", ""])[0]
-    #     for a in attributes
-    #     if "attribute" in a
-    # ]
-    # if tok not in layer_attributes:
-    #     return False
-    return True

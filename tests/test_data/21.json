@@ -72,14 +72,26 @@
             "resultsAnalysis": {
                 "attributes": [
                     {
-                        "entity": "t1"
-                    },
-                    {
                         "attribute": "b.year"
                     }
                 ],
                 "functions": [
-                    "frequency"
+                    "frequency",
+                    {
+                        "functionName": "count",
+                        "arguments": [
+                            {
+                                "layer": "Token"
+                            },
+                            {
+                                "partOf": [
+                                    {
+                                        "partOfStream": "b"
+                                    }
+                                ]
+                            }
+                        ]
+                    }
                 ]
             }
         }

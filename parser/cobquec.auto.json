@@ -3,15 +3,15 @@
     "$defs": {
         "partOfStream": {
             "type": "string",
-            "pattern": "((([a-z][a-zA-Z0-9_]*|[A-Z][a-zA-Z0-9_]+)?(i|(frequency|minimum|maximum|average|stddev)|contain|overlaps))|[a-z][a-zA-Z0-9_]*)"
+            "pattern": "(((i|(frequency|minimum|maximum|average|stddev)|contain|overlaps)([a-z][a-zA-Z0-9_]*|[A-Z][a-zA-Z0-9_]+)?)|[a-z][a-zA-Z0-9_]*)"
         },
         "partOfTime": {
             "type": "string",
-            "pattern": "((([a-z][a-zA-Z0-9_]*|[A-Z][a-zA-Z0-9_]+)?(i|(frequency|minimum|maximum|average|stddev)|contain|overlaps))|[a-z][a-zA-Z0-9_]*)"
+            "pattern": "(((i|(frequency|minimum|maximum|average|stddev)|contain|overlaps)([a-z][a-zA-Z0-9_]*|[A-Z][a-zA-Z0-9_]+)?)|[a-z][a-zA-Z0-9_]*)"
         },
         "partOfLocation": {
             "type": "string",
-            "pattern": "((([a-z][a-zA-Z0-9_]*|[A-Z][a-zA-Z0-9_]+)?(i|(frequency|minimum|maximum|average|stddev)|contain|overlaps))|[a-z][a-zA-Z0-9_]*)"
+            "pattern": "(((i|(frequency|minimum|maximum|average|stddev)|contain|overlaps)([a-z][a-zA-Z0-9_]*|[A-Z][a-zA-Z0-9_]+)?)|[a-z][a-zA-Z0-9_]*)"
         },
         "partOf": {
             "type": "array",
@@ -199,7 +199,7 @@
         },
         "quantifier": {
             "type": "string",
-            "pattern": "(((~|\u00ac|!|not )?EXISTS)|((~|\u00ac|!|not )?ALL))"
+            "pattern": "(((~|\u00ac|!|not )?EXISTS)|(ALL(~|\u00ac|!|not )?))"
         },
         "quantification": {
             "type": "object",
@@ -362,23 +362,23 @@
         },
         "label": {
             "type": "string",
-            "pattern": "((([a-z][a-zA-Z0-9_]*|[A-Z][a-zA-Z0-9_]+)?(i|(frequency|minimum|maximum|average|stddev)|contain|overlaps))|[a-z][a-zA-Z0-9_]*)"
+            "pattern": "(((i|(frequency|minimum|maximum|average|stddev)|contain|overlaps)([a-z][a-zA-Z0-9_]*|[A-Z][a-zA-Z0-9_]+)?)|[a-z][a-zA-Z0-9_]*)"
         },
         "entity": {
             "type": "string",
-            "pattern": "((([a-z][a-zA-Z0-9_]*|[A-Z][a-zA-Z0-9_]+)?(i|(frequency|minimum|maximum|average|stddev)|contain|overlaps))|[a-z][a-zA-Z0-9_]*)"
+            "pattern": "(((i|(frequency|minimum|maximum|average|stddev)|contain|overlaps)([a-z][a-zA-Z0-9_]*|[A-Z][a-zA-Z0-9_]+)?)|[a-z][a-zA-Z0-9_]*)"
         },
         "center": {
             "type": "string",
-            "pattern": "((([a-z][a-zA-Z0-9_]*|[A-Z][a-zA-Z0-9_]+)?(i|(frequency|minimum|maximum|average|stddev)|contain|overlaps))|[a-z][a-zA-Z0-9_]*)"
+            "pattern": "(((i|(frequency|minimum|maximum|average|stddev)|contain|overlaps)([a-z][a-zA-Z0-9_]*|[A-Z][a-zA-Z0-9_]+)?)|[a-z][a-zA-Z0-9_]*)"
         },
         "space": {
             "type": "string",
-            "pattern": "((([a-z][a-zA-Z0-9_]*|[A-Z][a-zA-Z0-9_]+)?(i|(frequency|minimum|maximum|average|stddev)|contain|overlaps))|[a-z][a-zA-Z0-9_]*)"
+            "pattern": "(((i|(frequency|minimum|maximum|average|stddev)|contain|overlaps)([a-z][a-zA-Z0-9_]*|[A-Z][a-zA-Z0-9_]+)?)|[a-z][a-zA-Z0-9_]*)"
         },
         "reference": {
             "type": "string",
-            "pattern": "((([a-z][a-zA-Z0-9_]*|[A-Z][a-zA-Z0-9_]+)?(i|(frequency|minimum|maximum|average|stddev)|contain|overlaps))|[a-z][a-zA-Z0-9_]*|[a-z][a-zA-Z0-9_]*(\\.([a-zA-Z0-9_]+))+)"
+            "pattern": "(((i|(frequency|minimum|maximum|average|stddev)|contain|overlaps)([a-z][a-zA-Z0-9_]*|[A-Z][a-zA-Z0-9_]+)?)|[a-z][a-zA-Z0-9_]*|[a-z][a-zA-Z0-9_]*(\\.([a-zA-Z0-9_]+))+)"
         },
         "layer": {
             "type": "string",
@@ -896,7 +896,6 @@
                 }
             },
             "required": [
-                "attributes",
                 "functions"
             ]
         },

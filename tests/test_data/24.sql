@@ -9,7 +9,7 @@ WITH res1 AS
      AND (("b"."meta"->>'year')::numeric > (1910)::numeric) ),
      res0 AS
   (SELECT 0::int2 AS rstype,
-          jsonb_build_array(count(*))
+          jsonb_build_array(count(res1.*))
    FROM res1)
 SELECT *
 FROM res0

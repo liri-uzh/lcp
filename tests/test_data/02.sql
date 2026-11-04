@@ -21,10 +21,10 @@ WITH RECURSIVE fixed_parts AS
       WHERE vec.vector @@ '3VERB <1> 3DET <1> (3NOUN & 6NP)') AS fts_vector_s
    CROSS JOIN "sparcling1"."session_en" "e"
    CROSS JOIN "sparcling1"."session_alignment" "e_aligned"
+   CROSS JOIN "sparcling1"."lemma_en" "t1_lemma"
    CROSS JOIN "sparcling1"."segment_enrest" "s"
    CROSS JOIN "sparcling1"."deprel_en" "anonymous"
    CROSS JOIN "sparcling1"."token_enrest" "t1"
-   CROSS JOIN "sparcling1"."lemma_en" "t1_lemma"
    CROSS JOIN "sparcling1"."token_enrest" "t2"
    CROSS JOIN "sparcling1"."token_enrest" "t3"
    WHERE "e"."alignment_id" = "e_aligned"."alignment_id"
@@ -36,7 +36,7 @@ WITH RECURSIVE fixed_parts AS
      AND ("t2"."upos")::text = ('DET')::text
      AND "s"."segment_id" = "t3"."segment_id"
      AND (("t3"."upos")::text = ('NOUN')::text
-          AND ("t3"."xpos")::text = ('NP')::text)
+           AND ("t3"."xpos")::text = ('NP')::text)
      AND "t1_lemma"."lemma_id" = "t1"."lemma_id"
      AND "t2"."token_id" - "t1"."token_id" = 1
      AND "t3"."token_id" - "t2"."token_id" = 1
@@ -74,14 +74,15 @@ WITH RECURSIVE fixed_parts AS
   (SELECT DISTINCT 1::int2 AS rstype,
                    jsonb_build_array("s", jsonb_build_array("t1", "t2", "t3") , array[lower(match_list."s_char_range"), upper(match_list."s_char_range")])
    FROM match_list) ,
+               res2_g0 AS
+  (SELECT "match_list"."t1_lemma" AS "g0",
+          count(*) AS v0
+   FROM "match_list"
+   GROUP BY ("match_list"."t1_lemma")),
                res2 AS
   (SELECT 2::int2 AS rstype,
-          jsonb_build_array(FALSE, "t1_lemma", frequency)
-   FROM
-     (SELECT "t1_lemma" ,
-             count(*) AS frequency
-      FROM match_list
-      GROUP BY "t1_lemma")),
+          jsonb_build_array(FALSE, "res2_g0"."g0", res2_g0.v0)
+   FROM "res2_g0") ,
                res0 AS
   (SELECT 0::int2 AS rstype,
           jsonb_build_array(count(match_list.*))

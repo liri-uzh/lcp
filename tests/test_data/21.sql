@@ -30,29 +30,23 @@ WITH RECURSIVE fixed_parts AS
   (SELECT DISTINCT 1::int2 AS rstype,
                    jsonb_build_array("s", jsonb_build_array("t1") , array[lower(match_list."s_char_range"), upper(match_list."s_char_range")])
    FROM match_list) ,
+               res2_g0 AS
+  (SELECT "match_list"."b_year" AS "g0",
+          count(*) AS v0
+   FROM "match_list"
+   GROUP BY ("match_list"."b_year")),
+               res2_count_t AS
+  (SELECT "match_list"."b_year" AS "g0",
+          count(*) AS v0
+   FROM "match_list"
+   CROSS JOIN "text_berg_korpus_echo_des_alples_1e01737e3ada4407892cb804a7ce5900_1"."token8" "t"
+   WHERE "t"."char_range" && b_char_range
+   GROUP BY ("match_list"."b_year")),
                res2 AS
   (SELECT 2::int2 AS rstype,
-          CASE
-              WHEN split.is_total = TRUE THEN jsonb_build_array(TRUE, split."b_year", split."total_Token")
-              ELSE jsonb_build_array(FALSE, split."b_year", split.frequency)
-          END
-   FROM
-     (SELECT "b_year",
-             count(DISTINCT "t1") AS frequency,
-             count("all_Token") AS "total_Token"
-      FROM match_list
-      CROSS JOIN "text_berg_korpus_echo_des_alples_1e01737e3ada4407892cb804a7ce5900_1"."token8" "all_Token"
-      WHERE "b_char_range" && "all_Token"."char_range"
-      GROUP BY "b_year")
-   CROSS JOIN LATERAL (
-                       VALUES (FALSE,
-                               "b_year",
-                               frequency,
-                               NULL), (TRUE,
-                                       b_year,
-                                       NULL,
-                                       "total_Token")) AS split(is_total, "b_year", frequency, "total_Token")
-   ORDER BY is_total DESC) ,
+          jsonb_build_array(FALSE, "res2_g0"."g0", res2_g0.v0, res2_count_t.v0)
+   FROM "res2_g0"
+   JOIN res2_count_t ON ("res2_g0"."g0" = "res2_count_t"."g0")) ,
                res0 AS
   (SELECT 0::int2 AS rstype,
           jsonb_build_array(count(match_list.*))

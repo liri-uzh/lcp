@@ -27,6 +27,11 @@ class RichStr(str):
     Strings with a meta attribute to store information
     """
 
+    def __add__(self, other: str):
+        extended = RichStr(self.__str__() + other)
+        extended.meta = self.meta
+        return extended
+
     @property
     def meta(self) -> dict[str, Any]:
         ret: dict[str, Any] = {}

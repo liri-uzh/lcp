@@ -49,13 +49,18 @@
                 "attributes": [
                     {
                         "attribute": "b.year"
-                    },
-                    {
-                        "entity": "t"
                     }
                 ],
                 "functions": [
-                    "frequency"
+                    "frequency",
+                    {
+                        "functionName": "count",
+                        "arguments": [
+                            {
+                                "layer": "Token"
+                            }
+                        ]
+                    }
                 ]
             }
         }

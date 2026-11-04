@@ -46,13 +46,15 @@
         {
             "label": "stats",
             "resultsAnalysis": {
-                "attributes": [
-                    {
-                        "entity": "t"
-                    }
-                ],
                 "functions": [
-                    "frequency"
+                    {
+                        "functionName": "count",
+                        "arguments": [
+                            {
+                                "entity": "t"
+                            }
+                        ]
+                    }
                 ]
             }
         }

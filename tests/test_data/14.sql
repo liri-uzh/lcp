@@ -16,9 +16,9 @@ WITH RECURSIVE fixed_parts AS
       FROM swissdox_3.fts_vector_derest vec
       WHERE vec.vector @@ '3ADJ <1> 2Schweiz') AS fts_vector_s
    CROSS JOIN "swissdox_3"."article_de" "a"
+   CROSS JOIN "swissdox_3"."lemma_de" "t1_lemma"
    CROSS JOIN "swissdox_3"."segment_derest" "s"
    CROSS JOIN "swissdox_3"."token_derest" "t1"
-   CROSS JOIN "swissdox_3"."lemma_de" "t1_lemma"
    CROSS JOIN "swissdox_3"."token_derest" "t2"
    CROSS JOIN "swissdox_3"."lemma_de" "t2_lemma"
    WHERE "a"."char_range" && "s"."char_range"
@@ -57,14 +57,15 @@ WITH RECURSIVE fixed_parts AS
   (SELECT DISTINCT 1::int2 AS rstype,
                    jsonb_build_array("s", jsonb_build_array("t1", "t2") , array[lower(match_list."s_char_range"), upper(match_list."s_char_range")])
    FROM match_list) ,
+                res2_g0 AS
+   (SELECT "match_list"."t1_lemma" AS "g0",
+           count(*) AS v0
+    FROM "match_list"
+    GROUP BY ("match_list"."t1_lemma")),
                res2 AS
   (SELECT 2::int2 AS rstype,
-          jsonb_build_array(FALSE, "t1_lemma", frequency)
-   FROM
-     (SELECT "t1_lemma" ,
-             count(*) AS frequency
-      FROM match_list
-      GROUP BY "t1_lemma")) ,
+           jsonb_build_array(FALSE, "res2_g0"."g0", res2_g0.v0)
+    FROM "res2_g0"),
                res0 AS
   (SELECT 0::int2 AS rstype,
           jsonb_build_array(count(match_list.*))

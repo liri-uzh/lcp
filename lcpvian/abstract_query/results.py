@@ -1,7 +1,8 @@
 import re
 
+from functools import cmp_to_key
 from psycopg import sql
-from typing import Any, cast
+from typing import Any, cast, Callable
 
 from .constraint import _get_constraints, Constraint, Constraints, process_set
 from .sequence import SQLSequence
@@ -15,6 +16,7 @@ from .typed import (
     JSON,
     Attribs,
     Details,
+    RichStr,
     RefInfo,
     SQLRef,
 )
@@ -32,7 +34,6 @@ from .utils import (
     _is_anchored,
     _parse_comparison,
     _parse_repetition,
-    _is_simple_stats,
     _get_mapping,
 )
 from ..utils import _get_all_attributes
@@ -48,7 +49,194 @@ COUNTER = f"""
 
 ANCHORINGS = ("stream", "time", "location")
 
+# Analysis functions along with their list of typed attributes
+ANALYSIS_FUNCTIONS = {
+    "frequency": [],
+    "count": ["entity|attribute|layer", "partOf*"],
+    "total": ["entity"],
+    "min": ["math|attribute"],
+    "max": ["math|attribute"],
+    "avg": ["math|attribute"],
+    "std": ["math|attribute"],
+}
+
 LR = "{}"
+
+
+class AnalysisFunction:
+    """
+    A class representing what's needed for an analysis function CTE
+    """
+
+    def __init__(self, r: "ResultsMaker", f: dict[str, Any], groups: list[SQLRef]):
+        self.r = r.r
+        self.f = f
+        self.force_own_cte: bool = False
+        self.name: str = ""
+        self.groups: list[SQLRef] = []
+        self.anaphors: list[SQLRef] = []
+        self.tables: dict[str, int] = {}
+        self.wheres: dict[str, int] = {}
+        self.select: str = ""
+
+        name: list[str] = []
+        if "functionName" in f:
+            # Build the select string as "FN(ARG1, ARG2, etc)"
+            fn = f["functionName"].rstrip("(")
+            name.append(fn)
+            args = f.get("arguments") or []
+            assert fn in ANALYSIS_FUNCTIONS, AssertionError(
+                f"Analysis function must be in {', '.join(ANALYSIS_FUNCTIONS)} (encountered {fn})"
+            )
+            min_len = len([x for x in ANALYSIS_FUNCTIONS[fn] if "*" not in x])
+            max_len = len(ANALYSIS_FUNCTIONS[fn])
+            assert len(args) >= min_len and len(args) <= max_len, AssertionError(
+                f"The function {fn} takes between {min_len} and {max_len} arguments, but {len(args)} were provided."
+            )
+            str_args: list[str] = []
+            for na, a in enumerate(f["arguments"]):
+                allowed_types = ANALYSIS_FUNCTIONS[fn][na].split("|")
+                type_error = f"The function {fn} does not accept an argument of type {a.__class__} ('{a}') as its {na+1} argument"
+                if isinstance(a, (str, int, float)):
+                    assert "math" in allowed_types, AssertionError(type_error)
+                    str_args.append(str(a))
+                    name.append(str(a))
+                    continue
+                if "math" in a and isinstance(a["math"], (str, int, float)):
+                    assert "math" in allowed_types, AssertionError(type_error)
+                    str_args.append(str(a))
+                    name.append(str(a))
+                    continue
+                if not isinstance(a, dict):
+                    continue
+                assert any(at in a for at in allowed_types), AssertionError(type_error)
+                if "entity" in a:
+                    elab = a["entity"]
+                    elay = (self.r.label_layer.get(elab) or ("", ""))[0]
+                    name.append(elab)
+                    if fn == "count":
+                        # COUNT AN ENTITY IN THIS COMBINATION: KEEP ALL GROUPS
+                        #   SELECT count(DISTINCT x) FROM match_list GROUP BY (a0, a1, a2)
+                        eref = self.refer("layer", elab, elay, pointer=True)
+                        str_args.append("DISTINCT {" + eref.alias + "}")
+                        self.groups = [*groups]
+                    elif fn == "total":
+                        # TOTAL OF ENTITY: DON'T GROUP BY ANY OF THIS ENTITY'S ATTRIBUTES
+                        #   SELECT count(DISTINCT x) FROM match_list GROUP BY (a0)
+                        assert any(elab == g.entity for g in groups), AssertionError(
+                            "Can only apply total to an entity that appears in attributes"
+                        )
+                        eref = self.refer("layer", elab, elay, pointer=True)
+                        str_args.append("DISTINCT {" + eref.alias + "}")
+                        self.groups = [g for g in groups if g.entity != elab]
+                elif "attribute" in a:
+                    # ANY FUNCTION ON AN ATTRIBUTE KEEPS ALL GROUPS
+                    #   SELECT fn(DISTINCT ent.att) FROM match_list GROUP BY (a0, a1, a2)
+                    self.groups = [*groups]
+                    assert "." in a["attribute"], AssertionError(
+                        f"Invalid attribute reference: {a['attribute']}"
+                    )
+                    _, _, eref = r.parse_attribute(a)
+                    self.anaphors.append(eref)
+                    str_args.append("DISTINCT {" + eref.alias + "}")
+                    name.append(elab)
+                    continue
+                elif "layer" in a:
+                    # COUNT OF LAYER ENTITIES: NO GROUPS AT ALL
+                    #   SELECT count(*) FROM schema.token1 [ CROSS JOIN (SELECT range_agg(DISTINCT po_anchor) AS anchor FROM match_list) m ]
+                    # self.groups = []
+                    assert fn == "count", AssertionError(
+                        "A layer can only be referenced form within the count function"
+                    )
+                    part_of: list[dict[str, str]] | None = (
+                        None
+                        if na + 1 >= len(f["arguments"])
+                        else f["arguments"][na + 1]["partOf"]
+                    )
+                    elay = a["layer"]
+                    self.groups = [
+                        g
+                        for g in groups
+                        if self.r.label_layer.get(g.entity) or ("", "")[0] != elay
+                    ]
+                    self.force_own_cte = True
+                    self.r.is_simple_stats = False
+                    # new join: create a unique label for it
+                    elab = self.r.unique_label(
+                        elay[0].lower(), elay, references=self.r.label_layer
+                    )
+                    name.append(elab)
+                    eref = self.r.sql.layer(elab, elay, pointer=True)
+                    for t, conds in eref.joins.items():
+                        self.tables[t] = 1
+                        if conds:
+                            self.wheres[" AND ".join(conds)] = 1
+                    str_args.append("*")
+                    if part_of is not None:
+                        po: dict[str, str] = part_of[0]
+                        anc = next(k for k in po).removeprefix("partOf").lower()
+                        eanc = self.r.sql.anchor(elab, elay, anc)
+                        polab = next(v for v in po.values())
+                        polay = (self.r.label_layer.get(polab) or ("", ""))[0]
+                        poanc = self.refer("anchor", polab, polay, anc)
+                        # potable = sql_str(
+                        #     "(SELECT range_agg(DISTINCT {}) AS anchor FROM match_list) m",
+                        #     poanc.alias,
+                        # )
+                        # self.tables[potable] = 1
+                        # cond = f"{eanc.ref} && m.anchor"
+                        cond = eanc.ref + " && {" + poanc.alias + "}"
+                        self.wheres[cond] = 1
+                        # Break here to prevent processing partOf separately
+                        break
+                else:
+                    # THE FUNCTION ARGUMENT IS COMPLEX: HOPE THAT RECURSION TAKES CARE OF IT
+                    embedded_function = AnalysisFunction(r, a, groups)
+                    self.extend_group(embedded_function.groups)
+                    self.anaphors += embedded_function.anaphors
+                    str_args.append(embedded_function.select)
+                    name.append(embedded_function.name)
+            self.select = fn + "(" + ",".join(str_args) + ")"
+            if fn == "frequency":  # special case
+                self.select = "count(*)"
+                self.groups = [*groups]
+        elif "math" in f:
+            if isinstance(f["math"], str):
+                self.select = f["math"]
+            else:
+                # TODO: REVISE CTE LOGIC
+                # MATH OPERATION count(t) / total(t) NEEDS TWO DIFFERENT CTEs!
+                op = f["math"]["operation"]
+                left_fn = AnalysisFunction(r, op["left"], groups)
+                right_fn = AnalysisFunction(r, op["left"], groups)
+                self.select = f"{left_fn.select} {op['operator']} {right_fn.select}"
+                self.anaphors += left_fn.anaphors
+                self.anaphors += right_fn.anaphors
+                self.extend_group([*left_fn.groups, *right_fn.groups])
+                self.tables.update(left_fn.tables)
+                self.tables.update(right_fn.tables)
+                self.wheres.update(left_fn.wheres)
+                self.wheres.update(right_fn.wheres)
+                name.append(f"{left_fn.name}_{op['operator']}_{right_fn.name}")
+        else:
+            raise AssertionError(f"Invalid function to analysis ({f})")
+
+        self.name = "_".join(name)
+
+    def extend_group(self, groups: list[SQLRef]):
+        for g in groups:
+            if g in self.groups:
+                continue
+            self.groups.append(g)
+
+    def refer(self, method: str, lab: str, lay: str, *args, **kwargs) -> SQLRef:
+        """
+        Get a SQLRef as specified and add it to self.anaphors at the same time
+        """
+        ref_builder: Callable = getattr(self.r.sql, method)
+        ref: SQLRef = ref_builder(lab, lay, *args, **kwargs)
+        self.anaphors.append(ref)
+        return ref
 
 
 class ResultsMaker:
@@ -223,8 +411,11 @@ class ResultsMaker:
         legal_refs = set("*")
         for obj in self.query_json.get("query", []):
             if "unit" in obj:
+                if "quantor" in cast(dict, obj["unit"]):
+                    self.r.is_simple_stats = False
                 legal_refs.add(cast(dict, obj["unit"]).get("label", ""))
             elif "sequence" in obj:
+                self.r.is_simple_stats = False
                 sequence: dict[str, Any] = cast(dict[str, Any], obj["sequence"])
                 if "repetition" in sequence and _parse_repetition(
                     sequence.get("repetition", "1")
@@ -236,6 +427,7 @@ class ResultsMaker:
                     if "unit" in m:
                         legal_refs.add(m["unit"].get("label", ""))
             elif "set" in obj:
+                self.r.is_simple_stats = False
                 legal_refs.add(cast(dict, obj["set"]).get("label", ""))
                 continue
 
@@ -279,20 +471,10 @@ class ResultsMaker:
                     )
                     self.r.entities.add(cast(str, c).lower())
 
-        if _is_simple_stats(self.query_json, self.config, self.r.label_layer):
-            first_result = results[0]
-            result_label = cast(str, first_result.get("label", "untitled_1"))
-            made, meta, filter_meta = self.simple_stats(
-                1, result_label, cast(dict, first_result["resultsAnalysis"])
-            )
-            if filter_meta:
-                self.r.post_processes[1] = filter_meta
-            self.r.meta_json = {"result_sets": [meta]}
-            self.r.needed_results = made
-            return self.query_json, self.r
-
         kind: str
         r: JSON
+
+        n_analyses = 0
 
         for i, result in enumerate(results, start=1):
             kind, _r = next((x for x in list(result.items()) if x[0] != "label"), {})
@@ -300,6 +482,7 @@ class ResultsMaker:
             # varname = cast(str, r.get("label", f"untitled_{i}"))
             varname = cast(str, result.get("label", f"untitled_{i}"))
             if kind == "resultsPlain":
+                self.r.is_simple_stats = False
                 context = cast(
                     str,
                     next((x for x in cast(list[str], r.get("context", ["s"]))), "s"),
@@ -308,15 +491,158 @@ class ResultsMaker:
                 enti = cast(list[str], r.get("entities", []))
                 made, meta = self._kwic(i, varname, context, enti)
             elif kind == "resultsAnalysis":
-                made, meta, filter_meta = self.stats(i, varname, r)
+                n_analyses += 1
+                # made, meta, filter_meta = self.stats(i, varname, r)
+                filter_meta: list[dict[Any, Any]] = []
+                funcs, groups, meta = self.analysis(i, varname, r)
+                assert all(
+                    any(g.alias == g2.alias for f in funcs for g2 in f.groups)
+                    for g in groups
+                ), AssertionError(
+                    "The analysis functions cannot make use of all the attributes"
+                )
+                # Select the groups from match_list
+                for g in groups:
+                    self.r.selects.add(g.ref + sql_str(" AS {}", g.alias))
+                # Select the required anaphors from match_list
+                for f in funcs:
+                    for a in f.anaphors:
+                        self.r.selects.add(a.ref + sql_str(" AS {}", a.alias))
+                ctes = self.make_analysis_ctes(i, groups, funcs)
+                if len(ctes) > 2:
+                    # 2 CTEs = only one is doing the analysis job, so still simple
+                    # 2+: can't do it in a single resN
+                    self.r.is_simple_stats = False
+                made = "\n,".join(ctes)
                 if filter_meta:
                     self.r.post_processes[i] = filter_meta
             elif kind == "resultsCollocation":
+                self.r.is_simple_stats = False
                 self._add_collocation_selects(r)
                 made, meta = self.collocation(i, varname, r)
 
             strings.append(made)
             attribs.append(meta)
+
+        if self.r.is_simple_stats and n_analyses < 2:
+            r = cast(JSONObject, results[0]["resultsAnalysis"])
+            funcs, groups, meta = self.analysis(i, varname, r)
+            simple = """WITH res1 AS (
+                SELECT 1::int2 AS rstype,
+                       jsonb_build_array(FALSE, """
+            selects: list[str] = []
+            if groups:
+                selects += [g.ref for g in groups]
+            formats: dict[str, str] = {}
+            for f in funcs:
+                selects.append(f.select)
+                formats = {a.alias: a.ref for a in f.anaphors}
+                formats.update({g.alias: g.ref for g in groups})
+            simple += ",".join(selects) + ")"  # Close jsonb_...
+            # Common (keyword-)arguments for creating an SQL reference
+            cst_args: tuple[Config, SQLCorpus] = (
+                self.conf,
+                self.r.sql,
+            )
+            cst_kwargs: dict[str, Any] = {
+                "label_layer": self.r.label_layer,
+                "entities": self.r.entities,
+                "set_objects": self.r.set_objects,
+                "n": self._n,
+            }
+            tables: dict[str, int] = {}
+            wheres: dict[str, int] = {}
+            for q in self.query_json["query"]:
+                is_main_constraint = "constraint" in q
+                if not is_main_constraint and "unit" not in q:
+                    continue
+                constraints: Constraints | None = None
+                if is_main_constraint:
+                    obj = cast(JSONObject, [q["constraint"]])
+                    constraints = _get_constraints(
+                        obj, "", "", *cst_args, top_level=True, **cst_kwargs
+                    )
+                    self._n = constraints._n + 1 if constraints else self._n
+                u = cast(dict, q.get("unit") or {})
+                lay = u.get("layer") or ""
+                lab = u.get("label") or ""
+                po = u.get("partOf") or []
+                consts = u.get("constraints", [])
+                if not is_main_constraint:
+                    # UNIT
+                    constraints = _get_constraints(
+                        consts,
+                        lay,
+                        lab,
+                        *cst_args,
+                        part_of=po,
+                        allow_any=True,
+                        **cst_kwargs,
+                    )
+                if not constraints:
+                    continue
+                for t, ws in constraints.joins().items():
+                    tables[t] = 1
+                    if not ws:
+                        continue
+                    wheres.update({w: 1 for w in cast(set, ws)})
+                cond = constraints.conditions()
+                if cond:
+                    wheres[cond] = 1
+                if is_main_constraint:
+                    continue
+                # make sure table of unit is joined
+                lay_ref = self.r.sql.layer(lab, lay)
+                tables[next(x for x in lay_ref.joins)] = 1
+            for f in funcs:
+                tables.update(f.tables)
+                wheres.update(f.wheres)
+                tables.update({j: 1 for a in f.anaphors for j in a.joins})
+                wheres.update(
+                    {
+                        w: 1
+                        for a in f.anaphors
+                        for ws in a.joins.values()
+                        for w in ws
+                        if w.strip()
+                    }
+                )
+                tables.update({j: 1 for g in f.groups for j in g.joins})
+                wheres.update(
+                    {
+                        w: 1
+                        for g in f.groups
+                        for ws in g.joins.values()
+                        for w in ws
+                        if w.strip()
+                    }
+                )
+            from_table = next(t for t in tables)
+            tables.pop(from_table)
+            simple += "\nFROM " + from_table
+            for t in tables:
+                simple += "\nCROSS JOIN " + t
+            if wheres:
+                simple += "\nWHERE "
+            for w in wheres:
+                if not w.strip():
+                    continue
+                simple += f"({w}) AND "
+            if wheres:
+                simple = simple.removesuffix(" AND ")
+            if groups:
+                simple += f"\nGROUP BY ({','.join(g.ref for g in groups)})"
+            # TODO: change this for a sum when frequency is in functions?
+            simple += """
+            ),
+            res0 AS (
+                SELECT 0::int2 AS rstype,
+                       jsonb_build_array(count(res1.*))
+                FROM res1
+            )"""
+            self.r.meta_json = {"result_sets": attribs}
+            self.r.needed_results = simple.format(**formats)
+            return self.query_json, self.r
 
         strings.append(COUNTER)
         self.r.meta_json = {"result_sets": attribs}
@@ -464,236 +790,217 @@ class ResultsMaker:
 
         return entities_involved, attribs
 
-    def simple_stats(
-        self, i: int, label: str, result: JSONObject
-    ) -> tuple[str, ResultMetadata, list[dict[str, Any]]]:
-        """
-        When the JSON query only asks for stats on a single token,
-        we can simplify the SQL and not select unnecessary fields
-        """
-        attributes = cast(list[str | dict], result["attributes"])
-        layers_entities = [
-            self.r.label_layer.get(a["entity"], ("", {}))[0]
-            for a in attributes
-            if isinstance(a, dict) and "entity" in a
-        ]
-        # functions = cast(list[str], result["functions"]) # not used for now
-        cst_args: tuple[Config, SQLCorpus] = (
-            self.conf,
-            self.r.sql,
-        )
-        cst_kwargs: dict[str, Any] = {
-            "label_layer": self.r.label_layer,
-            "entities": self.r.entities,
-            "set_objects": self.r.set_objects,
-            "n": self._n,
+    def make_analysis_ctes(
+        self,
+        i: int,
+        groups: list[SQLRef],
+        funcs: list[AnalysisFunction],
+        from_table: str = "match_list",
+    ) -> list[str]:
+        groups_alias_to_code: dict[str, str] = {
+            g.alias: f"g{n}" for n, g in enumerate(groups)
         }
-        total_count: str = ""
-        total_selects: dict[str, int] = {}
-        total_tables: dict[str, int] = {}
-        total_groups: dict[str, int] = {}
-        total_wheres: dict[str, int] = {}
-        tables: dict[str, int] = {}
-        wheres: dict[str, int] = {}
-        groups: dict[str, int] = {}
-        for q in self.query_json["query"]:
-            is_main_constraint = "constraint" in q
-            if not is_main_constraint and "unit" not in q:
+        funcs_by_groups: dict[str, list[AnalysisFunction]] = {}
+        for f in funcs:
+            if f.force_own_cte:
+                funcs_by_groups[f.name] = [f]
                 continue
-            constraints: Constraints | None = None
-            if is_main_constraint:
-                obj = cast(JSONObject, [q["constraint"]])
-                constraints = _get_constraints(
-                    obj, "", "", *cst_args, top_level=True, **cst_kwargs
-                )
-                self._n = constraints._n + 1 if constraints else self._n
-            u = cast(dict, q.get("unit") or {})
-            lay = u.get("layer", "")
-            lab = u.get("label", "")
-            po = u.get("partOf", [])
-            consts = u.get("constraints", [])
-            if not is_main_constraint:
-                # UNIT
-                constraints = _get_constraints(
-                    consts,
-                    lay,
-                    lab,
-                    *cst_args,
-                    part_of=po,
-                    allow_any=True,
-                    **cst_kwargs,
-                )
-                # If total: select appropriate ranges
-                for layent in layers_entities:
-                    elab = layent[0].lower()
-                    if lay == layent:
-                        continue
-                    if not _layer_contains(self.config, lay, layent):
-                        continue
-                    for anc in ("stream", "time", "location"):
-                        if not _is_anchored(self.config, lay, anc) or not _is_anchored(
-                            self.config, layent, anc
-                        ):
-                            continue
-                        uanch = self.r.sql.anchor(lab, lay, anc)
-                        eanch = self.r.sql.anchor(elab, layent, anc)
-                        total_selects[f'{uanch.ref} AS "{uanch.alias}"'] = 1
-                        groups[uanch.ref] = 1
-                        total_wheres[f'"{uanch.alias}" && {eanch.ref}'] = 1
-                        total_tables[next(t for t in eanch.joins)] = 1
-            if not constraints:
-                continue
-            for t, ws in constraints.joins().items():
-                tables[t] = 1
-                if not ws:
-                    continue
-                wheres.update({w: 1 for w in cast(set, ws)})
-            cond = constraints.conditions()
-            if cond:
-                wheres[cond] = 1
-            if is_main_constraint:
-                continue
-            # make sure table of unit is joined
-            lay_ref = constraints.sql_corpus.layer(lab, lay)
-            tables[next(x for x in lay_ref.joins)] = 1
-        selects: dict[str, int] = {}
-        meta_attribs = []
-        for n, a in enumerate(attributes):
-            att = cast(dict, a).get("attribute")
-            if not att:
-                continue
-            alab, *anames = att.split(".")
-            if not anames:
-                continue
-            alay = self.r.label_layer.get(alab, ("", ""))[0]
-            if not alay:
-                continue
-            mapping = _get_mapping(alay, self.config, self.batch, self.lang or "")
-            dummy_constraint = Constraint(
-                {},
-                "",
-                {},
-                alab,
-                alay,
-                self.conf,
-                "",
-                self.r.label_layer,
-                self.r.entities,
+            fgs_key = "_".join(
+                f"g{n}"
+                for n, g in enumerate(groups)
+                if any(g.alias == g2.alias for g2 in f.groups)
             )
-            ref, ref_info = dummy_constraint.parse_reference(
-                cast(dict, a), "", alay, self.r.label_layer, mapping
-            )
-            sql_ref: SQLRef = ref_info.get("sql") or SQLRef(alab, att, alab, {})
-            for t, whs in sql_ref.joins.items():
-                tables[t] = 1
-                if not whs:
-                    continue
-                wheres.update({w: 1 for w in cast(set, whs)})
-            selects[ref] = 1
-            if alay not in layers_entities:
-                total_groups[f"a{n}"] = 1
-            groups[ref] = 1
-            meta_attribs.append({"name": att.replace(".", "_"), "type": att})
-        meta_attribs.append({"name": "frequency", "type": "aggregate"})
-        filt = cast(JSONObject, result.get("filter", {}))
-        where_filter, filter_meta = self._process_filters(filt)
-        merged_selects = [f"{s} AS a{n}" for n, s in enumerate(selects)]
-        if total_selects:
-            merged_selects += list(total_selects)
-        selects_str = ", ".join(merged_selects)
-        tables_str = " CROSS JOIN ".join(tables)
-        wheres_str = (
-            ("WHERE " + " AND ".join(f"({w})" for w in wheres)) if wheres else ""
+            funcs_by_groups[fgs_key] = [*funcs_by_groups.get(fgs_key, []), f]
+        main_fn_selects: list[str] = []
+        ctes: list[str] = []
+        for gg, fs in funcs_by_groups.items():
+            cte = f"res{i}_{gg} AS ("
+            fgs = fs[0].groups
+            select_groups = [
+                sql_str(
+                    "{}.{} AS {}", from_table, g.alias, groups_alias_to_code[g.alias]
+                )
+                for g in fgs
+            ]
+            select_funcs = [f"{f.select} AS v{n}" for n, f in enumerate(fs)]
+            main_fn_selects += [f"res{i}_{gg}.v{n}" for n, _ in enumerate(fs)]
+            cte += f"\n    SELECT {', '.join([*select_groups, *select_funcs])}"
+            if fgs:
+                cte += sql_str("\nFROM {}", from_table)
+            joins: dict[str, int] = {}
+            wheres: dict[str, int] = {}
+            for f in fs:
+                joins.update(f.tables)
+                wheres.update({w.strip(): 1 for w in f.wheres if w.strip()})
+            if joins:
+                if not fgs:
+                    first_j = next(j for j in joins)
+                    joins.pop(first_j)
+                    cte += "\nFROM " + first_j
+                # we might have removed the only join table
+                if joins:
+                    cte += "\nCROSS JOIN " + " CROSS JOIN ".join(joins)
+            elif not fgs:
+                cte += sql_str("\nFROM {}", from_table)
+            if wheres:
+                cte += "\nWHERE " + " AND ".join(wheres)
+            if gg:
+                groups_str = ", ".join(
+                    sql_str("{}.{}", from_table, g.alias) for g in fgs
+                )
+                cte += f"\n GROUP BY ({groups_str})"
+            cte += "\n)"
+            cte_format_kwargs = {a.alias: a.alias for f in fs for a in f.anaphors}
+            cte_format_kwargs.update({g.alias: g.alias for g in fgs})
+            ctes.append(cte.format(**cte_format_kwargs))
+        funcs_for_largest = {
+            x: fs
+            for x, fs in funcs_by_groups.items()
+            if all(not f.force_own_cte for f in fs)
+        }
+        largest_group = sorted(
+            funcs_for_largest, key=lambda x: len(funcs_for_largest[x]), reverse=True
+        )[0]
+        assert all(
+            any(g.alias == g2.alias for g2 in funcs_by_groups[largest_group][0].groups)
+            for g in groups
+        ), AssertionError(
+            "The analysis functions could not make use of all the provided attributes"
         )
-        groups_str = "(" + ",".join(groups) + ")"
-        where_filter_str = f"WHERE {where_filter}" if where_filter else ""
-        selects_json = ["FALSE", *[f"a{n}" for n, _ in enumerate(selects)], "frequency"]
-        union_total = ""
-        if layers_entities:
-            layent = layers_entities[0]
-            elab = layent[0].lower()
-            esql = self.r.sql.layer(elab, layent, True)
-            total_count = "count(" + esql.ref + ")"
-            total_from_str = "FROM match_list"
-            if total_tables:
-                total_from_str += " CROSS JOIN " + " CROSS JOIN ".join(total_tables)
+        largest_group_cte = f"res{i}_{largest_group}"
+        main_cte = f"res{i} AS ("
+        main_cte += f"\nSELECT {i}::int2 AS rstype, jsonb_build_array(FALSE, "
+        main_cte += ", ".join(
+            sql_str("{}.{}", largest_group_cte, groups_alias_to_code[g.alias])
+            for g in groups
+        )
+        main_cte += ", "  # between groups and funcs
+        main_cte += ", ".join(main_fn_selects)
+        main_cte += ")"  # close jsonb_build_array
+        main_cte += sql_str("\nFROM {}", largest_group_cte)
+        for gg, fs in funcs_by_groups.items():
+            if gg == largest_group:
+                continue
+            fgs = fs[0].groups
+            if not fgs:
+                # TODO: HANDLE THIS, THERE MAY BE MULTIPLE TOTALs
+                main_cte += f"\nCROSS JOIN res{i}_{gg}"
             else:
-                # No total_tables: no constraint from match_list, just get the total number of entities
-                total_from_str = "FROM " + next(t for t in esql.joins)
-            total_selects_str = ",".join([*total_groups, total_count])
-            total_groups_str = (
-                (" GROUP BY (" + ",".join(total_groups) + ")") if total_groups else ""
-            )
-            total_wheres_str = (
-                ("WHERE" + " AND ".join(f"({w})" for w in total_wheres))
-                if total_wheres
-                else ""
-            )
-            union_total = f"""UNION
-            SELECT {i}::int2 AS rstype,
-                jsonb_build_array(TRUE, {{total_selects}})
-            {{total_from}}
-            {{total_wheres}}
-            {{total_groups}}""".format(
-                total_selects=total_selects_str,
-                total_from=total_from_str,
-                total_tables=" CROSS JOIN ".join(total_tables),
-                total_wheres=total_wheres_str,
-                total_groups=total_groups_str,
-            )
-        out = f"""WITH match_list AS (
-            SELECT {{selects}}, count(*) AS frequency
-            FROM {{tables}}
-            {{wheres}}
-            GROUP BY ({{groups}})
-            ORDER BY frequency DESC
-        ), res{i} AS (
-            SELECT {i}::int2 AS rstype,
-                jsonb_build_array({{selects_json}})
-            FROM match_list
-            {{where_filter}}{{union_total}}
-        ),
-        res0 AS (
-            SELECT 0::int2 AS rstype, jsonb_build_array(SUM(match_list.frequency)) FROM match_list
-        )""".format(
-            selects_json=",".join(selects_json),
-            selects=selects_str,
-            tables=tables_str,
-            wheres=wheres_str,
-            groups=groups_str,
-            where_filter=where_filter_str,
-            union_total=union_total,
+                main_cte += f"\nJOIN res{i}_{gg} ON ("
+                main_cte += " AND ".join(
+                    sql_str(
+                        "{}.{} = {}.{}",
+                        largest_group_cte,
+                        groups_alias_to_code[g.alias],
+                        f"res{i}_{gg}",
+                        groups_alias_to_code[g.alias],
+                    )
+                    for g in fgs
+                )
+                main_cte += ")"
+        main_cte += "\n)"
+        ctes.append(main_cte)
+        return ctes
+
+    def parse_attribute(self, att: dict[str, str]) -> tuple[str, RefInfo, SQLRef]:
+        alab = att["attribute"].split(".")[0]
+        alay = (self.r.label_layer.get(alab) or ("", ""))[0]
+        dummy_constraint = Constraint(
+            {},
+            "",
+            {},
+            alab,
+            alay,
+            self.conf,
+            "",
+            self.r.label_layer,
+            self.r.entities,
         )
+        ref, ref_info = dummy_constraint.get_sql_expr(att)
+        sql_ref: SQLRef = ref_info.get("sql") or SQLRef(
+            alab, att["attribute"], alab, {}
+        )
+        if ref != sql_ref.ref and ref.startswith(sql_ref.ref):
+            # complex attribute (probably global attribute)
+            sql_ref.ref = ref
+            sql_ref.alias = att["attribute"].replace(".", "_")
+        # ref, ref_info, sql_ref
+        return ref, ref_info, sql_ref
+
+    def analysis(
+        self, i: int, label: str, result: JSONObject
+    ) -> tuple[list[AnalysisFunction], list[SQLRef], ResultMetadata]:
+        """
+        Return a list of AnalysisFunction for each row under 'functions' in result,
+        a list of SQLRef's for the attribute groups and ResultMetadata
+        """
+        meta_attribs = []
+        attributes = cast(list[str | dict], result.get("attributes") or [])
+        functions = cast(list[str | dict], result["functions"])
+        groups: list[SQLRef] = []
+        for a in attributes:
+            assert "attribute" in a, AssertionError(
+                f"All the attributes of an analysis result must be references to entity attributes (invalid {a})"
+            )
+            aref = cast(dict[str, str], a).get("attribute") or ""
+            alab, aname = aref.split(".", maxsplit=1)
+            assert "." in aref, AssertionError(
+                f"All the attributes of an analysis result must be references to entity attributes (invalid {aref})"
+            )
+            _, _, asql = self.parse_attribute(cast(dict, a))
+            groups.append(asql)
+            meta_attribs.append(
+                {"name": f"{alab}_{aname.replace('.','_')}", "type": aref}
+            )
+        sorter = lambda x, y: (
+            1 if _layer_contains(cast(dict, self.config), x, y) else -1
+        )
+        lowest_layer = next(
+            x
+            for x in sorted(
+                set(l[0] for l in self.r.label_layer.values()), key=cmp_to_key(sorter)
+            )
+        )
+        n_lowest_layer = len(
+            {
+                r
+                for r in self.r.all_refs
+                if self.r.label_layer.get(r, ("", ""))[0] == lowest_layer
+            }
+        )
+        funcs: list[AnalysisFunction] = []
+        for f in functions:
+            if f == "frequency":
+                func = AnalysisFunction(
+                    self, {"functionName": "frequency", "arguments": []}, groups
+                )
+                funcs.append(func)
+            if not isinstance(f, dict):
+                continue
+            # If counting the lowest layer there is only one entity of the lowest layer in the query,
+            # counting it is practically equivalent to frequency
+            if f.get("functionName") == "count":
+                count_arg: dict = (f.get("arguments") or [{}])[0]
+                count_arg_lab = count_arg.get("entity") or ""
+                count_arg_lay = (self.r.label_layer.get(count_arg_lab) or ("", ""))[0]
+                if count_arg_lay == lowest_layer and n_lowest_layer == 1:
+                    func = AnalysisFunction(
+                        self, {"functionName": "frequency", "arguments": []}, groups
+                    )
+                    funcs.append(func)
+                    continue
+            # Complex parse
+            self.r.is_simple_stats = False
+            func = AnalysisFunction(self, f, groups)
+            funcs.append(func)
+        group_attribs = [{"name": g.alias, "type": g.ref} for g in groups]
+        func_attribs = [{"name": f.name, "type": "aggregate"} for f in funcs]
         meta: ResultMetadata = {
-            "attributes": meta_attribs,
+            "attributes": group_attribs + func_attribs,
             "name": label,
             "type": "analysis",
         }
-        only_total = selects_json == ["FALSE", "frequency"]
-        if only_total and layers_entities:
-            # Only asking for total number of units
-            meta["attirbutes"] = [{"name": "frequency", "type": "aggregate"}]
-            out = f"""WITH res{i} AS (
-                SELECT {i}::int2 AS rstype,
-                       jsonb_build_array(FALSE, count(*))
-                FROM {{tables}} {{wheres}}
-            ),
-            res0 AS (
-                SELECT 0::int2 AS rstype, jsonb_build_array(count(*)) FROM res{i}
-            )""".format(
-                tables=" CROSS JOIN ".join(tables),
-                wheres=(
-                    " WHERE " + " AND ".join(f"({w})" for w in wheres) if wheres else ""
-                ),
-            )
-        if not only_total and layers_entities:
-            # Add "total" if asking for more than just the total number of units
-            meta["total"] = [
-                *[a for n, a in enumerate(meta_attribs) if f"a{n}" in total_groups],
-                {"name": f"total_{layers_entities[0][0].lower()}", "type": "aggregate"},
-            ]
-
-        return out, meta, filter_meta
+        return funcs, groups, meta
 
     def stats(
         self, i: int, varname: str, result: JSONObject
