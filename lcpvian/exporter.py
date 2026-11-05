@@ -236,7 +236,7 @@ class Exporter:
     async def initiate_db(
         self,
         app: web.Application,
-        ext: str = ".xml",
+        ext: str = "xml",
     ) -> bool:
         """
         Mark an export in the DB as initiated and return whether a query should be run
@@ -253,10 +253,10 @@ class Exporter:
         filename: str = cast(str, to_export.get("filename", ""))
         cshortname = config.get("shortname")
         if not filename:
-            filename = f"{cshortname} {datetime.datetime.now().strftime('%Y-%m-%d %I:%M%p')}{ext}"
+            filename = f"{cshortname} {datetime.datetime.now().strftime('%Y-%m-%d %I:%M%p')}.{ext}"
         # Ensure that the filename ends with the proper extension, regardless of what the user specified
-        if not filename.endswith(ext):
-            filename = os.path.splitext(filename)[0] + f".{ext}"
+        if not filename.endswith("." + ext):
+            filename = os.path.splitext(filename)[0] + "." + ext
         filename = sanitize_filename(filename)
         corpus_folder = sanitize_filename(cshortname or config.get("project_id", ""))
         relpath: str = os.path.join(corpus_folder, filename)
@@ -264,7 +264,7 @@ class Exporter:
         while os.path.exists(os.path.join(RESULTS_USERS, request.user, relpath)):
             suffix += 1
             relpath = os.path.join(
-                corpus_folder, f"{os.path.splitext(filename)[0]} ({suffix}){ext}"
+                corpus_folder, f"{os.path.splitext(filename)[0]} ({suffix}).{ext}"
             )
         userpath = os.path.join(RESULTS_USERS, request.user, relpath)
         filepath = app["exporters"][xp_format].get_dl_path_from_hash(

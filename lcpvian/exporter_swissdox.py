@@ -65,7 +65,7 @@ class Exporter(ExporterXML):
         app: web.Application,
         ext: str = "db",
     ) -> bool:
-        ret = await super().initiate_db(app, ext=".db")
+        ret = await super().initiate_db(app, ext="db")
         return ret
 
     @classmethod
