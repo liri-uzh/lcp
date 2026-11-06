@@ -8,6 +8,7 @@ import logging
 import os
 import zipfile
 
+from aiofiles import open as aopen
 from aiohttp import web
 from redis.asyncio import Redis as RedisConnection
 
@@ -360,26 +361,26 @@ class Exporter(ExporterXML):
             seg_path = self.get_working_path(prefix)
             # Write tokens
             tpath = os.path.join(seg_path, f"{sid}.tokens")
-            with open(tpath, "w") as tseg_output:
-                tseg_output.write(char_range)
-                tseg_output.write("\n" + str(offset))
+            async with aopen(tpath, "w") as tseg_output:
+                await tseg_output.write(char_range)
+                await tseg_output.write("\n" + str(offset))
                 for t in tokens:
-                    tseg_output.write("\n" + t[self._form_index])
+                    await tseg_output.write("\n" + t[self._form_index])
             # Write meta
             if sid not in meta_per_segment:
                 continue
             meta = meta_per_segment[sid]
             mpath = os.path.join(seg_path, f"{sid}.meta")
-            with open(mpath, "w") as mseg_output:
+            async with aopen(mpath, "w") as mseg_output:
                 for lname, lentries in meta.items():
                     for n, linfo in enumerate(lentries):
                         for aname, avalue in linfo.items():
                             # Always 3 lines per layer attribute: 1. layer name, 2. attr name, 3. attr value
-                            mseg_output.write(f"{lname} {n}\n")
-                            mseg_output.write(aname + "\n")
+                            await mseg_output.write(f"{lname} {n}\n")
+                            await mseg_output.write(aname + "\n")
                             # coerce the value to a string and strip all linebreaks
                             val = str(avalue).replace("\n", "").replace("\r", "") + "\n"
-                            mseg_output.write(val)
+                            await mseg_output.write(val)
 
         print(
             f"[Export {self._request.id} CSV] Done processing segments for {batch_hash} (QI {self._request.hash})"

@@ -8,11 +8,10 @@ import os
 import shutil
 
 from typing import cast
-from uuid import uuid4
 
 from ..callbacks import handle_general_failure
 from ..redis import get_sync_redis
-from ..utils import _publish_msg
+from ..utils import _publish_msg, msg_id_for_pub
 
 EXPORT_TTL = 5000
 RESULTS_DIR = os.getenv("RESULTS", "results")
@@ -81,7 +80,7 @@ async def export_db(
             await _publish_msg(
                 ctx["redis"],
                 payload,
-                msg_id=str(uuid4()),
+                msg_id=msg_id_for_pub(),
             )
 
     except asyncio.TimeoutError as e:

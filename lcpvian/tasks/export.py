@@ -6,11 +6,10 @@ import asyncio
 import os
 
 from typing import Any, cast
-from uuid import uuid4
 
 from ..callbacks import handle_general_failure
 from ..jobfuncs import _db_query
-from ..utils import _publish_msg
+from ..utils import _publish_msg, msg_id_for_pub
 
 from ..abstract_query.utils import literal_sql, sql_str
 
@@ -31,10 +30,10 @@ async def export_notifs(
     query: str
     if user_id:
         assert ";" not in user_id and "'" not in user_id
-        query = f"SELECT * FROM main.exports WHERE user_id = '{user_id}';"
+        query = f"SELECT * FROM main.exports WHERE user_id = '{user_id}' ORDER BY modified_at DESC;"
     elif ehash:
         assert ";" not in ehash and "'" not in ehash
-        query = f"SELECT * FROM main.exports WHERE query_hash = '{ehash}';"
+        query = f"SELECT * FROM main.exports WHERE query_hash = '{ehash}' ORDER BY modified_at DESC;"
 
     result = await _db_query(ctx, query, {}, user=user_id, hash=ehash, is_main=True)
 
@@ -45,7 +44,7 @@ async def export_notifs(
     user = user_id
     jso: dict[str, Any]
     if user:
-        msg_id = str(uuid4())
+        msg_id = msg_id_for_pub()
         jso = {
             "user": user,
             "action": "export_notifs",
@@ -54,12 +53,17 @@ async def export_notifs(
         }
         await _publish_msg(ctx["redis"], jso, msg_id)
     elif ehash:
+        notifs: dict[tuple, int] = {}
         for res in result:
             res = cast(list, res)
             _, _, _, _, user_id_from_res, xp_format, offset, requested, _, fn, _, _ = (
                 res
             )
             user_id = str(user_id_from_res)
+            tuple_id = (user_id, xp_format, offset, requested)
+            if tuple_id in notifs:
+                continue
+            notifs[tuple_id] = 1
             full = cast(int, requested) <= 0
             xp_class = ctx["_exporters"][xp_format]
             user_folder = os.path.join(RESULTS_USERS, user_id)
@@ -88,7 +92,9 @@ async def export_notifs(
                     raise RuntimeError(
                         f"Problem with creating symlink {srcfn}->{destfn}", e
                     )
-            msg_id = str(uuid4())
+            if not user_id:
+                return
+            msg_id = msg_id_for_pub()
             jso = {
                 "user": user_id,
                 "action": "export_notifs",
@@ -106,10 +112,10 @@ async def get_exports(ctx, user_id: str = "", ehash: str = "", **kwargs):
     query: str = ""
     if user_id:
         assert ";" not in user_id and "'" not in user_id
-        query = f"SELECT * FROM main.exports WHERE user_id = '{user_id}'"
+        query = f"SELECT * FROM main.exports WHERE user_id = '{user_id}' ORDER BY modified_at DESC"
     elif ehash:
         assert ";" not in ehash and "'" not in ehash
-        query = f"SELECT * FROM main.exports WHERE query_hash = '{ehash}'"
+        query = f"SELECT * FROM main.exports WHERE query_hash = '{ehash}' ORDER BY modified_at DESC"
 
     for k, v in kwargs.items():
         query = query + sql_str(" AND {} = {}", k, literal_sql(v))

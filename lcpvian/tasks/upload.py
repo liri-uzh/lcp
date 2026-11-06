@@ -9,7 +9,6 @@ import shutil
 import traceback
 
 from typing import cast
-from uuid import uuid4
 
 from .configure import get_config
 
@@ -21,6 +20,7 @@ from ..utils import (
     _row_to_value,
     _load_top_module_file,
     _publish_msg,
+    msg_id_for_pub,
     _sharepublish_msg,
     move_media_files,
 )
@@ -113,7 +113,7 @@ async def insert_data(
         if not row:
             raise RuntimeError(msg)
 
-        msg_id = str(uuid4())
+        msg_id = msg_id_for_pub()
         action = "uploaded"
 
         # if not room or not result:
@@ -137,7 +137,7 @@ async def insert_data(
     except Exception as e:
         tb = traceback.format_exc()
         print(f"Upload failure: {e.__class__} : {e}; {tb}")
-        msg_id = str(uuid4())
+        msg_id = msg_id_for_pub()
         uploads_path = os.getenv("TEMP_UPLOADS_PATH", "uploads")
         path = os.path.join(uploads_path, project)
         if os.path.isdir(path):
@@ -190,7 +190,7 @@ async def create(
                 tb = traceback.format_exc()
     if not room:
         return None
-    msg_id = str(uuid4())
+    msg_id = msg_id_for_pub()
     action = "uploaded"
     jso: JSONObject = {
         "user": user,

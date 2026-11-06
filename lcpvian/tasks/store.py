@@ -6,12 +6,11 @@ import json
 import uuid
 
 from typing import Any
-from uuid import uuid4
 
 from ..callbacks import handle_general_failure
 from ..jobfuncs import _db_query
 from ..typed import JSONObject
-from ..utils import _publish_msg
+from ..utils import _publish_msg, msg_id_for_pub
 
 
 @handle_general_failure
@@ -50,7 +49,7 @@ async def fetch_queries(
     )
 
     action = "fetch_queries"
-    msg_id = str(uuid4())
+    msg_id = msg_id_for_pub()
     jso: dict[str, Any] = {
         "user": user,
         "room": room,
@@ -99,7 +98,7 @@ async def store_query(
 
     action = "store_query"
 
-    msg_id = str(uuid4())
+    msg_id = msg_id_for_pub()
     jso: dict[str, Any] = {
         "user": user,
         "room": room,
@@ -144,7 +143,7 @@ async def delete_query(ctx, user_id: str, room_id: str, query_id: str):
     )
 
     action = "delete_query"
-    msg_id = str(uuid4())
+    msg_id = msg_id_for_pub()
     jso: dict[str, Any] = {
         "user": str(user_id),
         "room": room_id,

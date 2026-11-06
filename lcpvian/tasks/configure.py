@@ -4,7 +4,6 @@ Async tasks called from configure.py
 
 from arq.jobs import Job, ResultNotFound
 from typing import cast
-from uuid import uuid4
 
 from ..callbacks import handle_general_failure
 from ..jobfuncs import _db_query
@@ -15,6 +14,7 @@ from ..utils import (
     _row_to_value,
     _sharepublish_msg,
     _get_batches,
+    msg_id_for_pub,
 )
 
 
@@ -40,7 +40,7 @@ async def get_config(ctx, force_refresh: bool = False, publish: bool = True):
 
     action = "set_config"
     fixed: Config = {}
-    msg_id = str(uuid4())
+    msg_id = msg_id_for_pub()
     for tup in cast(list, result):
         made = _row_to_value(tup)
         # if not made.get("enabled"):

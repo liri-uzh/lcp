@@ -271,7 +271,7 @@ class Exporter:
             shash, request.offset, request.requested, request.full, filename=True
         )
         should_run = not os.path.exists(filepath)
-        await enqueue(
+        create_export_job = await enqueue(
             "exporter.export_db",
             shash,
             xp_format,
@@ -290,22 +290,25 @@ class Exporter:
         else:
             # File already exists on disk: export has completed before, we're good
             if not os.path.exists(userpath) and not os.path.islink(userpath):
+                # Only try creating a symlink if it doesn't already exist
                 try:
                     os.symlink(os.path.abspath(filepath), userpath)
-                    # Notify that the export is ready
-                    await self.finish_export_db(
-                        app["redis"],
-                        shash,
-                        request.offset,
-                        request.requested,
-                        request.requested,
-                        request.full,
-                        xp_format,
-                    )
                 except Exception as e:
                     raise RuntimeError(
                         f"Problem with creating symlink {filepath}->{userpath}", e
                     )
+            # Notify that the export is ready (but only after creation has registered)
+            if create_export_job:
+                await create_export_job.result()
+            await self.finish_export_db(
+                app["redis"],
+                shash,
+                request.offset,
+                request.requested,
+                request.requested,
+                request.full,
+                xp_format,
+            )
         return should_run
 
     @classmethod

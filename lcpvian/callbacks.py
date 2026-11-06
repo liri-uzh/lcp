@@ -17,17 +17,12 @@ import traceback
 
 from types import TracebackType
 from typing import cast
-from uuid import uuid4
-
 
 from arq import ArqRedis
 
 from arq.jobs import Job
 
-from .utils import (
-    Interrupted,
-    _publish_msg,
-)
+from .utils import Interrupted, _publish_msg, msg_id_for_pub
 from .redis import get_job_kwargs
 
 PUBSUB_LIMIT = int(os.getenv("PUBSUB_LIMIT", 31999999))
@@ -46,7 +41,7 @@ async def _general_failure(
     """
     On job failure, return some info ... probably hide some of this from prod eventually!
     """
-    msg_id = str(uuid4())
+    msg_id = msg_id_for_pub()
     form_error = str(trace)
     action = "failed"
     try:

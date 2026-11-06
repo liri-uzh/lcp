@@ -10,7 +10,6 @@ import zipfile
 from arq.jobs import Job, ResultNotFound
 from lxml.builder import E
 from typing import Any, cast
-from uuid import uuid4
 from xml.sax.saxutils import escape, quoteattr
 
 from ..callbacks import handle_general_failure
@@ -20,6 +19,7 @@ from ..utils import (
     SQLCorpus,
     _get_all_attributes,
     _publish_msg,
+    msg_id_for_pub,
     get_aligned_annotations,
     get_corpus_int_range,
     hasher,
@@ -94,7 +94,7 @@ async def document(
     action = "document"
     if not room:
         return
-    msg_id = str(uuid4())
+    msg_id = msg_id_for_pub()
     warning = ""
     jso = {
         "document": result,
@@ -175,7 +175,7 @@ async def document_ids(
 
     if not room:
         return None
-    msg_id = str(uuid4())
+    msg_id = msg_id_for_pub()
     formatted = {str(idx): info for idx, info in cast(list[tuple[int, dict]], result)}
     action = "document_ids"
     jso = {
@@ -324,7 +324,7 @@ async def annotations(
     action = "document"
     if not room:
         return
-    msg_id = str(uuid4())
+    msg_id = msg_id_for_pub()
     warning = ""
     jso = {
         "document": result,
@@ -411,7 +411,7 @@ async def image_annotations(
     action = "image_annotations"
     if not room:
         return
-    msg_id = str(uuid4())
+    msg_id = msg_id_for_pub()
     jso: dict[str, Any] = {
         "annotations": result,
         "layer": layer,
@@ -696,7 +696,7 @@ async def clip_media(
     action = "clip_media"
     if not room:
         return
-    msg_id = str(uuid4())
+    msg_id = msg_id_for_pub()
     jso: dict[str, Any] = {
         "file": os.path.basename(zip_fn),
         "action": action,

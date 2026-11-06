@@ -23,7 +23,7 @@ from hashlib import md5
 from io import BytesIO
 from redis import Redis
 from typing import Any, cast, TypeAlias
-
+from uuid import uuid4
 
 from aiohttp import web
 
@@ -978,6 +978,11 @@ def _sign_payload(
         payload["to_export"] = to_export
     else:
         payload.pop("to_export", None)
+
+
+def msg_id_for_pub() -> str:
+    uid = uuid4()
+    return f"pubsub::msg::{uid}"
 
 
 async def _sharepublish_msg(message: JSONObject | str | bytes, msg_id: str) -> None:

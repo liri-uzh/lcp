@@ -59,7 +59,7 @@ QUERY_TTL = os.getenv("QUERY_TTL", 5000)
 
 async def _process_message(
     message: RedisMessage, channel: PubSub, app: web.Application
-) -> None:
+) -> bool | None:
     """
     Check that a WS message contains data, and is not a subscribe message,
     then handle it if so.
@@ -79,6 +79,8 @@ async def _process_message(
         if not raw:
             return None
         payload: JSONObject = json.loads(raw)
+        if payload.get("__pubsub::msg::processed__"):
+            return None
         if "callback_query" in payload:
             qi_hash: str = str(payload["hash"])
             qi = QueryInfo(qi_hash, app["redis"])
@@ -90,13 +92,27 @@ async def _process_message(
             # (as determined by the presence of a user/room in data)
             # then sign the payload with the information contained in data
             _sign_payload(payload, data)
-        payload["status"] = data.get("status", payload.get("status", ""))
         if not payload or not isinstance(payload, dict):
-            return
+            # Mark the message as processed
+            payload["__pubsub::msg::processed__"] = 1
+            return True # processed
+        payload["status"] = data.get("status", payload.get("status", ""))
     else:
         payload = data
-    await _handle_message(payload, channel, app)
-    return None
+    processed = await _handle_message(payload, channel, app)
+    return processed
+
+
+async def drain_missed_messages(channel: PubSub, app: web.Application) -> None:
+    keys = app["redis"].keys("pubsub::msg::*")
+    processes: list[Coroutine[Any, Any, bool | None]] = []
+    for key in keys:
+        data = {"msg_id": cast(bytes, key).decode()}
+        message: RedisMessage = {"data": json.dumps(data).encode("utf-8")}
+        processes.append(_process_message(message, channel, app))
+    process_results = await asyncio.gather(*processes)
+    processed = [pr for pr in process_results if pr]
+    logging.debug(f"Processed {len(processed)} missed messages")
 
 
 async def handle_redis_response(
@@ -138,10 +154,10 @@ async def handle_redis_response(
                 await asyncio.sleep(app["redis_pubsub_limit_sleep"])
 
     except asyncio.TimeoutError as err:
-        print(f"Warning: timeout in websocket listener ({err})")
+        logging.warning(f"Warning: timeout in websocket listener ({err})")
     except asyncio.CancelledError as err:
         tb = traceback.format_exc()
-        print(f"Canceled redis handler: {err}\n\n{tb}")
+        logging.debug(f"Canceled redis handler: {err}\n\n{tb}")
     except Exception as err:
         formed = traceback.format_exc()
         print(f"Error: {str(err)}\n{formed}")
@@ -163,17 +179,18 @@ async def listen_to_redis(
         try:
             async with app[ainstance].pubsub() as channel:
                 await channel.subscribe(PUBSUB_CHANNEL)
+                await drain_missed_messages(channel, app)
                 await handle_redis_response(channel, app, test=test)
         except ConnectionError as err:
-            print("Connection error in listen_to_redis", err)
+            logging.debug(f"Connection error in listen_to_redis: {err}")
         except KeyboardInterrupt:
             pass
         except Exception as err:
             raise err
         try:
-            print("Attempt unsubscribe")
+            logging.debug("Attempt unsubscribe")
             await channel.unsubscribe(PUBSUB_CHANNEL)
-            print("unsubscribe success")
+            logging.debug("unsubscribe success")
         except:
             pass
         try:
@@ -205,10 +222,18 @@ async def _handle_error(
 
 async def _handle_message(
     payload: JSONObject, channel: PubSub, app: web.Application
-) -> None:
+) -> None | bool:
     """
     Build a message, do any extra needed actions and send on to the right websocket(s)
     """
+    if payload.get("__pubsub::msg::processed__"):
+        return None
+
+    # Mark the message as processed
+    if "msg_id" in payload:
+        payload["__pubsub::msg::processed__"] = 1
+        app["redis"].set(payload["msg_id"], json.dumps(payload))
+
     authenticator = app["auth_class"](app)
 
     user = cast(str, payload.get("user", ""))
@@ -260,7 +285,7 @@ Kind Regards<br><br>
 LCP"""
             send_email(str(email), f"SwissdoxViz export complete for {fn}", message)
 
-        return
+        return payload.get("__pubsub::msg::processed__") # processed
 
     # for document ids request, we also add this information to config
     # so that on subsequent requests we can just fetch it from there
@@ -288,28 +313,27 @@ LCP"""
             skip=None,
             just=(room, user),
         )
-        return None
+        return payload.get("__pubsub::msg::processed__") # processed
 
     if action in errors:
         await _handle_error(app, user, room, payload)
-        return None
+        return payload.get("__pubsub::msg::processed__") # processed
 
     # handle configuration message
     if action == "set_config":
-        return await _set_config(payload, app)
+        await _set_config(payload, app)
+        return payload.get("__pubsub::msg::processed__") # processed
 
     if action == "export_notifs":
         room = ""
-        # It can take a moment for the user to join the WS connection, so allow for up to 2s
-        async with asyncio.timeout(2):
-            while not room:
-                await asyncio.sleep(0.1)
-                for rid, users in app["websockets"].items():
-                    for _, uid in users:
-                        if uid != user:
-                            continue
-                        room = rid
-                        break
+        while user and not room:
+            await asyncio.sleep(0.1)
+            for rid, users in app["websockets"].items():
+                for _, uid in users:
+                    if uid != user:
+                        continue
+                    room = rid
+                    break
         if room:
             await push_msg(
                 app["websockets"],
@@ -318,7 +342,7 @@ LCP"""
                 skip=None,
                 just=(room, user),
             )
-        return
+        return payload.get("__pubsub::msg::processed__") # processed
 
     # handle the final stage of a corpus being uploaded.
     # - add the corpus to config
@@ -345,7 +369,7 @@ LCP"""
     if to_submit is not None:
         await to_submit
 
-    return None
+    return payload.get("__pubsub::msg::processed__") # processed
 
 
 async def sock(request: web.Request) -> web.WebSocketResponse:

@@ -11,7 +11,11 @@ from .tasker import enqueue
 from .utils import LCPApplication
 
 
-async def download_export(request: web.Request) -> web.FileResponse | web.HTTPNotFound:
+async def download_export(
+    request: web.Request,
+) -> (
+    web.FileResponse | web.HTTPNotFound | web.HTTPInternalServerError | web.HTTPAccepted
+):
     """
     Endpoint to download a file that was previously generated
     """
@@ -32,9 +36,24 @@ async def download_export(request: web.Request) -> web.FileResponse | web.HTTPNo
         "export.get_exports", ehash=qhash, queue="internal"
     )
     db_results = await cast(Job, db_job).result()
-    corpus_id = str(db_results[0][1])
-    if not authenticator.check_corpus_searchable(corpus_id, user_data):
+    if not db_results:
+        return web.HTTPNotFound(reason="Could not find this export in the logs")
+
+    db_latest_results = db_results[0]
+    corpus_id, status, message = db_latest_results[1:4]
+
+    if not authenticator.check_corpus_searchable(str(corpus_id), user_data):
         raise PermissionError("User does not have export access to this corpus")
+
+    if status == "failed":
+        return web.HTTPInternalServerError(
+            reason=f"Failed to generate the export file: {message}"
+        )
+
+    if status != "ready":
+        return web.HTTPAccepted(
+            reason=f"Export has started but is not ready yet: {message}"
+        )
 
     if format == "swissdox":
         results_path = str(os.environ.get("RESULTS_PATH", "results"))

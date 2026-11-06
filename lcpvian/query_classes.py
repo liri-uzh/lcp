@@ -27,6 +27,7 @@ from .typed import JSONObject, Batch
 from .utils import (
     _get_query_batches,
     _publish_msg,
+    msg_id_for_pub,
     hasher,
     push_msg,
     CustomEncoder,
@@ -670,7 +671,7 @@ class QueryInfo:
         """
         if typ == "failure":
             self.running_batches = {}
-        msg_id: str = str(uuid4())
+        msg_id: str = msg_id_for_pub()
         payload: dict[str, Any] = {
             "callback_query": typ,
             "batch": batch_name,
