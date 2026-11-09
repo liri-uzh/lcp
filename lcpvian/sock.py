@@ -66,11 +66,11 @@ async def _process_message(
     """
     await asyncio.sleep(0.1)
     if not message or not isinstance(message, dict):
-        return
+        return None
     if message.get("type", "") == "subscribe":
-        return
+        return None
     if not message.get("data"):
-        return
+        return None
     data = json.loads(cast(bytes, message["data"]))
     if "msg_id" in data:
         raw: bytes = app["redis"].get(data["msg_id"])
@@ -95,7 +95,7 @@ async def _process_message(
         if not payload or not isinstance(payload, dict):
             # Mark the message as processed
             payload["__pubsub::msg::processed__"] = 1
-            return True # processed
+            return True  # processed
         payload["status"] = data.get("status", payload.get("status", ""))
     else:
         payload = data
@@ -285,7 +285,7 @@ Kind Regards<br><br>
 LCP"""
             send_email(str(email), f"SwissdoxViz export complete for {fn}", message)
 
-        return payload.get("__pubsub::msg::processed__") # processed
+        return payload.get("__pubsub::msg::processed__") == 1  # processed
 
     # for document ids request, we also add this information to config
     # so that on subsequent requests we can just fetch it from there
@@ -313,16 +313,16 @@ LCP"""
             skip=None,
             just=(room, user),
         )
-        return payload.get("__pubsub::msg::processed__") # processed
+        return payload.get("__pubsub::msg::processed__") == 1  # processed
 
     if action in errors:
         await _handle_error(app, user, room, payload)
-        return payload.get("__pubsub::msg::processed__") # processed
+        return payload.get("__pubsub::msg::processed__") == 1  # processed
 
     # handle configuration message
     if action == "set_config":
         await _set_config(payload, app)
-        return payload.get("__pubsub::msg::processed__") # processed
+        return payload.get("__pubsub::msg::processed__") == 1  # processed
 
     if action == "export_notifs":
         room = ""
@@ -342,7 +342,7 @@ LCP"""
                 skip=None,
                 just=(room, user),
             )
-        return payload.get("__pubsub::msg::processed__") # processed
+        return payload.get("__pubsub::msg::processed__") == 1  # processed
 
     # handle the final stage of a corpus being uploaded.
     # - add the corpus to config
@@ -369,7 +369,7 @@ LCP"""
     if to_submit is not None:
         await to_submit
 
-    return payload.get("__pubsub::msg::processed__") # processed
+    return payload.get("__pubsub::msg::processed__") == 1  # processed
 
 
 async def sock(request: web.Request) -> web.WebSocketResponse:

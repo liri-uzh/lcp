@@ -521,7 +521,8 @@ class ResultsMaker:
             strings.append(made)
             attribs.append(meta)
 
-        if self.r.is_simple_stats and n_analyses < 2:
+        self.r.is_simple_stats = self.r.is_simple_stats and n_analyses < 2
+        if self.r.is_simple_stats:
             r = cast(JSONObject, results[0]["resultsAnalysis"])
             funcs, groups, meta, filters_meta = self.analysis(i, varname, r)
             simple = """WITH res1 AS (
