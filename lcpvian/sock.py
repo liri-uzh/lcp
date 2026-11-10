@@ -55,6 +55,13 @@ from .utils import (
 
 MESSAGE_TTL = os.getenv("REDIS_WS_MESSSAGE_TTL", 5000)
 QUERY_TTL = os.getenv("QUERY_TTL", 5000)
+PUBSUB_PROCESSED = "__pubsub::msg::processed__"
+
+
+def _mark_msg_as_processed(app: web.Application, msg_id: str, payload: dict):
+    payload[PUBSUB_PROCESSED] = 1
+    app["redis"].set(msg_id, json.dumps(payload))
+    app["redis"].expire(msg_id, MESSAGE_TTL)
 
 
 async def _process_message(
@@ -79,14 +86,14 @@ async def _process_message(
         if not raw:
             return None
         payload: JSONObject = json.loads(raw)
-        if payload.get("__pubsub::msg::processed__"):
+        if payload.get(PUBSUB_PROCESSED):
             return None
         if "callback_query" in payload:
             qi_hash: str = str(payload["hash"])
             qi = QueryInfo(qi_hash, app["redis"])
-            async with asyncio.TaskGroup() as group:
-                for req in qi.requests:
-                    group.create_task(req.respond(app, payload))
+            responses: list = [req.respond(app, payload) for req in qi.requests]
+            await asyncio.gather(*responses)
+            _mark_msg_as_processed(app, data["msg_id"], payload)
         if "user" in data or "room" in data:
             # If the incoming data contains fresher information than from redis memory,
             # (as determined by the presence of a user/room in data)
@@ -94,7 +101,7 @@ async def _process_message(
             _sign_payload(payload, data)
         if not payload or not isinstance(payload, dict):
             # Mark the message as processed
-            payload["__pubsub::msg::processed__"] = 1
+            _mark_msg_as_processed(app, data["msg_id"], payload)
             return True  # processed
         payload["status"] = data.get("status", payload.get("status", ""))
     else:
@@ -226,13 +233,12 @@ async def _handle_message(
     """
     Build a message, do any extra needed actions and send on to the right websocket(s)
     """
-    if payload.get("__pubsub::msg::processed__"):
+    if payload.get(PUBSUB_PROCESSED):
         return None
 
     # Mark the message as processed
     if "msg_id" in payload:
-        payload["__pubsub::msg::processed__"] = 1
-        app["redis"].set(payload["msg_id"], json.dumps(payload))
+        _mark_msg_as_processed(app, str(payload["msg_id"]), payload)
 
     authenticator = app["auth_class"](app)
 
@@ -285,7 +291,7 @@ Kind Regards<br><br>
 LCP"""
             send_email(str(email), f"SwissdoxViz export complete for {fn}", message)
 
-        return payload.get("__pubsub::msg::processed__") == 1  # processed
+        return payload.get(PUBSUB_PROCESSED) == 1  # processed
 
     # for document ids request, we also add this information to config
     # so that on subsequent requests we can just fetch it from there
@@ -313,16 +319,16 @@ LCP"""
             skip=None,
             just=(room, user),
         )
-        return payload.get("__pubsub::msg::processed__") == 1  # processed
+        return payload.get(PUBSUB_PROCESSED) == 1  # processed
 
     if action in errors:
         await _handle_error(app, user, room, payload)
-        return payload.get("__pubsub::msg::processed__") == 1  # processed
+        return payload.get(PUBSUB_PROCESSED) == 1  # processed
 
     # handle configuration message
     if action == "set_config":
         await _set_config(payload, app)
-        return payload.get("__pubsub::msg::processed__") == 1  # processed
+        return payload.get(PUBSUB_PROCESSED) == 1  # processed
 
     if action == "export_notifs":
         room = ""
@@ -342,7 +348,7 @@ LCP"""
                 skip=None,
                 just=(room, user),
             )
-        return payload.get("__pubsub::msg::processed__") == 1  # processed
+        return payload.get(PUBSUB_PROCESSED) == 1  # processed
 
     # handle the final stage of a corpus being uploaded.
     # - add the corpus to config
@@ -369,7 +375,7 @@ LCP"""
     if to_submit is not None:
         await to_submit
 
-    return payload.get("__pubsub::msg::processed__") == 1  # processed
+    return payload.get(PUBSUB_PROCESSED) == 1  # processed
 
 
 async def sock(request: web.Request) -> web.WebSocketResponse:

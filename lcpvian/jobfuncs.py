@@ -1,7 +1,10 @@
+import asyncio
+
 from typing import Any, cast
 
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.sql import text
+from sqlalchemy.ext.asyncio import AsyncEngine
 
 from .typed import DBQueryParams, JSONObject, MainCorpus, Sentence, UserQuery
 from .utils import _get_sent_ids
@@ -50,8 +53,7 @@ async def _db_query(
         if (store or delete or is_import)
         else ("_wpool" if (config or is_main) else "_pool")
     )
-    pool = ctx[name]
-    method = "begin" if (store or delete or is_import) else "connect"
+    pool = cast(AsyncEngine, ctx[name])
 
     first_job_id = cast(str, kwargs.get("first_job", ""))
     if first_job_id:
@@ -62,24 +64,28 @@ async def _db_query(
 
     params = params or {}
 
-    async with getattr(pool, method)() as conn:
-        try:
-            res = await conn.execute(text(query), params)
+    async with pool.connect() as conn:
+        async with conn.begin():
+            try:
+                res = await conn.execute(text(query), params)
 
-            if store or delete:
-                # For DELETE queries, simply return None (or log res.rowcount if needed)
-                if delete:
-                    # For non-SELECT queries (store/delete), do not attempt to fetch rows.
-                    return res.rowcount
-                else:
+                if store or delete:
+                    # For DELETE queries, simply return None (or log res.rowcount if needed)
+                    if delete:
+                        # For non-SELECT queries (store/delete), do not attempt to fetch rows.
+                        return cast(JSONObject, res.rowcount)
+                    else:
+                        return None
+
+                if is_import or not has_return:
                     return None
 
-            if is_import or not has_return:
-                return None
+                out: list[tuple[Any, ...]] = [tuple(i) for i in res.fetchall()]
 
-            out: list[tuple[Any, ...]] = [tuple(i) for i in res.fetchall()]
-
-            return out
-        except SQLAlchemyError as err:
-            print(f"SQL error: {err}")
-            raise err
+                return out
+            except asyncio.CancelledError as e:
+                # Re-raise as exception, or cancellation is swallowed
+                raise Exception(f"Canceled query (likely timeout; {e})")
+            except SQLAlchemyError as err:
+                print(f"SQL error: {err}")
+                raise err

@@ -114,8 +114,11 @@ query_kwargs = dict(
         "statement_cache_size": 0,
         "prepared_statement_cache_size": 0,
         "server_settings": {
-            "statement_timeout": str(QUERY_TIMEOUT * 1000),
+            # times 900 to make it shorter than a typical arq job's timeout
+            "statement_timeout": str(QUERY_TIMEOUT * 900),
             "jit": "off",
+            # kill idle-in-txn after 60s (typically happens for timed out query)
+            "idle_in_transaction_session_timeout": "60000",
         },
     },
     echo_pool=True,
@@ -129,8 +132,11 @@ upload_kwargs = dict(
         "statement_cache_size": 0,
         "prepared_statement_cache_size": 0,
         "server_settings": {
-            "statement_timeout": str(UPLOAD_TIMEOUT * 1000),
+            # times 900 to make it shorter than a typical arq job's timeout
+            "statement_timeout": str(UPLOAD_TIMEOUT * 900),
             "jit": "off",
+            # kill idle-in-txn after 60s (typically happens for timed out query)
+            "idle_in_transaction_session_timeout": "60000",
         },
     },
     echo_pool=True,

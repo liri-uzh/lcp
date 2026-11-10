@@ -3,6 +3,7 @@ Async tasks called from query.py
 """
 
 import logging
+import os
 import re
 import traceback
 
@@ -12,6 +13,8 @@ from redis import Redis as RedisConnection
 from typing import cast
 from uuid import uuid4
 
+from .utils import timeout
+
 from ..callbacks import handle_general_failure
 from ..redis_proxies import RedisDict
 from ..utils import (
@@ -19,6 +22,8 @@ from ..utils import (
     range_from_str,
 )
 from ..redis import get_sync_redis
+
+QUERY_TIMEOUT = int(os.getenv("QUERY_TIMEOUT", 1000))
 
 
 # This can be called from the main app or from a worker
@@ -54,6 +59,7 @@ async def schedule_next_batch(
     return cast(Job | None, job)
 
 
+@timeout(QUERY_TIMEOUT)
 @handle_general_failure
 async def do_segment_and_meta(
     ctx,
@@ -191,6 +197,7 @@ async def do_segment_and_meta(
         raise e
 
 
+@timeout(QUERY_TIMEOUT)
 @handle_general_failure
 async def do_batch(ctx, qhash: str, batch: list):
     """
@@ -274,7 +281,9 @@ async def do_batch(ctx, qhash: str, batch: list):
         tb = traceback.format_exc()
         error_msg = f"{e}\n{tb}"
         logging.debug(f"Error in do_batch: {error_msg}")
-        if str(getattr(e, "orig", "")).endswith("timeout"):
+        timedout = str(getattr(e, "orig", "")).endswith("timeout")
+        timedout = "likely timeout" in str(e)
+        if timedout:
             error_msg = "The query timed out"
         await qi.publish(error_msg, "failure")
         raise e

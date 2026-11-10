@@ -35,11 +35,11 @@ from .utils import (
 from .redis import get_redis, get_job_meta, set_job_meta
 from .tasker import enqueue
 
-MESSAGE_TTL = int(os.getenv("REDIS_WS_MESSSAGE_TTL", 5000))
 QUERY_TTL = int(os.getenv("QUERY_TTL", 5000))
-QUERY_TIMEOUT = int(os.getenv("QUERY_TIMEOUT", 1000))
-FULL_QUERY_TIMEOUT = int(os.getenv("QUERY_ENTIRE_CORPUS_CALLBACK_TIMEOUT", 99999))
 MAX_KWIC_LINES = int(os.getenv("DEFAULT_MAX_KWIC_LINES", 9999))
+QUERY_TIMEOUT = int(os.getenv("QUERY_TIMEOUT", 1000))
+UPLOAD_TIMEOUT = int(os.getenv("UPLOAD_TIMEOUT", 43200))
+
 
 SERIALIZABLES = (
     int,
@@ -636,6 +636,8 @@ class QueryInfo:
                     self.enqueued_jobs.pop(jid, "")
             except:
                 self.enqueued_jobs.pop(jid, "")
+        # timeout = UPLOAD_TIMEOUT if queue == "background" else QUERY_TIMEOUT
+        # timeout = 2  # 2s
         j = await enqueue(method, *args, **kwargs, job_id=job_id, queue=queue)
         j_meta = await get_job_meta(cast(Job, j))
         j_meta["qi_hash"] = self.hash  # used in failure callback
