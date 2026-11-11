@@ -617,8 +617,8 @@ class Constraint:
                 case_insensitive = "caseInsensitive" in meta
                 if case_insensitive:
                     op += "*"
-                left = f"({left})::text" if left_type == "string" else left
-                right = f"({right})::text" if right_type == "string" else right
+                # left = f"({left})::text" if left_type == "string" else left
+                # right = f"({right})::text" if right_type == "string" else right
                 formed_condition = f"{left} {op} {right}"
             else:
                 non_reg = (
@@ -632,7 +632,7 @@ class Constraint:
             if "label" in (left_type, right_type):
                 pass
             elif left_type == right_type:
-                formed_condition = f"({left})::text {self.op} ({right})::text"
+                formed_condition = f"{left} {self.op} {right}"
             else:
                 raise TypeError(
                     f"Could not resolve comparison {left} {self.op} {right}"
