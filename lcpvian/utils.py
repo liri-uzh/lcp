@@ -511,7 +511,15 @@ def filter_already_running(record):
     Arq logs (normal-activity) "job already running elsewhere" at DEBUG level
     There can be a whole lot of those, so filter them out
     """
-    return not record.getMessage().endswith("already running elsewhere")
+    msg = record.getMessage()
+    out = msg.endswith("already running elsewhere")
+    # Also, only print GET requests to /search/ every 10s to prevent flooding
+    out = (
+        out
+        or re.search(r"GET /api/corpora/.+/search/.+/request::", msg) is not None
+        and datetime.now().second % 10 > 0
+    )
+    return not out
 
 
 def configure_logging():
@@ -523,6 +531,7 @@ def configure_logging():
         datefmt="%m/%d/%Y %I:%M:%S %p",
         level=logging.DEBUG,
     )
+    logging.getLogger("aiohttp.access").addFilter(filter_already_running)
     arq_logger.addFilter(filter_already_running)
 
 

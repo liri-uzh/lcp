@@ -9,6 +9,7 @@ from .sequence import SQLSequence
 from .sequence_members import Sequence
 from .typed import (
     QueryJSON,
+    QueryPart,
     Joins,
     JSONObject,
     ConfigJSON,
@@ -389,6 +390,192 @@ class ResultsMaker:
                     return v
         return None
 
+    def simple_stats(self, results: QueryPart, attribs: list) -> None:
+        """
+        Generates a full SQL query for simple statistics,
+        i.e. no reference to the match_list table
+        """
+        result = cast(dict, results[0])
+        r = cast(JSONObject, result["resultsAnalysis"])
+        funcs, groups, meta, filters_meta = self.analysis(
+            1, result.get("label", "res1"), r
+        )
+        simple = """WITH res1 AS (
+            SELECT 1::int2 AS rstype,
+                    jsonb_build_array(FALSE, """
+        selects: list[str] = []
+        if groups:
+            selects += [g.ref for g in groups]
+        formats: dict[str, str] = {}
+        for f in funcs:
+            selects.append(f.select)
+            formats = {a.alias: a.ref for a in f.anaphors}
+            formats.update({g.alias: g.ref for g in groups})
+        simple += ",".join(selects) + ")"  # Close jsonb_...
+        # Common (keyword-)arguments for creating an SQL reference
+        cst_args: tuple[Config, SQLCorpus] = (
+            self.conf,
+            self.r.sql,
+        )
+        cst_kwargs: dict[str, Any] = {
+            "label_layer": self.r.label_layer,
+            "entities": self.r.entities,
+            "set_objects": self.r.set_objects,
+            "n": self._n,
+        }
+        tables: dict[str, int | tuple[str, set]] = {}  # map tables to part of's
+        wheres: dict[str, int] = {}
+        unit_tables: dict[str, tuple[str, list[dict]]] = {}
+        # List all the constraints from the main query
+        for q in self.query_json["query"]:
+            is_main_constraint = "constraint" in q
+            if not is_main_constraint and "unit" not in q:
+                continue
+            constraints: Constraints | None = None
+            if is_main_constraint:
+                obj = cast(JSONObject, [q["constraint"]])
+                constraints = _get_constraints(
+                    obj, "", "", *cst_args, top_level=True, **cst_kwargs
+                )
+                self._n = constraints._n + 1 if constraints else self._n
+            u = cast(dict, q.get("unit") or {})
+            lay = u.get("layer") or ""
+            lab = u.get("label") or ""
+            po = u.get("partOf") or []
+            consts = u.get("constraints", [])
+            if not is_main_constraint:
+                # UNIT
+                constraints = _get_constraints(
+                    consts,
+                    lay,
+                    lab,
+                    *cst_args,
+                    # part_of=po, # handle part of separately
+                    allow_any=True,
+                    **cst_kwargs,
+                )
+            if not constraints:
+                continue
+            for t, ws in constraints.joins().items():
+                tables[t] = 1
+                if not ws:
+                    continue
+                wheres.update({w: 1 for w in cast(set, ws)})
+            cond = constraints.conditions()
+            if cond:
+                wheres[cond] = 1
+            if is_main_constraint:
+                continue
+            # reference the unit tables along with their part of's
+            lay_ref = self.r.sql.layer(lab, lay)
+            unit_tables[next(x for x in lay_ref.joins)] = (lab, po)
+        # Now process the analysis functions
+        for f in funcs:
+            tables.update(f.tables)
+            wheres.update(f.wheres)
+            tables.update({j: 1 for a in f.anaphors for j in a.joins})
+            wheres.update(
+                {
+                    w: 1
+                    for a in f.anaphors
+                    for ws in a.joins.values()
+                    for w in ws
+                    if w.strip()
+                }
+            )
+            tables.update({j: 1 for g in f.groups for j in g.joins})
+            wheres.update(
+                {
+                    w: 1
+                    for g in f.groups
+                    for ws in g.joins.values()
+                    for w in ws
+                    if w.strip()
+                }
+            )
+        # Sort the unit tables by inclusion relation
+        ut_sorter = lambda x, y: (
+            -1
+            if any(
+                # if unit's label == any of the partOf* values
+                unit_tables[x][0] == next(p for p in po.values())
+                for po in unit_tables[y][1]
+            )
+            else 1
+        )
+        sorted_ut = sorted(unit_tables, key=cmp_to_key(ut_sorter))
+        from_table = ""
+        for unit_table in sorted_ut:
+            lab, part_ofs = unit_tables[unit_table]
+            lay = (self.r.label_layer.get(lab) or ("", ""))[0]
+            part_of_conds: list[str] = []
+            in_segment = False
+            for po in part_ofs:
+                part_anchor, parent = next(x for x in po.items())
+                anchor = part_anchor.removeprefix("partOf").lower()
+                parent_layer = (self.r.label_layer.get(parent) or ("", ""))[0]
+                in_segment = parent_layer == self.segment
+                if in_segment and lay == self.token:
+                    # special case: replace anchor-based conditions with seg_id for tok-seg
+                    tok_seg_id = self.r.sql.layer(lab, self.segment, pointer=True)
+                    seg_seg_id = self.r.sql.layer(parent, self.segment, pointer=True)
+                    tok_seg_cond = f"{tok_seg_id} = {seg_seg_id}"
+                    if tok_seg_cond not in part_of_conds:
+                        part_of_conds.append(tok_seg_cond)
+                    continue
+                parent_anc = self.r.sql.anchor(parent, parent_layer, anchor)
+                child_anc = self.r.sql.anchor(lab, lay, anchor)
+                part_of_conds.append(f"{parent_anc} && {child_anc}")
+            # First write the main FROM table
+            if not from_table:
+                from_table = unit_table
+                simple += "\nFROM " + unit_table
+                for poc in part_of_conds:
+                    wheres[poc] = 1
+                continue
+            # Unclean heuristic to catch unit-specific conditions
+            unit_specficic_conds = [
+                c
+                for c in wheres
+                if all(x == lab for x in re.findall(r"""\"([^"]+)\"\.""", c))
+            ]
+            for c in unit_specficic_conds:
+                wheres.pop(c, "")
+            ands = " AND ".join([*part_of_conds, *unit_specficic_conds])
+            # Token-in-segment: JOIN ON (t.seg_id = s.seg_id)
+            if lay == self.token and in_segment:
+                simple += f"\nJOIN {unit_table} ON ({ands})"
+                continue
+            # Any other unit: CROSS JOIN LATERAL
+            simple += f"\nCROSS JOIN LATERAL (SELECT * FROM {unit_table}"
+            if ands:
+                simple += f" WHERE {ands}"
+            simple += sql_str(") {}", lab)
+        for t in tables:
+            if t in unit_tables:
+                continue
+            simple += "\nCROSS JOIN " + t
+        if wheres:
+            simple += "\nWHERE "
+        for w in wheres:
+            if not w.strip():
+                continue
+            simple += f"({w}) AND "
+        if wheres:
+            simple = simple.removesuffix(" AND ")
+        if groups:
+            simple += f"\nGROUP BY ({','.join(g.ref for g in groups)})"
+        # TODO: change this for a sum when frequency is in functions?
+        simple += """
+        ),
+        res0 AS (
+            SELECT 0::int2 AS rstype,
+                    jsonb_build_array(count(res1.*))
+            FROM res1
+        )"""
+        self.r.meta_json = {"result_sets": attribs}
+        self.r.needed_results = simple.format(**formats)
+
     def results(self) -> tuple[QueryJSON, QueryData]:
         """
         Build the results section of the postgres query
@@ -523,123 +710,7 @@ class ResultsMaker:
 
         self.r.is_simple_stats = self.r.is_simple_stats and n_analyses < 2
         if self.r.is_simple_stats:
-            r = cast(JSONObject, results[0]["resultsAnalysis"])
-            funcs, groups, meta, filters_meta = self.analysis(i, varname, r)
-            simple = """WITH res1 AS (
-                SELECT 1::int2 AS rstype,
-                       jsonb_build_array(FALSE, """
-            selects: list[str] = []
-            if groups:
-                selects += [g.ref for g in groups]
-            formats: dict[str, str] = {}
-            for f in funcs:
-                selects.append(f.select)
-                formats = {a.alias: a.ref for a in f.anaphors}
-                formats.update({g.alias: g.ref for g in groups})
-            simple += ",".join(selects) + ")"  # Close jsonb_...
-            # Common (keyword-)arguments for creating an SQL reference
-            cst_args: tuple[Config, SQLCorpus] = (
-                self.conf,
-                self.r.sql,
-            )
-            cst_kwargs: dict[str, Any] = {
-                "label_layer": self.r.label_layer,
-                "entities": self.r.entities,
-                "set_objects": self.r.set_objects,
-                "n": self._n,
-            }
-            tables: dict[str, int] = {}
-            wheres: dict[str, int] = {}
-            for q in self.query_json["query"]:
-                is_main_constraint = "constraint" in q
-                if not is_main_constraint and "unit" not in q:
-                    continue
-                constraints: Constraints | None = None
-                if is_main_constraint:
-                    obj = cast(JSONObject, [q["constraint"]])
-                    constraints = _get_constraints(
-                        obj, "", "", *cst_args, top_level=True, **cst_kwargs
-                    )
-                    self._n = constraints._n + 1 if constraints else self._n
-                u = cast(dict, q.get("unit") or {})
-                lay = u.get("layer") or ""
-                lab = u.get("label") or ""
-                po = u.get("partOf") or []
-                consts = u.get("constraints", [])
-                if not is_main_constraint:
-                    # UNIT
-                    constraints = _get_constraints(
-                        consts,
-                        lay,
-                        lab,
-                        *cst_args,
-                        part_of=po,
-                        allow_any=True,
-                        **cst_kwargs,
-                    )
-                if not constraints:
-                    continue
-                for t, ws in constraints.joins().items():
-                    tables[t] = 1
-                    if not ws:
-                        continue
-                    wheres.update({w: 1 for w in cast(set, ws)})
-                cond = constraints.conditions()
-                if cond:
-                    wheres[cond] = 1
-                if is_main_constraint:
-                    continue
-                # make sure table of unit is joined
-                lay_ref = self.r.sql.layer(lab, lay)
-                tables[next(x for x in lay_ref.joins)] = 1
-            for f in funcs:
-                tables.update(f.tables)
-                wheres.update(f.wheres)
-                tables.update({j: 1 for a in f.anaphors for j in a.joins})
-                wheres.update(
-                    {
-                        w: 1
-                        for a in f.anaphors
-                        for ws in a.joins.values()
-                        for w in ws
-                        if w.strip()
-                    }
-                )
-                tables.update({j: 1 for g in f.groups for j in g.joins})
-                wheres.update(
-                    {
-                        w: 1
-                        for g in f.groups
-                        for ws in g.joins.values()
-                        for w in ws
-                        if w.strip()
-                    }
-                )
-            from_table = next(t for t in tables)
-            tables.pop(from_table)
-            simple += "\nFROM " + from_table
-            for t in tables:
-                simple += "\nCROSS JOIN " + t
-            if wheres:
-                simple += "\nWHERE "
-            for w in wheres:
-                if not w.strip():
-                    continue
-                simple += f"({w}) AND "
-            if wheres:
-                simple = simple.removesuffix(" AND ")
-            if groups:
-                simple += f"\nGROUP BY ({','.join(g.ref for g in groups)})"
-            # TODO: change this for a sum when frequency is in functions?
-            simple += """
-            ),
-            res0 AS (
-                SELECT 0::int2 AS rstype,
-                       jsonb_build_array(count(res1.*))
-                FROM res1
-            )"""
-            self.r.meta_json = {"result_sets": attribs}
-            self.r.needed_results = simple.format(**formats)
+            self.simple_stats(results, attribs)
             return self.query_json, self.r
 
         strings.append(COUNTER)
