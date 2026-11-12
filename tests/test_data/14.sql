@@ -24,9 +24,9 @@ WITH RECURSIVE fixed_parts AS
    WHERE "a"."char_range" && "s"."char_range"
      AND "fts_vector_s"."segment_id" = "s"."segment_id"
      AND "s"."segment_id" = "t1"."segment_id"
-     AND ("t1"."upos")::text = ('ADJ')::text
+     AND "t1"."upos" = 'ADJ'
      AND "s"."segment_id" = "t2"."segment_id"
-     AND ("t2_lemma"."lemma")::text = ('Schweiz')::text
+     AND "t2_lemma"."lemma" = 'Schweiz'
      AND "t1_lemma"."lemma_id" = "t1"."lemma_id"
      AND "t2"."token_id" - "t1"."token_id" = 1
      AND "t2_lemma"."lemma_id" = "t2"."lemma_id"
@@ -57,15 +57,15 @@ WITH RECURSIVE fixed_parts AS
   (SELECT DISTINCT 1::int2 AS rstype,
                    jsonb_build_array("s", jsonb_build_array("t1", "t2") , array[lower(match_list."s_char_range"), upper(match_list."s_char_range")])
    FROM match_list) ,
-                res2_g0 AS
-   (SELECT "match_list"."t1_lemma" AS "g0",
-           count(*) AS v0
-    FROM "match_list"
-    GROUP BY ("match_list"."t1_lemma")),
+               res2_g0 AS
+  (SELECT "match_list"."t1_lemma" AS "g0",
+          count(*) AS v0
+   FROM "match_list"
+   GROUP BY ("match_list"."t1_lemma")),
                res2 AS
   (SELECT 2::int2 AS rstype,
-           jsonb_build_array(FALSE, "res2_g0"."g0", res2_g0.v0)
-    FROM "res2_g0"),
+          jsonb_build_array(FALSE, "res2_g0"."g0", res2_g0.v0)
+   FROM "res2_g0") ,
                res0 AS
   (SELECT 0::int2 AS rstype,
           jsonb_build_array(count(match_list.*))

@@ -35,17 +35,17 @@ WITH RECURSIVE fixed_parts AS
   (SELECT DISTINCT 1::int2 AS rstype,
                    jsonb_build_array("interruptor", jsonb_build_array("t") , array[lower(match_list."interruptor_frame_range"), upper(match_list."interruptor_frame_range")], array[lower(match_list."interruptor_char_range"), upper(match_list."interruptor_char_range")])
    FROM match_list) ,
-   res2_g0_g1 AS
-   (SELECT "match_list"."interruptee_agent_region" AS "g0",
-           "match_list"."interruptor_agent_region" AS "g1",
-           count(*) AS v0
-    FROM "match_list"
-    GROUP BY ("match_list"."interruptee_agent_region",
-              "match_list"."interruptor_agent_region")),
+               res2_g0_g1 AS
+  (SELECT "match_list"."interruptee_agent_region" AS "g0",
+          "match_list"."interruptor_agent_region" AS "g1",
+          count(*) AS v0
+   FROM "match_list"
+   GROUP BY ("match_list"."interruptee_agent_region",
+             "match_list"."interruptor_agent_region")),
                res2 AS
   (SELECT 2::int2 AS rstype,
           jsonb_build_array(FALSE, "res2_g0_g1"."g0", "res2_g0_g1"."g1", res2_g0_g1.v0)
-    FROM "res2_g0_g1"),
+   FROM "res2_g0_g1") ,
                res0 AS
   (SELECT 0::int2 AS rstype,
           jsonb_build_array(count(match_list.*))

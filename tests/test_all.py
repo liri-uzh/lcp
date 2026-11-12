@@ -22,7 +22,6 @@ from lcpvian.app import create_app
 from lcpvian.utils import get_segment_meta_script
 from lcpvian.abstract_query.utils import SQLCorpus
 
-
 PUBSUB_CHANNEL = PUBSUB_CHANNEL_TEMPLATE % "query"
 
 SQL_COMMA = re.compile(r"\s+(,|;)")

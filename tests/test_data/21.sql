@@ -17,7 +17,7 @@ WITH RECURSIVE fixed_parts AS
    WHERE "a"."char_range" && "s"."char_range"
      AND "b"."char_range" && "a"."char_range"
      AND "s"."segment_id" = "t1"."segment_id"
-     AND ("t1_form"."form")::text ~ '^(Per|Da)'
+     AND "t1_form"."form" ~ '^(Per|Da)'
      AND "t1_form"."form_id" = "t1"."form_id" ),
                match_list AS
   (SELECT "b_char_range",

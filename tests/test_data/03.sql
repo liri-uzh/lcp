@@ -20,14 +20,14 @@ WITH RECURSIVE fixed_parts AS
    CROSS JOIN "bnc1"."tokenrest" "t1"
    CROSS JOIN "bnc1"."tokenrest" "t4"
    WHERE "d"."char_range" && "s"."char_range"
+     AND "d"."meta"->>'classCode' ~ '^S'
      AND "fts_vector_s"."segment_id" = "s"."segment_id"
      AND "s"."segment_id" = "t1"."segment_id"
-     AND ("t1"."xpos2")::text = ('ART')::text
+     AND "t1"."xpos2" = 'ART'
      AND "s"."segment_id" = "t4"."segment_id"
-     AND ("t4"."xpos2")::text = ('VERB')::text
+     AND "t4"."xpos2" = 'VERB'
      AND "t4"."token_id" - "t1"."token_id" < 4
-     AND "t4"."token_id" - "t1"."token_id" > 1
-     AND ("d"."meta"->>'classCode')::text ~ '^S' ),
+     AND "t4"."token_id" - "t1"."token_id" > 1 ),
                transition0 (source_state, dest_state, label, SEQUENCE) AS (
                                                                            VALUES (0,
                                                                                    2,
@@ -63,12 +63,12 @@ WITH RECURSIVE fixed_parts AS
    WHERE ("token"."token_id" = "prev_cte"."t1" + 1)
      AND ((transition0.dest_state = 2
            AND "s" = "token"."segment_id"
-           AND ("token_form"."form")::text = ('cat')::text
+           AND "token_form"."form" = 'cat'
            AND "token_form"."form_id" = "token"."form_id"
            AND transition0.label = 't2')
           OR (transition0.dest_state = 3
               AND "s" = "token"."segment_id"
-              AND ("token"."xpos2")::text = ('ADJ')::text
+              AND "token"."xpos2" = 'ADJ'
               AND transition0.label = 'tadj'))
    UNION ALL SELECT traversal0.s,
                     traversal0."t1",
@@ -93,7 +93,7 @@ WITH RECURSIVE fixed_parts AS
    WHERE (transition0.source_state = 3
           AND transition0.dest_state = 1
           AND "s" = "token"."segment_id"
-          AND ("token_form"."form")::text = ('dog')::text
+          AND "token_form"."form" = 'dog'
           AND "token_form"."form_id" = "token"."form_id"
           AND transition0.label = 't3') ) SEARCH DEPTH FIRST BY id
 SET ordercol ,

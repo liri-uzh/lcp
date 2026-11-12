@@ -29,21 +29,21 @@ WITH RECURSIVE fixed_parts AS
    CROSS JOIN "sparcling1"."token_enrest" "t3"
    WHERE "e"."alignment_id" = "e_aligned"."alignment_id"
      AND "e"."char_range" && "s"."char_range"
+     AND "e_aligned"."meta"->>'date' ~ '^2000'
      AND "fts_vector_s"."segment_id" = "s"."segment_id"
      AND "s"."segment_id" = "t1"."segment_id"
-     AND ("t1"."upos")::text = ('VERB')::text
+     AND "t1"."upos" = 'VERB'
      AND "s"."segment_id" = "t2"."segment_id"
-     AND ("t2"."upos")::text = ('DET')::text
+     AND "t2"."upos" = 'DET'
      AND "s"."segment_id" = "t3"."segment_id"
-     AND (("t3"."upos")::text = ('NOUN')::text
-           AND ("t3"."xpos")::text = ('NP')::text)
+     AND ("t3"."upos" = 'NOUN'
+          AND "t3"."xpos" = 'NP')
      AND "t1_lemma"."lemma_id" = "t1"."lemma_id"
      AND "t2"."token_id" - "t1"."token_id" = 1
      AND "t3"."token_id" - "t2"."token_id" = 1
      AND ("anonymous"."dependent" = "t3"."token_id"
           AND "anonymous"."head" = "t1"."token_id"
-          AND ("anonymous"."udep")::text = ('dobj')::text)
-     AND ("e_aligned"."meta"->>'date')::text ~ '^2000' ),
+          AND "anonymous"."udep" = 'dobj') ),
                gather AS
   (SELECT "e",
           "e_aligned_date",

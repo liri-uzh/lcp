@@ -15,8 +15,8 @@ WITH RECURSIVE fixed_parts AS
    CROSS JOIN "bnc1"."lemma" "t1_lemma"
    WHERE "fts_vector_s"."segment_id" = "s"."segment_id"
      AND "s"."segment_id" = "t1"."segment_id"
-     AND (("t1_form"."form")::text = ('?!')::text
-          OR ("t1_lemma"."lemma")::text = ('?!')::text)
+     AND ("t1_form"."form" = '?!'
+          OR "t1_lemma"."lemma" = '?!')
      AND "t1_form"."form_id" = "t1"."form_id"
      AND "t1_lemma"."lemma_id" = "t1"."lemma_id" ),
                gather AS

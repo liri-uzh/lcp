@@ -12,10 +12,10 @@ WITH RECURSIVE fixed_parts AS
    CROSS JOIN "bnc1"."tokenrest" "t1"
    CROSS JOIN "bnc1"."form" "t1_form"
    WHERE "d"."char_range" && "s"."char_range"
+     AND "d"."meta"->>'classCode' ~ '^S'
      AND "s"."segment_id" = "t1"."segment_id"
-     AND "t1_form"."form_id" = "t1"."form_id"
-     AND ("d"."meta"->>'classCode')::text ~ '^S'
-     AND ("t1_form"."form")::text = ('hello')::text ),
+     AND "t1_form"."form" = 'hello'
+     AND "t1_form"."form_id" = "t1"."form_id" ),
                match_list AS
   (SELECT "s",
           "s_char_range",

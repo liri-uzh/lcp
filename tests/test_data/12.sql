@@ -19,9 +19,9 @@ WITH RECURSIVE fixed_parts AS
    CROSS JOIN "bnc1"."document" "d"
    CROSS JOIN "bnc1"."tokenrest" "t3"
    WHERE "d"."char_range" && "s"."char_range"
+     AND "d"."meta"->>'classCode' ~ '^S'
      AND "s"."segment_id" = "t3"."segment_id"
-     AND ("t3"."xpos2")::text = ('SUBST')::text
-     AND ("d"."meta"->>'classCode')::text ~ '^S' ),
+     AND "t3"."xpos2" = 'SUBST' ),
                match_list AS
   (SELECT "prox_form",
           "s",

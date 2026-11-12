@@ -15,7 +15,7 @@ WITH RECURSIVE fixed_parts AS
    CROSS JOIN "bnc1"."segmentrest" "s"
    WHERE "fts_vector_s"."segment_id" = "s"."segment_id"
      AND "s"."segment_id" = "tv"."segment_id"
-     AND ("tv"."xpos2")::text = ('VERB')::text ),
+     AND "tv"."xpos2" = 'VERB' ),
                disjunction0 AS
   (SELECT fixed_parts."s" AS "s",
           fixed_parts."s_char_range" AS "s_char_range",
@@ -28,7 +28,7 @@ WITH RECURSIVE fixed_parts AS
    CROSS JOIN "bnc1"."form" "anonymous_form"
    WHERE "anonymous_form"."form_id" = "anonymous"."form_id"
      AND "s" = "anonymous"."segment_id"
-     AND ("anonymous_form"."form")::text = ('dog')::text
+     AND "anonymous_form"."form" = 'dog'
    UNION ALL SELECT fixed_parts."s" AS "s",
                     fixed_parts."s_char_range" AS "s_char_range",
                     fixed_parts."tv" AS "tv",
@@ -41,10 +41,10 @@ WITH RECURSIVE fixed_parts AS
    JOIN "bnc1"."form" "anonymous3_form" ON "anonymous3_form"."form_id" = "anonymous3"."form_id"
    JOIN "bnc1"."form" "anonymous4_form" ON "anonymous4_form"."form_id" = "anonymous4"."form_id"
    WHERE "s" = "anonymous3"."segment_id"
-     AND ("anonymous3_form"."form")::text = ('a')::text
+     AND "anonymous3_form"."form" = 'a'
      AND "anonymous3_form"."form_id" = "anonymous3"."form_id"
      AND "s" = "anonymous4"."segment_id"
-     AND ("anonymous4_form"."form")::text = ('cat')::text
+     AND "anonymous4_form"."form" = 'cat'
      AND "anonymous4_form"."form_id" = "anonymous4"."form_id"
      AND "anonymous4"."token_id" - "anonymous3"."token_id" = 1),
                match_list AS

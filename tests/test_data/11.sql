@@ -14,7 +14,7 @@ WITH RECURSIVE fixed_parts AS
         WHERE "s"."frame_range" && "nod"."frame_range"
           AND ("nod"."kinesics")::text ~ 'nod' )
      AND "s"."segment_id" = "t"."segment_id"
-     AND ("t"."upos")::text = ('DET')::text ),
+     AND "t"."upos" = 'DET' ),
                match_list AS
   (SELECT "s",
           "s_char_range",

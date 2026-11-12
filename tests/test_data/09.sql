@@ -22,15 +22,15 @@ WITH RECURSIVE fixed_parts AS
    CROSS JOIN "candor__5003f209a11e4737ae21a00cb8857736_3"."global_attribute_speaker" "k2_speaker"
    CROSS JOIN "candor__5003f209a11e4737ae21a00cb8857736_3"."global_attribute_speaker" "s_speaker"
    WHERE "k1"."frame_range" && "k2"."frame_range"
-     AND (("k2"."kinesics")::text = ('smile')::text
+     AND ("k2"."kinesics" = 'smile'
           AND "k2"."speaker_id" = "k1"."speaker_id")
      AND "k1"."frame_range" && "s"."frame_range"
      AND "k2"."frame_range" && "s"."frame_range"
      AND "s"."speaker_id" != "k1"."speaker_id"
+     AND "k1"."kinesics" = 'nod_yes'
      AND "k1_speaker"."speaker_id" = "k1"."speaker_id"
      AND "k2_speaker"."speaker_id" = "k2"."speaker_id"
-     AND "s_speaker"."speaker_id" = "s"."speaker_id"
-     AND ("k1"."kinesics")::text = ('nod_yes')::text ),
+     AND "s_speaker"."speaker_id" = "s"."speaker_id" ),
                match_list AS
   (SELECT "s",
           "s_char_range",

@@ -8,7 +8,7 @@ WITH RECURSIVE fixed_parts AS
    CROSS JOIN "bnc1"."tokenrest" "t1"
    CROSS JOIN "bnc1"."form" "t1_form"
    WHERE "s"."segment_id" = "t1"."segment_id"
-     AND ("t1_form"."form")::text ~* '^may$'
+     AND "t1_form"."form" ~* '^may$'
      AND "t1_form"."form_id" = "t1"."form_id" ),
                match_list AS
   (SELECT "s",

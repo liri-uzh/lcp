@@ -27,19 +27,19 @@ WITH RECURSIVE fixed_parts AS
    CROSS JOIN "bnc1"."lemma" "t2_lemma"
    CROSS JOIN "bnc1"."tokenrest" "t3"
    WHERE "d"."char_range" && "s"."char_range"
+     AND "d"."meta"->>'classCode' ~ '^S'
      AND "fts_vector_s"."segment_id" = "s"."segment_id"
      AND "s"."segment_id" = "t1"."segment_id"
-     AND ("t1"."xpos2")::text = ('ART')::text
+     AND "t1"."xpos2" = 'ART'
      AND "s"."segment_id" = "t2"."segment_id"
-     AND (("t2_lemma"."lemma")::text = ('true')::text
-          AND ("t2"."xpos2")::text = ('ADJ')::text)
+     AND ("t2_lemma"."lemma" = 'true'
+          AND "t2"."xpos2" = 'ADJ')
      AND "s"."segment_id" = "t3"."segment_id"
-     AND ("t3"."xpos2")::text = ('SUBST')::text
+     AND "t3"."xpos2" = 'SUBST'
      AND "t2"."token_id" - "t1"."token_id" = 1
      AND "t2_lemma"."lemma_id" = "t2"."lemma_id"
      AND "t3"."token_id" - "t2"."token_id" = 1
-     AND "t3_lemma"."lemma_id" = "t3"."lemma_id"
-     AND ("d"."meta"->>'classCode')::text ~ '^S' ),
+     AND "t3_lemma"."lemma_id" = "t3"."lemma_id" ),
                gather AS
   (SELECT "d",
           "d_char_range",

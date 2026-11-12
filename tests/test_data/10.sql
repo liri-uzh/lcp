@@ -21,7 +21,7 @@ WITH RECURSIVE fixed_parts AS
      AND "nod_speaker"."speaker_id" = "nod"."speaker_id"
      AND "s"."segment_id" = "t"."segment_id"
      AND (((upper("t"."frame_range") / 25.0) + 2.0)::numeric <= ((lower("nod"."frame_range") / 25.0))::numeric
-          AND ("t"."upos")::text = ('DET')::text)
+          AND "t"."upos" = 'DET')
      AND "s_speaker"."speaker_id" = "s"."speaker_id"
      AND ("nod"."kinesics")::text ~ 'nod' ),
                match_list AS

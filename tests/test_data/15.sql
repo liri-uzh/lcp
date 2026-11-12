@@ -23,12 +23,12 @@ WITH RECURSIVE fixed_parts AS
      AND "jouer"."token_id" - "ca"."token_id" > 0
      AND "jouer_lemma"."lemma_id" = "jouer"."lemma_id"
      AND "s"."segment_id" = "ca"."segment_id"
-     AND (("ca_form"."form")::text = ('cela')::text
-          OR ("ca_form"."form")::text = ('ça')::text)
+     AND ("ca_form"."form" = 'cela'
+          OR "ca_form"."form" = 'ça')
      AND "s"."segment_id" = "jouer"."segment_id"
      AND (("anonymous3"."dependent" = "ca"."token_id"
            AND "anonymous3"."head" = "jouer"."token_id")
-          AND ("jouer_lemma"."lemma")::text = ('jouer')::text)
+          AND "jouer_lemma"."lemma" = 'jouer')
      AND ("jouer"."token_id" - "ca"."token_id" - 1) % 1 = 0
      AND (TRUE) = ALL
        (SELECT "s"."segment_id" = "s0_t0"."segment_id"
