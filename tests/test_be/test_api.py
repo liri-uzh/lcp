@@ -9,7 +9,7 @@ API_SECRET = os.getenv("API_SECRET", "")
 
 
 def test_api():
-    """Test pulling from the FCS API."""
+    """Test some basic search requests using the API endpoint."""
 
     URL = "http://localhost:9090/api"
 
