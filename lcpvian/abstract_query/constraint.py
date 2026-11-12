@@ -617,8 +617,11 @@ class Constraint:
                 case_insensitive = "caseInsensitive" in meta
                 if case_insensitive:
                     op += "*"
-                # left = f"({left})::text" if left_type == "string" else left
-                # right = f"({right})::text" if right_type == "string" else right
+                # cast categorical attributes to text (can't do regex on postgres enums)
+                if (left_info.get("meta") or {}).get("config_type") == "categorical":
+                    left = f"({left})::text"
+                if (right_info.get("meta") or {}).get("config_type") == "categorical":
+                    right = f"({right})::text"
                 formed_condition = f"{left} {op} {right}"
             else:
                 non_reg = (
@@ -695,6 +698,8 @@ class Constraint:
             glob_attr = self.config.get("globalAttributes", {}).get(
                 attr_info.get("ref", ""), {}
             )
+            ref_meta: dict = cast(dict, ref_info.setdefault("meta", {}))
+            ref_meta["config_type"] = attr_info.get("type") or ""
             if sub_ref:
                 keys = (glob_attr or attr_info).get("keys", {})
                 ref_type = keys.get(sub_ref, {}).get("type", "string")
