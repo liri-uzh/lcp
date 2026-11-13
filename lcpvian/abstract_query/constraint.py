@@ -1,6 +1,5 @@
 import re
 
-from psycopg import sql
 from typing import Any, cast
 from uuid import UUID
 
@@ -10,7 +9,6 @@ from .utils import (
     _get_underlang,
     _get_mapping,
     _get_table,
-    _is_prefix,
     arg_sort_key,
     QueryData,
     SQLCorpus,
@@ -50,13 +48,7 @@ FUNCS = {
 
 LR = "{}"
 
-
-def _valid_uuid(val: Any) -> bool:
-    try:
-        UUID(str(val))
-        return True
-    except ValueError:
-        return False
+IS_NUM = re.compile(r"^[0-9]+(\.[0-9]+)?$")
 
 
 class Constraints:
@@ -487,6 +479,17 @@ class Constraint:
         op = "=" if negated else ">"
         return (op, mask_alias)
 
+    def _try_coerce_number(self, inp: str) -> str:
+        ret: str | int | float = inp
+        try:
+            ret = int(inp)
+        except:
+            try:
+                ret = float(inp)
+            except:
+                pass
+        return str(ret)
+
     def make(self) -> None:
         """
         Actually make the joins and the WHERE clause bits
@@ -507,6 +510,19 @@ class Constraint:
         ]
         left_type = left_info.get("type", "")
         right_type = right_info.get("type", "")
+        left_is_enum = (
+            cast(dict, left_info.get("meta", {})).get("config_type") == "categorical"
+        )
+        right_is_enum = (
+            cast(dict, right_info.get("meta", {})).get("config_type") == "categorical"
+        )
+
+        if ">" in self.op or "<" in self.op:
+            # Try to coerce if applicable
+            left = self._try_coerce_number(self.left.get("string") or left)
+            right = self._try_coerce_number(self.right.get("string") or right)
+            left_type = "number" if IS_NUM.match(left) else left_type
+            right_type = "number" if IS_NUM.match(right) else right_type
 
         if self.op.lower().endswith("contain"):
             assert left_type in ("labels", "array", ""), SyntaxError(
@@ -618,9 +634,9 @@ class Constraint:
                 if case_insensitive:
                     op += "*"
                 # cast categorical attributes to text (can't do regex on postgres enums)
-                if (left_info.get("meta") or {}).get("config_type") == "categorical":
+                if left_is_enum:
                     left = f"({left})::text"
-                if (right_info.get("meta") or {}).get("config_type") == "categorical":
+                if right_is_enum:
                     right = f"({right})::text"
                 formed_condition = f"{left} {op} {right}"
             else:
@@ -631,6 +647,24 @@ class Constraint:
                     f"Tried to apply a regular expression test on a {non_reg[0]} attribute ('{non_reg[1]}')"
                 )
 
+        elif "number" in (left_type, right_type):
+            assert self.op in ("=", "!=", ">=", "<=", ">", "<"), SyntaxError(
+                f"Invalid operator {self.op} for numerical comparison ({left} {self.op} {right})"
+            )
+            left_str = re.sub(r"->([^>]+)$", "->>\\1", left)
+            right_str = re.sub(r"->([^>]+)$", "->>\\1", right)
+            # Do not cast if plain number
+            if not IS_NUM.match(left):
+                # cast enums to text first
+                if left_is_enum:
+                    left_str = f"({left_str})::text"
+                left_str = f"({left_str})::numeric"
+            if not IS_NUM.match(right):
+                if right_is_enum:
+                    left_str = f"({left_str})::text"
+                right_str = f"({right_str})::numeric"
+            formed_condition = f"{left_str} {self.op} {right_str}"
+
         elif "string" in (left_type, right_type):
             if "label" in (left_type, right_type):
                 pass
@@ -640,14 +674,6 @@ class Constraint:
                 raise TypeError(
                     f"Could not resolve comparison {left} {self.op} {right}"
                 )
-
-        elif "number" in (left_type, right_type):
-            assert self.op in ("=", "!=", ">=", "<=", ">", "<"), SyntaxError(
-                f"Invalid operator {self.op} for numerical comparison ({left} {self.op} {right})"
-            )
-            left_str = re.sub(r"->([^>]+)$", "->>\\1", left)
-            right_str = re.sub(r"->([^>]+)$", "->>\\1", right)
-            formed_condition = f"({left_str})::numeric {self.op} ({right_str})::numeric"
 
         self._joins.pop("", None)
         self._conditions.add(formed_condition)

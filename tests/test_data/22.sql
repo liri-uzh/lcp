@@ -8,7 +8,7 @@ WITH res1 AS
       WHERE "b"."char_range" && "s"."char_range") "s"
    JOIN "text_berg_korpus_echo_des_alples_1e01737e3ada4407892cb804a7ce5900_1"."token8" "t" ON ("t"."segment_id" = "s"."segment_id")
    CROSS JOIN "text_berg_korpus_echo_des_alples_1e01737e3ada4407892cb804a7ce5900_1"."token_form" "t_form"
-   WHERE (("b"."meta"->>'year')::numeric > (1910)::numeric)
+   WHERE (("b"."meta"->>'year')::numeric > 1910)
      AND ("t_form"."form_id" = "t"."form_id")
    GROUP BY ("b"."meta"->>'year',
              "t_form"."form")),

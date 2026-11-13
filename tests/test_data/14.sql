@@ -31,7 +31,7 @@ WITH RECURSIVE fixed_parts AS
      AND "t2"."token_id" - "t1"."token_id" = 1
      AND "t2_lemma"."lemma_id" = "t2"."lemma_id"
      AND (extract('year'
-                  FROM ("a"."pubdate")::date))::numeric > (2020)::numeric ),
+                  FROM ("a"."pubdate")::date))::numeric > 2020 ),
                gather AS
   (SELECT "a",
           "a_char_range",

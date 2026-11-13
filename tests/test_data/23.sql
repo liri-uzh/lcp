@@ -11,7 +11,7 @@ WITH RECURSIVE fixed_parts AS
    CROSS JOIN "text_berg_korpus_echo_des_alples_1e01737e3ada4407892cb804a7ce5900_1"."token8" "t"
    WHERE "b"."char_range" && "s"."char_range"
      AND "s"."segment_id" = "t"."segment_id"
-     AND ("b"."meta"->>'year')::numeric > (1910)::numeric ),
+     AND ("b"."meta"->>'year')::numeric > 1910 ),
                match_list AS
   (SELECT "b_year"
    FROM fixed_parts),

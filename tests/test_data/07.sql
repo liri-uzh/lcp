@@ -10,7 +10,7 @@ WITH RECURSIVE fixed_parts AS
    WHERE "e"."alignment_id" = "e_aligned"."alignment_id"
      AND "e"."char_range" && "s"."char_range"
      AND (extract('year'
-                  FROM ("e_aligned"."meta"->>'date')::date))::numeric > (1999)::numeric ),
+                  FROM ("e_aligned"."meta"->>'date')::date))::numeric > 1999 ),
                match_list AS
   (SELECT "s",
           "s_char_range"
