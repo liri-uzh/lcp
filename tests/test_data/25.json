@@ -1,0 +1,75 @@
+{
+  "query": [
+    {
+      "unit": {
+        "layer": "Document",
+        "label": "d"
+      }
+    },
+    {
+      "constraint": {
+        "comparison": {
+          "left": {
+            "reference": "d.classCode"
+          },
+          "comparator": "=",
+          "right": {
+            "regex": {
+              "pattern": "s"
+            }
+          }
+        }
+      }
+    },
+    {
+      "unit": {
+        "layer": "Segment",
+        "partOf": [
+          {
+            "partOfStream": "d"
+          }
+        ],
+        "label": "s"
+      }
+    },
+    {
+      "sequence": {
+        "partOf": [
+          {
+            "partOfStream": "s"
+          }
+        ],
+        "label": "seq",
+        "members": [
+          {
+            "unit": {
+              "layer": "Token",
+              "label": "t1"
+            }
+          },
+          {
+            "unit": {
+              "layer": "Token",
+              "label": "t2"
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "results": [
+    {
+      "label": "stats",
+      "resultsAnalysis": {
+        "attributes": [
+          {
+            "attribute": "d.classCode"
+          }
+        ],
+        "functions": [
+          "frequency"
+        ]
+      }
+    }
+  ]
+}

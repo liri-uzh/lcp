@@ -1,0 +1,17 @@
+# count number of 3-grams
+
+Document d
+
+d.classCode = /s/
+
+Segment@d s
+
+sequence@s seq
+    Token t1
+    Token t2
+
+stats => analysis
+    attributes
+        d.classCode
+    functions
+        frequency
